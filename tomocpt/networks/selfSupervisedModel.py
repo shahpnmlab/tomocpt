@@ -12,40 +12,66 @@ import torchio as tio
 import torchvision
 from torch import nn
 from torch.nn import functional as F
-from pycotool import constants, config
-from pycotool.networks.baseModel import BaseModel
-from pycotool.networks.swinunetr import MySwinUNETR
-from pycotool.networks.unet import Unet
+from tomocpt import constants, network_config
+from tomocpt.networks.baseModel import BaseModel
+from tomocpt.networks.swinunetr import MySwinUNETR
+from tomocpt.networks.unet import Unet
 
 
 class SelfSupervisedModel(BaseModel):
-    def __init__(self, lr=constants.LEARNING_RATE, num_levels=constants.NUM_LEVELS):
+    def set_default_args(self, lr: float | None,
+                         num_levels: int | None):
+
+        self.lr = lr if lr is not None else network_config.LEARNING_RATE
+        self.num_levels = num_levels if num_levels is not None else network_config.NUM_LEVELS
+
+    def __init__(self, lr: float | None = None,
+                 num_levels: int | None = None):
+
+        self.set_default_args(lr = lr,
+                              num_levels = num_levels)
 
         super(SelfSupervisedModel, self).__init__()
 
         n_voxels = constants.CHUNK_SIZE
-        if config.MODEL_TYPE == "UNET":
-            self.model = Unet(num_levels=num_levels, first_layer_out_channels=constants.FIRST_LAYER_OUT_CHANNELS,
-                              last_activation="linear", stride_conv_instead_pooling=True)
 
+        MODEL_TYPES = {
+            "UNET": lambda: Unet(
+                first_layer_out_channels=network_config.FIRST_LAYER_OUT_CHANNELS,
+                last_activation="linear",
+                stride_conv_instead_pooling=True,
+                num_levels=num_levels
+            ),
+            "SWINUNETR": lambda: MySwinUNETR(
+                img_size=(network_config.CHUNK_SIZE, network_config.CHUNK_SIZE, network_config.CHUNK_SIZE),
+                in_channels=1,
+                out_channels=1,
+                feature_size=network_config.SWINUNETR_FEAT_SIZE,
+                use_v2=True,
+                use_checkpoint=True,
+                drop_rate=network_config.DROP_RATE,
+                attn_drop_rate=network_config.ATTN_DROP_RATE,
+                dropout_path_rate=network_config.DROPOUT_PATH_RATE,
+            )
+        }
 
-
-        elif config.MODEL_TYPE == "SwinUNETR":
-            self.model = MySwinUNETR(img_size=(n_voxels, n_voxels, n_voxels),
-                                     in_channels=1,
-                                     out_channels=1,
-                                     feature_size=constants.SWINUNETR_FEAT_SIZE,
-                                     # 24, #feature_size should be divisible by 12
-                                     use_checkpoint=False,
-                                     use_v2=True)
+        if model is None:
+            self.model_name = network_config.MODEL_TYPE
+            model_constructor = MODEL_TYPES.get(network_config.MODEL_TYPE.upper())
+            if model_constructor:
+                self.model = model_constructor()
+            else:
+                raise ValueError(f"Unknown model type: {network_config.MODEL_TYPE}")
         else:
-            raise ValueError("Not valid model type")
+            self.model_name = model.model_name
+            self.model = model.model
 
-        exampleX = torch.rand(config.BATCH_SIZE, 1, n_voxels, n_voxels, n_voxels)
+
+        exampleX = torch.rand(network_config.BATCH_SIZE, 1, n_voxels, n_voxels, n_voxels)
         out, hid = self.model(exampleX)
         batchSize, nchan, s, _, _ = hid.shape
         assert batchSize > 1
-        self.model_name = config.MODEL_TYPE
+        self.model_name = network_config.MODEL_TYPE
         print(f"SelfSupervisedModel using {self.model_name}")
 
         def generateHead(outDims, bias=False):
@@ -55,7 +81,7 @@ class SelfSupervisedModel(BaseModel):
                 nn.Linear(nchan, outDims, bias=bias)
             )
 
-        contrastiveEmbSize = 256
+        contrastiveEmbSize = 256 #TODO: Check if this needs to go into network_config
         self.rotation_head = generateHead(4, bias=True)
         self.contrastive_head = generateHead(contrastiveEmbSize, bias=False)
 
@@ -71,7 +97,7 @@ class SelfSupervisedModel(BaseModel):
         contrp = self.contrastive_head(hid)
         return rotp, contrp, out
 
-    def _step(self, batch, batch_idx):
+    def _step(self, batch):
 
         x = self.resolve_batch(batch)
 
@@ -151,14 +177,14 @@ class SelfSupervisedModel(BaseModel):
 
         return loss
 
-    def predict_step(self, batch, batch_idx, dataloader_idx=0):
+    def predict_step(self, batch):
         x, y = batch
         y_hat = self(x)
         return y_hat
 
     def configure_optimizers(self):
-
-        opt = torch.optim.AdamW(self.parameters(), lr=self.lr, weight_decay=1e-10)
+        opt = torch.optim.RAdam(self.parameters(), lr=self.lr, betas=(0.9, 0.99),
+                                weight_decay=1e-8, decoupled_weight_decay=True)
 
         conf = {
             'optimizer': opt,
@@ -166,11 +192,11 @@ class SelfSupervisedModel(BaseModel):
 
         conf.update({
             'lr_scheduler': torch.optim.lr_scheduler.ReduceLROnPlateau(opt, verbose=True,
-                                                                       factor=constants.FACTOR_REDUCE_LR_PLATEAU_N_EPOCHS,
+                                                                       factor=network_config.FACTOR_REDUCE_LR_PLATEAU_N_EPOCHS,
                                                                        cooldown=max(1,
-                                                                                    constants.PATIENT_REDUCE_LR_PLATEAU_N_EPOCHS // 4),
+                                                                                    network_config.PATIENT_REDUCE_LR_PLATEAU_N_EPOCHS // 4),
                                                                        patience=int(
-                                                                           1.5 * constants.PATIENT_REDUCE_LR_PLATEAU_N_EPOCHS)),
+                                                                           1.5 * network_config.PATIENT_REDUCE_LR_PLATEAU_N_EPOCHS)),
             'monitor': 'val_loss'
         })
         return conf
@@ -249,8 +275,8 @@ class ContrastLoss(nn.Module):
     # batch states are independent and we will optimize the runtime of 'forward'
     full_state_update: bool = True
 
-    def __init__(self, temperature=constants.CONTRAST_LOSS_TEMPERATURE,
-                 l1_embeddings_w=constants.CONTRAST_LOSS_L1_EMB_REGULARIZATION):
+    def __init__(self, temperature = network_config.CONTRAST_LOSS_TEMPERATURE,
+                 l1_embeddings_w = network_config.CONTRAST_LOSS_L1_EMB_REGULARIZATION):
         """
         Low temperature penalizes much more embeddings that are the same
         """
@@ -307,10 +333,10 @@ if __name__ == "__main__":
     print(lFun(torch.tensor([[1, 0, 0], [1, 0, 0.], [1, 1, 1]]), torch.tensor([[1, 0, 0], [1, 0, 0.], [1, 1, 1]])))
     print(lFun(torch.tensor([[1, 0, 0], [1, 0, 0.], [1, 0, 0.]]), torch.tensor([[1, 0, 0], [1, 0, 0.], [1, 0, 0.]])))
 
-    config.MODEL_TYPE = "SwinUNETR"  # "UNET" #"SwinUNETR"
+    network_config.MODEL_TYPE = "SwinUNETR"  # "UNET" #"SwinUNETR"
     model = SelfSupervisedModel()
 
-    chunk_size = constants.CHUNK_SIZE
+    chunk_size = network_config.CHUNK_SIZE
     batchSize = 3
     x = torch.rand(batchSize, 1, chunk_size, chunk_size, chunk_size)
     out = model(x)
