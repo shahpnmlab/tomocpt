@@ -5,62 +5,81 @@ import subprocess
 import sys
 from typing import Optional, Literal
 import psutil
-from pycotool import constants, config
+from tomocpt import constants, config, network_config
 
 import torch
-torch.set_float32_matmul_precision(constants.TORCH_MATMUL_PRECISION)
+
+torch.set_float32_matmul_precision(network_config.TORCH_MATMUL_PRECISION)  # TODO: This should be config
 
 from pytorch_lightning.callbacks import TQDMProgressBar, EarlyStopping, ModelCheckpoint, LearningRateMonitor, \
     StochasticWeightAveraging
 from pytorch_lightning.loggers import TensorBoardLogger
 import pytorch_lightning as pl
-from pycotool.dataManager.dataLoaderLightning import Data
-from pycotool.networks.pickingModel import BasePickingModel
-from pycotool.networks.selfSupervisedModel import SelfSupervisedModel
-from pycotool.utils import accelerator_selector
+from tomocpt.dataManager.dataLoaderLightning import Data
+from tomocpt.networks.pickingModel import BasePickingModel
+from tomocpt.networks.selfSupervisedModel import SelfSupervisedModel
+from tomocpt.utils import accelerator_selector
 
 
-def train(chunkedDataDir: str = config.DATA_CHUNKS_DIR, modelDir: Optional[str] = config.MODEL_PATH, experimentName: Optional[str] = config.EXPERIMENT_NAME,
-          epochs: int = config.N_EPOCHS, model_type:Literal["UNET", "unet","SwinUNETR", "swinunetr"]=config.MODEL_TYPE,
+def train(chunkedDataDir: str | None = None,
+          modelDir: str | None = None,
+          experimentName: str | None = None,
+          epochs: str | None = None,
+          model_type: Literal["UNET", "unet", "SwinUNETR", "swinunetr"] | None = None, # TODO: Define the available models in constants
           trainingMode: Literal["selfSupervised", "picking"] = "picking",
-          learning_rate: float = config.LEARNING_RATE, continueModelDir: Optional[str] = None,
-          restoreFullStateWhenContinue: bool = True, compileModel:bool=False,
-          batch_size: int = config.BATCH_SIZE, use_cuda: bool = True, use_tensorboard: bool = True):
+          learning_rate: float | None = None,
+          continueModelDir: str | None = None,
+          restoreFullStateWhenContinue: bool = True,
+          compileModel: bool = False,
+          batch_size: int | None = None,
+          use_cuda: bool = True,
+          use_tensorboard: bool = True):
     """
 
     :param chunkedDataDir: the directory with the ready to train chunks.
-    :param modelDir: the directory of the model to use
-    :param experimentName: non-trivial dir name to store checpoints in
+    :param modelDir: the directory where the models will be saved
+    :param experimentName: dir name to store checkpoints in
     :param epochs: number of epochs to train
     :param model_type: The model type name to be selected. Do not change it if using a previous chekpoint.
     :param trainingMode: Either for training a selfSupervised or supervised network
     :param learning_rate: learning_rate
     :param continueModelDir: The directory of a previously trained model to continue its training
     :param restoreFullStateWhenContinue: If True, the optimizer state, Learning rate, etc. from the last checkpoint will be restored. Otherwise, only the weights
-    :param compileModel: If True, use pytorch 2.0 compile
+    :param compileModel: If True, use pytorch 2.X compile
     :param batch_size: The batch size
     :param use_cuda: True to use cuda (if available)
     :param use_tensorboard: True to launch tensorboard
     :return:
     """
+
+    chunkedDataDir = chunkedDataDir if chunkedDataDir is not None else config.DATA_CHUNKS_DIR
+    modelDir = modelDir if modelDir is not None else config.MODEL_PATH
+    experimentName = experimentName if experimentName is not None else config.EXPERIMENT_NAME
+    epochs = epochs if epochs is not None else config.N_EPOCHS
+    model_type = model_type if model_type is not None else config.MODEL_TYPE
+    learning_rate = learning_rate if learning_rate is not None else config.LEARNING_RATE
+    batch_size = batch_size if batch_size is not None else config.BATCH_SIZE
+
     config.MODEL_TYPE = model_type
     kwargs = dict(lr=learning_rate)
 
     if trainingMode == "picking":
         Model = BasePickingModel
+        checkpointer = ModelCheckpoint(monitor='val_loss', filename='weights', verbose=True)
         callbacks = [
             TQDMProgressBar(refresh_rate=10),
             EarlyStopping(monitor='val_loss', patience=6 * constants.COSINE_LR_SCHEDULE_N_EPOCHS, verbose=True),
-            ModelCheckpoint(monitor='val_loss', filename='weights', verbose=True),
+            checkpointer,
             LearningRateMonitor(logging_interval='epoch'),
         ]
     # This will be consolidated to pre-train and supervised train
     elif trainingMode == "selfSupervised":
         Model = SelfSupervisedModel
+        checkpointer = ModelCheckpoint(monitor='val_loss', filename=f'weights_{trainingMode}_{model_type}', verbose=True)
         callbacks = [
             TQDMProgressBar(refresh_rate=10),
             EarlyStopping(monitor='val_loss', patience=6 * constants.COSINE_LR_SCHEDULE_N_EPOCHS, verbose=True),
-            ModelCheckpoint(monitor='val_loss', filename=f'weights_{trainingMode}_{model_type}', verbose=True),
+            checkpointer,
             LearningRateMonitor(logging_interval='epoch'),
         ]
     else:
@@ -74,7 +93,7 @@ def train(chunkedDataDir: str = config.DATA_CHUNKS_DIR, modelDir: Optional[str] 
                 pl_model = BasePickingModel.load_from_checkpoint(continueModelDir, **kwargs)
             except RuntimeError:
                 pretrained_model = SelfSupervisedModel.load_from_checkpoint(continueModelDir)
-                pl_model = BasePickingModel(**kwargs, model=pretrained_model) # map_location="cuda:0"
+                pl_model = BasePickingModel(**kwargs, model=pretrained_model)  # map_location="cuda:0"
                 del pretrained_model
                 resume_from_checkpoint = None
         else:
@@ -85,28 +104,27 @@ def train(chunkedDataDir: str = config.DATA_CHUNKS_DIR, modelDir: Optional[str] 
     if compileModel:
         pl_model = torch.compile(pl_model)
     callbacks += [
-        StochasticWeightAveraging(annealing_epochs=constants.COSINE_LR_SCHEDULE_N_EPOCHS, swa_lrs=0.1 * pl_model.lr)]
+        StochasticWeightAveraging(annealing_epochs=network_config.COSINE_LR_SCHEDULE_N_EPOCHS, swa_lrs=0.1 * pl_model.lr)]
 
     assert os.path.isdir(chunkedDataDir), f"Error, prepared_data_dir: {chunkedDataDir} does not exist "
     data = Data(data_dir=chunkedDataDir, return_labels=(trainingMode == "picking"),
                 batch_size=batch_size,
-                workers_for_data=config.NCPU)
+                workers_for_data=config.WORKERS_FOR_DATA)
     data.setup()
     print(len(data.train_dataloader()))
 
     logger = TensorBoardLogger(save_dir=f'{modelDir}/{experimentName}', name='', version='')
 
     accel, dev_count = accelerator_selector(use_cuda=use_cuda)
-    trainer = pl.Trainer(default_root_dir=modelDir,devices=f'{dev_count}', accelerator='auto',
-                       max_epochs=epochs, callbacks=callbacks, 
-                       logger = logger,
-                       #limit_val_batches=constants.LIMIT_VALIDATION_BATCHES,
-                       #val_check_interval=constants.VAL_CHECK_INTERVAL,
-                       strategy="ddp_find_unused_parameters_false" if accel == "gpu" else None,
-                       precision= constants.TORCH_FLOAT_PRECISION)
+    trainer = pl.Trainer(default_root_dir=modelDir, devices=f'{dev_count}', accelerator='auto',
+                         max_epochs=epochs, callbacks=callbacks,
+                         logger=logger,
+                         # limit_val_batches=constants.LIMIT_VALIDATION_BATCHES,
+                         # val_check_interval=constants.VAL_CHECK_INTERVAL,
+                         strategy="ddp_find_unused_parameters_false" if accel == "gpu" else None,
+                         precision=constants.TORCH_FLOAT_PRECISION)
     if trainer.is_global_zero:
         _copyCodeForReproducibility(trainer.log_dir)
-
 
     if use_tensorboard:
         subprocess.Popen(["tensorboard", "--logdir", modelDir], stdout=sys.stdout, stderr=open("/dev/null"))
@@ -114,6 +132,11 @@ def train(chunkedDataDir: str = config.DATA_CHUNKS_DIR, modelDir: Optional[str] 
     print("Training starts")
 
     trainer.fit(pl_model, datamodule=data, ckpt_path=resume_from_checkpoint)
+
+    if trainer.is_global_zero:
+        model = torch.load(checkpointer.best_model_path, weights_only=False)
+        model_scripted = torch.jit.script(model)  # Export to TorchScript
+        model_scripted.save(checkpointer.best_model_path+".scripted.pt")
 
 
 def _copyCodeForReproducibility(logdir):
@@ -128,7 +151,7 @@ def _copyCodeForReproducibility(logdir):
     """
     copycodedir = osp.join(logdir, "code")
     os.makedirs(copycodedir, exist_ok=True)
-    copycodedir = osp.join(copycodedir, "pycotool")
+    copycodedir = osp.join(copycodedir, "tomocpt")
 
     modulePath = osp.abspath(sys.modules[__name__].__file__)
     rootPath = osp.dirname(osp.dirname(modulePath))
@@ -156,10 +179,11 @@ def _copyCodeForReproducibility(logdir):
     # Get the parent process
     parent_process = current_process.parent()
     # Get the command line of the parent process
-    parent_command = " ".join(["'"+x+"'" if x.startswith('{"') else x for x in parent_process.cmdline()])
+    parent_command = " ".join(["'" + x + "'" if x.startswith('{"') else x for x in parent_process.cmdline()])
     fname = osp.join(logdir, "parent_command.txt")
     with open(fname, "w") as f:
         f.write(parent_command)
+
 
 if __name__ == '__main__':
     from argParseFromDoc import AutoArgumentParser
@@ -169,7 +193,9 @@ if __name__ == '__main__':
     train(**vars(parser.parse_args()))
     print(f"Training has ended. Cleaning up {config.DATA_CHUNKS_DIR}")
     shutil.rmtree(config.DATA_CHUNKS_DIR, ignore_errors=True)
+
 """
-python -m pycotool.training.train
- --input_data_dir_path test2/tomograms --output_data_dir_path test2/predictions --ckpt test2/model/lightning_logs/version_0/checkpoints/picking.ckpt --particle_size 20 --patch_size 64
+
+python -m tomocpt.training.train 
+
 """

@@ -1,5 +1,6 @@
 import os
 import tempfile
+from dataclasses import dataclass
 
 DATA_CHUNKS_DIR: str = "/tmp/refactor/chunks/"
 BATCH_SIZE: int = 8

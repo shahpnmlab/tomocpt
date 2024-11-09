@@ -99,6 +99,11 @@ class BasePickingModel(BaseModel):    # TODO: Change the name
         return x, y
 
     def forward(self, x):
+        """
+
+        :param x:
+        :return: logits
+        """
         out = super().forward(x)
         if isinstance(out, (tuple, list)):
             out = out[0]
@@ -107,21 +112,15 @@ class BasePickingModel(BaseModel):    # TODO: Change the name
     def training_step(self, batch, batch_idx):
         x, y = self.resolve_batch(batch)
         logits = self(x)
-        y_hat = nn.functional.sigmoid(logits)
-        y_pred = nn.functional.softplus(logits, beta=BETA_FOR_SOFTPLUS)
+        y_pred = nn.functional.sigmoid(logits)
+        # y_pred = nn.functional.softplus(logits, beta=BETA_FOR_SOFTPLUS)
         loss = self.loss(y_pred, y)
-        #loss = self.loss(y_hat, y, logits)
-        with torch.no_grad():
-            dice = dice_loss(y_hat, (y > 0).float()[:, :1, ...])
 
         self.log('loss', loss, on_step=False, on_epoch=True, prog_bar=True, sync_dist=True,
                  batch_size=x.shape[0])  # TODO: if on_step=True, reconsider sync_dist
 
-        self.log('dice', dice, on_step=False, on_epoch=True, prog_bar=True, sync_dist=True,
-                 batch_size=x.shape[0])  # TODO: if on_step=True, reconsider sync_dist
-
         if batch_idx == 0:
-            size = y_hat.shape[2]
+            size = y_pred.shape[2]
             grid = torchvision.utils.make_grid(x[:, :, size // 2, :, :])
             tensorboard = self.logger.experiment
             tensorboard.add_image("input", grid.to(dtype=torch.float32), global_step=self.current_epoch)
@@ -136,17 +135,14 @@ class BasePickingModel(BaseModel):    # TODO: Change the name
         with torch.no_grad():
             x, y = self.resolve_batch(batch)
             logits = self(x)
-            y_hat = nn.functional.sigmoid(logits)
-            y_pred = nn.functional.softplus(logits, beta=BETA_FOR_SOFTPLUS)
+            y_pred = nn.functional.sigmoid(logits)
+            # y_pred = nn.functional.softplus(logits, beta=BETA_FOR_SOFTPLUS)
             loss = self.loss(y_pred, y)
-            dice = dice_loss(y_hat, (y > 0).float()[:, :1, ...])
-            #loss = self.loss(y_hat, y, logits)
 
         self.log('val_loss', loss, on_step=False, on_epoch=True, prog_bar=True, sync_dist=True, batch_size=x.shape[0])
-        self.log('dice', dice, on_step=False, on_epoch=True, prog_bar=True, sync_dist=True, batch_size=x.shape[0])
 
         tensorboard = self.logger.experiment
-        size = y_hat.shape[2]
+        size = y_pred.shape[2]
         # print(x.shape)
         grid1 = torchvision.utils.make_grid(x[:, :, size // 2, :, :])
         tensorboard.add_image("input_val", grid1.to(dtype=torch.float32), global_step=self.current_epoch)
@@ -157,14 +153,14 @@ class BasePickingModel(BaseModel):    # TODO: Change the name
         return loss
 
     def predict_step(self, batch, batch_idx, dataloader_idx=0):
-        x = batch
-        logits = self(x)
-        y_pred = nn.functional.softplus(logits, beta=BETA_FOR_SOFTPLUS)
+        logits = self(batch)
+        # y_pred = nn.functional.softplus(logits, beta=BETA_FOR_SOFTPLUS)
+        y_pred = nn.functional.sigmoid(logits)
         return y_pred
 
     def configure_optimizers(self):
         opt = torch.optim.RAdam(self.parameters(), lr=self.lr, betas=(0.9, 0.99),
-                                weight_decay=1e-8, decoupled_weight_decay=True)
+                                weight_decay=network_config.WEIGHT_DECAY, decoupled_weight_decay=True)
 
         conf = {
             'optimizer': opt,

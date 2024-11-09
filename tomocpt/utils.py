@@ -1,29 +1,8 @@
 import os
-import os.path as osp
 from pathlib import Path
 
 import torch
-from ruamel.yaml import YAML
 
-
-def update_config(modelFname):
-    if modelFname and osp.isfile(modelFname):
-        modelDirname = osp.dirname(osp.dirname(modelFname))
-        modelYmlFname = osp.join(modelDirname, "hparams.yaml")
-        with open(modelYmlFname, "r") as f:
-            d = dict(YAML().load(f))
-            confDict = d["config_dict"]
-            constantsDict = d["constants_dict"]
-        from pycotool import config, constants
-        config.update(confDict)
-        for k,v in constantsDict.items():
-            setattr(constants, k, v)
-
-def mkdir_if_not_exists(dirname):
-    try:
-        os.mkdir(dirname)
-    except OSError:
-        pass
 
 def makedir(path: str):
     dirname = Path(path)
