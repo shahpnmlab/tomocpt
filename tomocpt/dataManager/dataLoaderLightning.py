@@ -9,8 +9,11 @@ from tomocpt.dataManager.datasetIO import VolumeDatsetIO
 
 class Data(pl.LightningDataModule):
 
-    def set_default_args(self, data_dir: str | None, return_labels: bool | None,
-                         batch_size: int | None, workers_for_data: int | None):
+    def set_default_args(self, data_dir: str | None,
+                         return_labels: bool | None,
+                         batch_size: int | None,
+                         workers_for_data: int | None):
+
         self.data_dir = data_dir if data_dir is not None else config.DATA_CHUNKS_DIR
         self.batch_size = batch_size if batch_size is not None else config.BATCH_SIZE
         self.workers_for_data = workers_for_data if workers_for_data is not None else config.WORKERS_FOR_DATA

@@ -6,38 +6,60 @@ import torchvision
 from torch import nn
 from torch.nn.functional import binary_cross_entropy
 
-from pycotool import constants, config
-from pycotool.dataManager.dataUtils import resize_volume
-from pycotool.networks.baseModel import BaseModel
-from pycotool.networks.unet import Unet
-from pycotool.training.losses import dice_loss, gradient3d_loss
+from tomocpt import constants, network_config
+from tomocpt.dataManager.dataUtils import resize_volume
+from tomocpt.networks.baseModel import BaseModel
+from tomocpt.networks.unet import Unet
+from tomocpt.training.losses import dice_loss, gradient3d_loss
 
 from monai.networks.nets import SwinUNETR
 
 BETA_FOR_SOFTPLUS = 2
 
 
-class BasePickingModel(BaseModel):  # TODO: Change the name
-    def __init__(self, lr=constants.LEARNING_RATE, num_levels=constants.NUM_LEVELS, model=None):
-        super(BasePickingModel, self).__init__()
-        '''
-        change the model here to change the arch using monai.
-        '''
-        if model is None:
-            self.model_name = config.MODEL_TYPE
-            if config.MODEL_TYPE == "UNET" or config.MODEL_TYPE == "unet":
-                self.model = Unet(first_layer_out_channels=constants.FIRST_LAYER_OUT_CHANNELS, last_activation="linear",
-                                  stride_conv_instead_pooling=True, num_levels=num_levels)
+class BasePickingModel(BaseModel):    # TODO: Change the name
+    def set_default_args(self, lr: float | None,
+                         num_levels: int | None):
 
-            elif config.MODEL_TYPE == "SwinUNETR" or config.MODEL_TYPE == "swinunetr":
-                self.model = SwinUNETR(img_size=(constants.CHUNK_SIZE, constants.CHUNK_SIZE, constants.CHUNK_SIZE),
-                                       in_channels=1,
-                                       out_channels=1,
-                                       feature_size=constants.SWINUNETR_FEAT_SIZE,  # should be divisible by 12
-                                       use_v2=True
-                                       )
+        self.lr = lr if lr is not None else network_config.LEARNING_RATE
+        self.num_levels = num_levels if num_levels is not None else network_config.NUM_LEVELS
+
+    def __init__(self, lr: float | None = None,
+                 num_levels: int | None = None,
+                model=None):
+        self.set_default_args(lr=lr,
+                              num_levels=num_levels)
+        super(BasePickingModel, self).__init__()
+
+        # TODO:change the model here to change the arch using monai.
+
+        MODEL_TYPES = {
+            "UNET": lambda: Unet(
+                first_layer_out_channels=network_config.FIRST_LAYER_OUT_CHANNELS,
+                last_activation="linear",
+                stride_conv_instead_pooling=True,
+                num_levels=num_levels
+            ),
+            "SWINUNETR": lambda: SwinUNETR(
+                img_size=(network_config.CHUNK_SIZE, network_config.CHUNK_SIZE, network_config.CHUNK_SIZE),
+                in_channels=1,
+                out_channels=1,
+                feature_size=network_config.SWINUNETR_FEAT_SIZE,
+                use_v2=True,
+                use_checkpoint=True,
+                drop_rate=network_config.DROP_RATE,
+                attn_drop_rate=network_config.ATTN_DROP_RATE,
+                dropout_path_rate=network_config.DROPOUT_PATH_RATE,
+            )
+        }
+
+        if model is None:
+            self.model_name = network_config.MODEL_TYPE
+            model_constructor = MODEL_TYPES.get(network_config.MODEL_TYPE.upper())
+            if model_constructor:
+                self.model = model_constructor()
             else:
-                raise ValueError(f"Not valid model type ({config.MODEL_TYPE}")
+                raise ValueError(f"Unknown model type: {network_config.MODEL_TYPE}")
         else:
             self.model_name = model.model_name
             self.model = model.model
@@ -69,35 +91,6 @@ class BasePickingModel(BaseModel):  # TODO: Change the name
         loss += _loss
         loss = loss.mean()
         return loss
-
-    # def loss(self, y_hat, y_true, logits):
-    #
-    #     eps = 1
-    #     num_positive = torch.sum(y_true, dim=[1, 2, 3, 4])
-    #     num_negative = y_true.numel() / y_true.shape[0] - num_positive
-    #
-    #     # Compute weights
-    #     # Adding eps to the denominator to avoid division by zero
-    #     positive_weights = (y_true.numel() / y_true.shape[0]) / (num_positive + eps)
-    #     negative_weights = (y_true.numel() / y_true.shape[0]) / (num_negative + eps)
-    #
-    #     # Reshape weights to be broadcastable
-    #     positive_weights = positive_weights.view(y_true.shape[0], 1, 1, 1, 1)
-    #     negative_weights = negative_weights.view(y_true.shape[0], 1, 1, 1, 1)
-    #
-    #     # Compute the binary cross-entropy with logits
-    #     max_val = torch.clamp(-logits, min=0)
-    #     loss = (1 - y_true) * logits + max_val + ((-max_val).exp() + (-logits - max_val).exp()).log()
-    #
-    #     # Apply the weights
-    #     weighted_loss = negative_weights * loss * (1 - y_true) + positive_weights * loss * y_true
-    #     # Average the loss over each image but keep it separate for each image in the batch
-    #     average_loss_per_image = torch.mean(weighted_loss, dim=[1, 2, 3, 4])
-    #     # Finally, average the loss over the batch
-    #     bce = torch.mean(average_loss_per_image)
-    #
-    #     dice = dice_loss(y_hat, y_true)
-    #     return bce+dice
 
     def resolve_batch(self, batch):
         x = batch["input_data"][tio.DATA]
@@ -170,7 +163,8 @@ class BasePickingModel(BaseModel):  # TODO: Change the name
         return y_pred
 
     def configure_optimizers(self):
-        opt = torch.optim.AdamW(self.parameters(), lr=self.lr, weight_decay=1e-10)
+        opt = torch.optim.RAdam(self.parameters(), lr=self.lr, betas=(0.9, 0.99),
+                                weight_decay=1e-8, decoupled_weight_decay=True)
 
         conf = {
             'optimizer': opt,
@@ -178,11 +172,11 @@ class BasePickingModel(BaseModel):  # TODO: Change the name
 
         conf.update({
             'lr_scheduler': torch.optim.lr_scheduler.ReduceLROnPlateau(opt, verbose=True,
-                                                                       factor=constants.FACTOR_REDUCE_LR_PLATEAU_N_EPOCHS,
+                                                                       factor=network_config.FACTOR_REDUCE_LR_PLATEAU_N_EPOCHS,
                                                                        cooldown=max(1,
-                                                                                    constants.PATIENT_REDUCE_LR_PLATEAU_N_EPOCHS // 4),
+                                                                                    network_config.PATIENT_REDUCE_LR_PLATEAU_N_EPOCHS // 4),
                                                                        patience=int(
-                                                                           1.5 * constants.PATIENT_REDUCE_LR_PLATEAU_N_EPOCHS)),
+                                                                           1.5 * network_config.PATIENT_REDUCE_LR_PLATEAU_N_EPOCHS)),
             'monitor': 'val_loss'
         })
         return conf
