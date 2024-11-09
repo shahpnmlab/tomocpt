@@ -187,8 +187,8 @@ if __name__ == "__main__":
     batch_size = 3
 
     batch = dict(
-        input_data=dict(data=torch.randn(batch_size, 1, *(constants.CHUNK_SIZE,) * 3)),
-        target_data=dict(data=torch.randn(batch_size, 1, *(constants.CHUNK_SIZE,) * 3)),
+        input_data=dict(data=torch.randn(batch_size, 1, *(network_config.CHUNK_SIZE,) * 3)),
+        target_data=dict(data=torch.randn(batch_size, 1, *(network_config.CHUNK_SIZE,) * 3)),
     )
 
     out = model.predict_step(batch["input_data"]["data"], 0, dataloader_idx=0)

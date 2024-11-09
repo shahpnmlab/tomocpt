@@ -1,7 +1,6 @@
 from typing import Literal
 
 import torch
-from tomocpt import constants
 from tomocpt import network_config
 import torch.nn as nn
 
