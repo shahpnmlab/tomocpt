@@ -1,16 +1,12 @@
-import numpy as np
-import pytorch_lightning as pl
 import torch
 import torchio as tio
 import torchvision
 from torch import nn
-from torch.nn.functional import binary_cross_entropy
 
-from tomocpt import constants, network_config
-from tomocpt.dataManager.dataUtils import resize_volume
+from tomocpt.defaultConfigs import network_config
 from tomocpt.networks.baseModel import BaseModel
 from tomocpt.networks.unet import Unet
-from tomocpt.training.losses import dice_loss, gradient3d_loss
+from tomocpt.training.losses import gradient3d_loss
 
 from monai.networks.nets import SwinUNETR
 
@@ -160,7 +156,7 @@ class BasePickingModel(BaseModel):    # TODO: Change the name
 
     def configure_optimizers(self):
         opt = torch.optim.RAdam(self.parameters(), lr=self.lr, betas=(0.9, 0.99),
-                                weight_decay=network_config.WEIGHT_DECAY, decoupled_weight_decay=True)
+                                weight_decay=network_config.WEIGHT_DECAY) #, decoupled_weight_decay=True)
 
         conf = {
             'optimizer': opt,

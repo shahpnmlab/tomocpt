@@ -6,13 +6,13 @@ from typing import Optional
 
 import numpy as np
 from numpy.random import randint
-import pytorch_lightning as pl
 import torch
 import torchio as tio
 import torchvision
 from torch import nn
 from torch.nn import functional as F
-from tomocpt import constants, network_config
+from tomocpt import constants
+from tomocpt.defaultConfigs import network_config
 from tomocpt.networks.baseModel import BaseModel
 from tomocpt.networks.swinunetr import MySwinUNETR
 from tomocpt.networks.unet import Unet

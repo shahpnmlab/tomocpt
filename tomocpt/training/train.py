@@ -5,7 +5,8 @@ import subprocess
 import sys
 from typing import Optional, Literal
 import psutil
-from tomocpt import constants, config, network_config
+from tomocpt import config
+from tomocpt.defaultConfigs import network_config
 
 import torch
 
@@ -21,17 +22,17 @@ from tomocpt.networks.selfSupervisedModel import SelfSupervisedModel
 from tomocpt.utils import accelerator_selector
 
 
-def train(chunkedDataDir: str | None = None,
-          modelDir: str | None = None,
-          experimentName: str | None = None,
-          epochs: str | None = None,
+def train(chunkedDataDir: Optional[str]= None,
+          modelDir: Optional[str] = None,
+          experimentName: Optional[str] = None,
+          epochs: Optional[str] = None,
           model_type: Literal["UNET", "unet", "SwinUNETR", "swinunetr"] | None = None, # TODO: Define the available models in constants
           trainingMode: Literal["selfSupervised", "picking"] = "picking",
-          learning_rate: float | None = None,
-          continueModelDir: str | None = None,
+          learning_rate: Optional[float] = None,
+          continueModelDir: Optional[str] = None,
           restoreFullStateWhenContinue: bool = True,
           compileModel: bool = False,
-          batch_size: int | None = None,
+          batch_size: Optional[int] = None,
           use_cuda: bool = True,
           use_tensorboard: bool = True):
     """
@@ -56,8 +57,8 @@ def train(chunkedDataDir: str | None = None,
     modelDir = modelDir if modelDir is not None else config.MODEL_PATH
     experimentName = experimentName if experimentName is not None else config.EXPERIMENT_NAME
     epochs = epochs if epochs is not None else config.N_EPOCHS
-    model_type = model_type if model_type is not None else config.MODEL_TYPE
-    learning_rate = learning_rate if learning_rate is not None else config.LEARNING_RATE
+    model_type = model_type if model_type is not None else network_config.MODEL_TYPE
+    learning_rate = learning_rate if learning_rate is not None else network_config.LEARNING_RATE
     batch_size = batch_size if batch_size is not None else config.BATCH_SIZE
 
     config.MODEL_TYPE = model_type
@@ -68,7 +69,7 @@ def train(chunkedDataDir: str | None = None,
         checkpointer = ModelCheckpoint(monitor='val_loss', filename='weights', verbose=True)
         callbacks = [
             TQDMProgressBar(refresh_rate=10),
-            EarlyStopping(monitor='val_loss', patience=6 * constants.COSINE_LR_SCHEDULE_N_EPOCHS, verbose=True),
+            EarlyStopping(monitor='val_loss', patience=2 * network_config.COSINE_LR_SCHEDULE_N_EPOCHS, verbose=True),
             checkpointer,
             LearningRateMonitor(logging_interval='epoch'),
         ]
@@ -78,7 +79,7 @@ def train(chunkedDataDir: str | None = None,
         checkpointer = ModelCheckpoint(monitor='val_loss', filename=f'weights_{trainingMode}_{model_type}', verbose=True)
         callbacks = [
             TQDMProgressBar(refresh_rate=10),
-            EarlyStopping(monitor='val_loss', patience=6 * constants.COSINE_LR_SCHEDULE_N_EPOCHS, verbose=True),
+            EarlyStopping(monitor='val_loss', patience=2 * network_config.COSINE_LR_SCHEDULE_N_EPOCHS, verbose=True),
             checkpointer,
             LearningRateMonitor(logging_interval='epoch'),
         ]
@@ -119,10 +120,11 @@ def train(chunkedDataDir: str | None = None,
     trainer = pl.Trainer(default_root_dir=modelDir, devices=f'{dev_count}', accelerator='auto',
                          max_epochs=epochs, callbacks=callbacks,
                          logger=logger,
+                         overfit_batches= config.OVERFIT_N_BATCHES,
                          # limit_val_batches=constants.LIMIT_VALIDATION_BATCHES,
                          # val_check_interval=constants.VAL_CHECK_INTERVAL,
                          strategy="ddp_find_unused_parameters_false" if accel == "gpu" else None,
-                         precision=constants.TORCH_FLOAT_PRECISION)
+                         precision=network_config.TORCH_FLOAT_PRECISION)
     if trainer.is_global_zero:
         _copyCodeForReproducibility(trainer.log_dir)
 
@@ -133,10 +135,10 @@ def train(chunkedDataDir: str | None = None,
 
     trainer.fit(pl_model, datamodule=data, ckpt_path=resume_from_checkpoint)
 
-    if trainer.is_global_zero:
-        model = torch.load(checkpointer.best_model_path, weights_only=False)
-        model_scripted = torch.jit.script(model)  # Export to TorchScript
-        model_scripted.save(checkpointer.best_model_path+".scripted.pt")
+    # if trainer.is_global_zero:
+    #     model = torch.load(checkpointer.best_model_path, weights_only=False)
+    #     model_scripted = torch.jit.script(model)  # Export to TorchScript
+    #     model_scripted.save(checkpointer.best_model_path+".scripted.pt")
 
 
 def _copyCodeForReproducibility(logdir):

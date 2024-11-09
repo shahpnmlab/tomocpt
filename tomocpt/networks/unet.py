@@ -1,7 +1,7 @@
 from typing import Literal
 
 import torch
-from tomocpt import network_config
+from tomocpt.defaultConfigs import network_config
 import torch.nn as nn
 
 NORM_LAYER = nn.InstanceNorm3d

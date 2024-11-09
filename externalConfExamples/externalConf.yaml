@@ -1,0 +1,18 @@
+run:
+  N_EPOCHS: 5
+network:
+  CHUNK_SIZE: 32
+
+# TO RUN THIS you will do something like:
+# python -m tomocpt.main run.MODEL_PATH="77/"    --config-dir externalConfExamples/ --config-name externalConf
+
+############# DO NOT EDIT BELOW THIS POINT #####################
+defaults:
+  - train: default  # This will load the original run/default.yaml
+  - network: default  # This will load the original network/default.yaml
+  - _self_  # This will merge the following overrides
+
+hydra:
+  output_subdir: null
+  run:
+    dir: .

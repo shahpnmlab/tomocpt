@@ -1,9 +1,16 @@
-import os
-import tempfile
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from hydra.core.config_store import ConfigStore
 
-DATA_CHUNKS_DIR: str = "/tmp/refactor/chunks/"
-BATCH_SIZE: int = 8
-WORKERS_FOR_DATA: int = 1
-N_GPUS: int = 1
-USE_CUDA_FOR_DATA: bool = False
+from tomocpt.defaultConfigs.network_config import NetworkConfig
+from tomocpt.defaultConfigs.train_config import TrainConfig
+
+
+@dataclass
+class MainConfig:
+    train: TrainConfig = field(default_factory=TrainConfig)
+    network: NetworkConfig = field(default_factory=NetworkConfig)
+
+cs = ConfigStore.instance()
+cs.store(name="main", node=MainConfig)
+cs.store(group="run", name="default", node=TrainConfig)
+cs.store(group="network", name="default", node=NetworkConfig)
