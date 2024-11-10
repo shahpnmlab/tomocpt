@@ -3,9 +3,9 @@ from typing import Optional
 import pytorch_lightning as pl
 from torch.utils.data import DataLoader
 
-from tomocpt import config
+from tomocpt.mainConfig import mainConfig
 from tomocpt.dataManager.datasetIO import VolumeDatsetIO
-
+config = mainConfig.train
 
 class Data(pl.LightningDataModule):
 

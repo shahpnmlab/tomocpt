@@ -1,41 +1,34 @@
-from typing import Annotated
+from typing import Annotated, TypeVar
 
-import hydra
 import typer
-from omegaconf import OmegaConf, DictConfig
-from tomocpt.config import MainConfig
-from configManager import create_configurable_app
-from training.train import train, ModelTypes, TrainingModes
+from omegaconf import DictConfig
 
-app = create_configurable_app(MainConfig)
+import tomocpt.mainConfig
+from tomocpt.mainConfig import MainConfig
+from tomocpt.configManager import create_configurable_app, update_dataclass_from_config
+from tomocpt.training.train import train
 
-# Annotated[str, typer.Option(help="Model name")]
-TrainingModes
-@app.command()
-def train_cli(
-          chunks_dir: Annotated[str, typer.Option(help="Model name")]=None,
-          model_dir: Annotated[str, typer.Option(help="Model name")]=None,
-          experimentName: Annotated[str, typer.Option(help="Model name")] = None,
-          n_epochs: Annotated[int, typer.Option(help="Model name")] = None,
-          trainingMode: Annotated[TrainingModes, typer.Option(help="Model name")] = "picking",
-          learning_rate: Annotated[float, typer.Option(help="Model name")] = None,
-          continueModelDir: Annotated[str, typer.Option(help="Model name")] = None,
-          restoreFullStateWhenContinue: bool = True,
-          compileModel: bool = False,
-          batch_size: Annotated[int, typer.Option(help="Model name")] = None,
-          use_cuda: bool = True,
-          use_tensorboard: bool = True,
-          config: DictConfig = None
-          ):
-    #TODO: Set the config as global
-    config.train.n_epochs = n_epochs
-    update_config_from_args()
-    register_config(config)
-    train(chunks_dir=chunks_dir, model_dir=model_dir, experimentName=experimentName)
+from functools import wraps
+
+def app_register_command(func):
+    @app.command()
+    @wraps(func)
+    def wrapper(*args, **kwargs):
+        return func(*args, **kwargs)
+    return wrapper
+
+def set_global_config_fn(config:DictConfig):
+    update_dataclass_from_config(tomocpt.mainConfig.mainConfig, config)
+
+app = create_configurable_app(MainConfig, set_global_config_fn=set_global_config_fn)
+
+app_register_command(train)
+
 
 if __name__ == "__main__":
     app.run()
 
     """
-
+python -m tomocpt.main  --config-file /home/sanchezg/sideProjects/tomocpt/externalConfExamples/externalConf.yaml
+python -m tomocpt.main  --train-experiment-name kk --config-file /home/sanchezg/sideProjects/tomocpt/externalConfExamples/externalConf.yam
     """

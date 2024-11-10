@@ -3,7 +3,9 @@ import torchio as tio
 import torchvision
 from torch import nn
 
-from tomocpt.defaultConfigs import network_config
+from tomocpt.mainConfig import mainConfig
+network_config = mainConfig.network
+train_config = mainConfig.train
 from tomocpt.networks.baseModel import BaseModel
 from tomocpt.networks.unet import Unet
 from tomocpt.training.losses import gradient3d_loss
@@ -22,7 +24,7 @@ class BasePickingModel(BaseModel):    # TODO: Change the name
 
     def __init__(self, lr: float | None = None,
                  num_levels: int | None = None,
-                model=None):
+                 model=None):
         self.set_default_args(lr=lr,
                               num_levels=num_levels)
         super(BasePickingModel, self).__init__()
@@ -50,12 +52,12 @@ class BasePickingModel(BaseModel):    # TODO: Change the name
         }
 
         if model is None:
-            self.model_name = network_config.MODEL_TYPE
-            model_constructor = MODEL_TYPES.get(network_config.MODEL_TYPE.upper())
+            self.model_name = str(network_config.model_type.value)
+            model_constructor = MODEL_TYPES.get(self.model_name.upper())
             if model_constructor:
                 self.model = model_constructor()
             else:
-                raise ValueError(f"Unknown model type: {network_config.MODEL_TYPE}")
+                raise ValueError(f"Unknown model type: {network_config.model_type.value}")
         else:
             self.model_name = model.model_name
             self.model = model.model
@@ -156,7 +158,7 @@ class BasePickingModel(BaseModel):    # TODO: Change the name
 
     def configure_optimizers(self):
         opt = torch.optim.RAdam(self.parameters(), lr=self.lr, betas=(0.9, 0.99),
-                                weight_decay=network_config.WEIGHT_DECAY) #, decoupled_weight_decay=True)
+                                weight_decay=train_config.WEIGHT_DECAY) #, decoupled_weight_decay=True)
 
         conf = {
             'optimizer': opt,

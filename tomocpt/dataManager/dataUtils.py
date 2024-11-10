@@ -12,7 +12,7 @@ from skimage.transform import resize
 from typing import Callable, Union, Tuple, List, Optional
 
 from tomocpt.constants import LABELS_DIR_NAME_PREFIX
-from tomocpt import config, constants
+from tomocpt import mainConfig, constants
 
 
 def symmetrize_padding(inp):

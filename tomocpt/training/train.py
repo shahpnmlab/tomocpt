@@ -3,15 +3,17 @@ import os.path as osp
 import shutil
 import subprocess
 import sys
-from enum import Enum
-from typing import Optional, Literal
+from typing import Annotated
 import psutil
-from tomocpt import config
-from tomocpt.defaultConfigs import network_config
+import typer
+from omegaconf import DictConfig
+
+from tomocpt.defaultConfigs.train_config import TrainingModes
+from tomocpt.mainConfig import mainConfig
 
 import torch
 
-torch.set_float32_matmul_precision(network_config.TORCH_MATMUL_PRECISION)  # TODO: This should be config
+torch.set_float32_matmul_precision(mainConfig.network.TORCH_MATMUL_PRECISION)  # TODO: This should be config
 
 from pytorch_lightning.callbacks import TQDMProgressBar, EarlyStopping, ModelCheckpoint, LearningRateMonitor, \
     StochasticWeightAveraging
@@ -22,59 +24,27 @@ from tomocpt.networks.pickingModel import BasePickingModel
 from tomocpt.networks.selfSupervisedModel import SelfSupervisedModel
 from tomocpt.utils import accelerator_selector
 
-class ModelTypes(Enum):
-    UNET = "UNET"
-    unet = "unet"
-    SwinUNETR = "SwinUNETR"
-    swinunetr = "swinunetr"
-
-class TrainingModes(Enum):
-    selfSupervised = "selfSupervised"
-    picking = "picking"
-
-def train(chunks_dir: Optional[str]= None,
-          model_dir: Optional[str] = None,
-          experimentName: Optional[str] = None,
-          epochs: Optional[str] = None,
-          model_type: ModelTypes | None = None, # TODO: Define the available models in constants
-          trainingMode: TrainingModes = "picking",
-          learning_rate: Optional[float] = None,
-          continueModelDir: Optional[str] = None,
-          restoreFullStateWhenContinue: bool = True,
-          compileModel: bool = False,
-          batch_size: Optional[int] = None,
-          use_cuda: bool = True,
-          use_tensorboard: bool = True):
-    """
-
-    :param chunks_dir: the directory with the ready to train chunks.
-    :param model_dir: the directory where the models will be saved
-    :param experimentName: dir name to store checkpoints in
-    :param epochs: number of epochs to train
-    :param model_type: The model type name to be selected. Do not change it if using a previous chekpoint.
-    :param trainingMode: Either for training a selfSupervised or supervised network
-    :param learning_rate: learning_rate
-    :param continueModelDir: The directory of a previously trained model to continue its training
-    :param restoreFullStateWhenContinue: If True, the optimizer state, Learning rate, etc. from the last checkpoint will be restored. Otherwise, only the weights
-    :param compileModel: If True, use pytorch 2.X compile
-    :param batch_size: The batch size
-    :param use_cuda: True to use cuda (if available)
-    :param use_tensorboard: True to launch tensorboard
-    :return:
-    """
-
-    chunks_dir = chunks_dir if chunks_dir is not None else config.chunks_dir
-    model_dir = model_dir if model_dir is not None else config.model_dir
-    experimentName = experimentName if experimentName is not None else config.EXPERIMENT_NAME
-    epochs = epochs if epochs is not None else config.N_EPOCHS
-    model_type = model_type if model_type is not None else network_config.MODEL_TYPE
-    learning_rate = learning_rate if learning_rate is not None else network_config.LEARNING_RATE
-    batch_size = batch_size if batch_size is not None else config.BATCH_SIZE
-
-    config.MODEL_TYPE = model_type
-    kwargs = dict(lr=learning_rate)
-
-    if trainingMode == "picking":
+network_config = mainConfig.network
+train_config = mainConfig.train
+def train(train_experiment_name: Annotated[str, typer.Option(help="The name name")] = None,
+          train_chunks_dir: Annotated[str, typer.Option(help="Where the data prepared for training is name")] = None,
+          train_model_dir: Annotated[str, typer.Option(help="Model name")] = None,
+          train_n_epochs: Annotated[int, typer.Option(help="Model name")] = None,
+          train_mode: Annotated[TrainingModes, typer.Option(help="Executing mode, either picking or "
+                                                                   "selfSupervised name")] = None,
+          train_learning_rate: Annotated[float, typer.Option(help="Model name")] = None,
+          continueModelDir: Annotated[str, typer.Option(help="Model name")] = None,
+          restoreFullStateWhenContinue: Annotated[bool, typer.Option(help="Model name")] = True,
+          compileModel: Annotated[bool, typer.Option(help="Model name")] = False,
+          batch_size: Annotated[int, typer.Option(help="Model name")] = None,
+          use_cuda: Annotated[bool, typer.Option(help="Model name")] = True,
+          use_tensorboard: Annotated[bool, typer.Option(help="Model name")] = True,
+          config: DictConfig = None
+          ):
+    kwargs = dict(lr=train_learning_rate)
+    print(mainConfig)
+    breakpoint()
+    if train_mode == TrainingModes.picking:
         Model = BasePickingModel
         checkpointer = ModelCheckpoint(monitor='val_loss', filename='weights', verbose=True)
         callbacks = [
@@ -84,9 +54,11 @@ def train(chunks_dir: Optional[str]= None,
             LearningRateMonitor(logging_interval='epoch'),
         ]
     # This will be consolidated to pre-train and supervised train
-    elif trainingMode == "selfSupervised":
+    elif train_mode == TrainingModes.selfSupervised:
         Model = SelfSupervisedModel
-        checkpointer = ModelCheckpoint(monitor='val_loss', filename=f'weights_{trainingMode}_{model_type}', verbose=True)
+        checkpointer = ModelCheckpoint(monitor='val_loss',
+                                       filename=f'weights_{train_mode}_{network_config.model_type}',
+                                       verbose=True)
         callbacks = [
             TQDMProgressBar(refresh_rate=10),
             EarlyStopping(monitor='val_loss', patience=2 * network_config.COSINE_LR_SCHEDULE_N_EPOCHS, verbose=True),
@@ -94,12 +66,12 @@ def train(chunks_dir: Optional[str]= None,
             LearningRateMonitor(logging_interval='epoch'),
         ]
     else:
-        raise ValueError("Error, trainingMode (%s) not valid" % trainingMode)
+        raise ValueError("Error, mode (%s) not valid" % train_mode)
 
     if continueModelDir:
         resume_from_checkpoint = continueModelDir if restoreFullStateWhenContinue else None
 
-        if trainingMode == "picking":
+        if train_mode == TrainingModes.picking:
             try:
                 pl_model = BasePickingModel.load_from_checkpoint(continueModelDir, **kwargs)
             except RuntimeError:
@@ -117,20 +89,20 @@ def train(chunks_dir: Optional[str]= None,
     callbacks += [
         StochasticWeightAveraging(annealing_epochs=network_config.COSINE_LR_SCHEDULE_N_EPOCHS, swa_lrs=0.1 * pl_model.lr)]
 
-    assert os.path.isdir(chunks_dir), f"Error, prepared_data_dir: {chunks_dir} does not exist "
-    data = Data(data_dir=chunks_dir, return_labels=(trainingMode == "picking"),
+    assert os.path.isdir(train_chunks_dir), f"Error, prepared_data_dir: {train_chunks_dir} does not exist "
+    data = Data(data_dir=train_chunks_dir, return_labels=(train_mode == TrainingModes.picking),
                 batch_size=batch_size,
-                workers_for_data=config.WORKERS_FOR_DATA)
+                workers_for_data=train_config.WORKERS_FOR_DATA)
     data.setup()
     print(len(data.train_dataloader()))
 
-    logger = TensorBoardLogger(save_dir=f'{model_dir}/{experimentName}', name='', version='')
+    logger = TensorBoardLogger(save_dir=f'{train_model_dir}/{train_experiment_name}', name='', version='')
 
     accel, dev_count = accelerator_selector(use_cuda=use_cuda)
-    trainer = pl.Trainer(default_root_dir=model_dir, devices=f'{dev_count}', accelerator='auto',
-                         max_epochs=epochs, callbacks=callbacks,
+    trainer = pl.Trainer(default_root_dir=train_model_dir, devices=f'{dev_count}', accelerator='auto',
+                         max_epochs=train_n_epochs, callbacks=callbacks,
                          logger=logger,
-                         overfit_batches= config.OVERFIT_N_BATCHES,
+                         overfit_batches= train_config.OVERFIT_N_BATCHES,
                          # limit_val_batches=constants.LIMIT_VALIDATION_BATCHES,
                          # val_check_interval=constants.VAL_CHECK_INTERVAL,
                          strategy="ddp_find_unused_parameters_false" if accel == "gpu" else None,
@@ -139,7 +111,7 @@ def train(chunks_dir: Optional[str]= None,
         _copyCodeForReproducibility(trainer.log_dir)
 
     if use_tensorboard:
-        subprocess.Popen(["tensorboard", "--logdir", model_dir], stdout=sys.stdout, stderr=open("/dev/null"))
+        subprocess.Popen(["tensorboard", "--logdir", train_model_dir], stdout=sys.stdout, stderr=open("/dev/null"))
         print("Use the url below to monitor training on tensorboard")
     print("Training starts")
 
@@ -196,18 +168,3 @@ def _copyCodeForReproducibility(logdir):
     with open(fname, "w") as f:
         f.write(parent_command)
 
-
-if __name__ == '__main__':
-    from argParseFromDoc import AutoArgumentParser
-
-    parser = AutoArgumentParser()
-    parser.add_args_from_function(train)
-    train(**vars(parser.parse_args()))
-    print(f"Training has ended. Cleaning up {config.chunks_dir}")
-    shutil.rmtree(config.chunks_dir, ignore_errors=True)
-
-"""
-
-python -m tomocpt.training.train 
-
-"""

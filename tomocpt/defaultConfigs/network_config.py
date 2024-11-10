@@ -1,9 +1,14 @@
 
 from dataclasses import dataclass, asdict
-
+from enum import Enum
 
 
 # ------------------ADVANCED KNOBS --------------------------- #
+class ModelTypes(Enum):
+    UNET = "UNET"
+    unet = "unet"
+    SwinUNETR = "SwinUNETR"
+    swinunetr = "swinunetr"
 
 @dataclass
 class NetworkConfig:
@@ -11,10 +16,9 @@ class NetworkConfig:
     CHUNK_STRIDE: int = 32
     RANDOM_FRACTION_TO_SAMPLE_TRAIN: float = -1.  # Train on all the chunks
 
-    MODEL_TYPE: str = "swinunetr" # or unet
+    model_type: ModelTypes = ModelTypes.swinunetr #"swinunetr" # or unet
 
-    LEARNING_RATE:float = 4e-4
-    WEIGHT_DECAY:float = 1e-8
+
 
     #### THIS IS CONFIG FOR U-NET
     IN_CHANNELS: int = 1
@@ -56,3 +60,6 @@ class NetworkConfig:
 if __name__ == "__main__":
     import yaml
     print(yaml.dump(asdict(NetworkConfig())))
+
+
+

@@ -12,28 +12,30 @@ import torchvision
 from torch import nn
 from torch.nn import functional as F
 from tomocpt import constants
-from tomocpt.defaultConfigs import network_config
 from tomocpt.networks.baseModel import BaseModel
+from tomocpt.networks.pickingModel import train_config
 from tomocpt.networks.swinunetr import MySwinUNETR
 from tomocpt.networks.unet import Unet
-
+from tomocpt.mainConfig import mainConfig
+network_config = mainConfig.network
 
 class SelfSupervisedModel(BaseModel):
     def set_default_args(self, lr: float | None,
                          num_levels: int | None):
 
-        self.lr = lr if lr is not None else network_config.LEARNING_RATE
+        self.lr = lr if lr is not None else network_config.learning_rate
         self.num_levels = num_levels if num_levels is not None else network_config.NUM_LEVELS
 
     def __init__(self, lr: float | None = None,
-                 num_levels: int | None = None):
+                 num_levels: int | None = None, model: Optional[BaseModel] = None):
 
         self.set_default_args(lr = lr,
                               num_levels = num_levels)
+        self.model = model
 
         super(SelfSupervisedModel, self).__init__()
 
-        n_voxels = constants.CHUNK_SIZE
+        n_voxels = network_config.CHUNK_SIZE
 
         MODEL_TYPES = {
             "UNET": lambda: Unet(
@@ -56,22 +58,22 @@ class SelfSupervisedModel(BaseModel):
         }
 
         if model is None:
-            self.model_name = network_config.MODEL_TYPE
-            model_constructor = MODEL_TYPES.get(network_config.MODEL_TYPE.upper())
+            self.model_name = network_config.model_type.value
+            model_constructor = MODEL_TYPES.get(self.model_name.upper())
             if model_constructor:
                 self.model = model_constructor()
             else:
-                raise ValueError(f"Unknown model type: {network_config.MODEL_TYPE}")
+                raise ValueError(f"Unknown model type: {self.model_name}")
         else:
             self.model_name = model.model_name
             self.model = model.model
 
 
-        exampleX = torch.rand(network_config.BATCH_SIZE, 1, n_voxels, n_voxels, n_voxels)
+        exampleX = torch.rand(train_config.BATCH_SIZE, 1, n_voxels, n_voxels, n_voxels)
         out, hid = self.model(exampleX)
         batchSize, nchan, s, _, _ = hid.shape
         assert batchSize > 1
-        self.model_name = network_config.MODEL_TYPE
+        self.model_name = network_config.model_type
         print(f"SelfSupervisedModel using {self.model_name}")
 
         def generateHead(outDims, bias=False):
@@ -97,7 +99,7 @@ class SelfSupervisedModel(BaseModel):
         contrp = self.contrastive_head(hid)
         return rotp, contrp, out
 
-    def _step(self, batch):
+    def _step(self, batch, batch_idx):
 
         x = self.resolve_batch(batch)
 
@@ -184,7 +186,7 @@ class SelfSupervisedModel(BaseModel):
 
     def configure_optimizers(self):
         opt = torch.optim.RAdam(self.parameters(), lr=self.lr, betas=(0.9, 0.99),
-                                weight_decay=1e-8, decoupled_weight_decay=True)
+                                weight_decay=1e-8) #decoupled_weight_decay=True)
 
         conf = {
             'optimizer': opt,
@@ -333,7 +335,7 @@ if __name__ == "__main__":
     print(lFun(torch.tensor([[1, 0, 0], [1, 0, 0.], [1, 1, 1]]), torch.tensor([[1, 0, 0], [1, 0, 0.], [1, 1, 1]])))
     print(lFun(torch.tensor([[1, 0, 0], [1, 0, 0.], [1, 0, 0.]]), torch.tensor([[1, 0, 0], [1, 0, 0.], [1, 0, 0.]])))
 
-    network_config.MODEL_TYPE = "SwinUNETR"  # "UNET" #"SwinUNETR"
+    network_config.model_type = "SwinUNETR"  # "UNET" #"SwinUNETR"
     model = SelfSupervisedModel()
 
     chunk_size = network_config.CHUNK_SIZE

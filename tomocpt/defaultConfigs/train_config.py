@@ -1,18 +1,28 @@
 from dataclasses import dataclass
+from enum import Enum
 from typing import Optional
+
+class TrainingModes(Enum):
+    selfSupervised = "selfSupervised"
+    picking = "picking"
 
 
 @dataclass
 class TrainConfig:
     chunks_dir: str = "/tmp/refactor/chunks/"
     model_dir: str = "/tmp/model"
-    EXPERIMENT_NAME: str = "unnamed"
-    N_EPOCHS: int = 10
+    experiment_name: str = "unnamed"
+    n_epochs: int = 10
     OVERFIT_N_BATCHES: Optional[int] = 10
+    mode: TrainingModes = TrainingModes.picking
 
     BATCH_SIZE: int = 2
     WORKERS_FOR_DATA: int = 1
     N_GPUS: int = 1
     USE_CUDA_FOR_DATA: bool = False
 
+    learning_rate:float = 4e-4
+    WEIGHT_DECAY:float = 1e-8
+
     restoreFullStateWhenContinue: bool = True
+

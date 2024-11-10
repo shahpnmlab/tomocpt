@@ -1,9 +1,11 @@
 # config_manager.py
+import operator
 import os.path
+from dataclasses import is_dataclass, fields
 from enum import Enum
-from functools import wraps
+from functools import wraps, reduce
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Type, TypeVar, Union
+from typing import Any, Callable, Dict, List, Optional, Type, TypeVar, Union, MutableMapping, Tuple
 import inspect
 
 import typer
@@ -24,9 +26,13 @@ T = TypeVar('T')
 class ConfigurableApp:
     """Factory class for creating Typer apps with Hydra config management"""
 
-    def __init__(self, base_config_class: Type[Any], config_store_name: str = "base_config"):
+    def __init__(self, base_config_class: Type[Any], config_store_name: str = "base_config",
+                 set_global_config_fn: Optional[Callable[[DictConfig], None]]=None):
+
         self.base_config_class = base_config_class
         self.config_store_name = config_store_name
+        self.set_global_config_fn = set_global_config_fn
+        self.return_config = False
         self.app = typer.Typer()
 
         # Register the config with Hydra
@@ -66,6 +72,54 @@ class ConfigurableApp:
 
         return conflicts
 
+    def _flatten_dict(self, dictionary: dict, parent_key: str = '', separator: str = '/') -> dict:
+        """Flatten a nested dictionary with path information."""
+        items = []
+        for key, value in dictionary.items():
+            new_key = f"{parent_key}{separator}{key}" if parent_key else key
+            if isinstance(value, MutableMapping):
+                items.extend(self._flatten_dict(value, new_key, separator=separator).items())
+            else:
+                items.append((new_key, (key, value)))
+        return dict(items)
+
+    def _get_from_dict(self, data_dict: dict, map_list: list) -> Any:
+        """Get a value from a nested dictionary using a list of keys."""
+        return reduce(operator.getitem, map_list, data_dict)
+
+    def _set_in_dict(self, data_dict: dict, map_list: list, value: Any) -> None:
+        """Set a value in a nested dictionary using a list of keys."""
+        self._get_from_dict(data_dict, map_list[:-1])[map_list[-1]] = value
+
+    def _handle_config_overrides(self, func_kwargs: dict, config: DictConfig) -> Tuple[Dict[str, Any], DictConfig]:
+        """
+        Handle overrides from command-line arguments that match config paths.
+        Args:
+            func_kwargs: Dictionary of function arguments
+            config: The configuration object
+        Returns:
+            Updated configuration object
+        """
+        # Convert config to dict for flattening
+        config_dict = OmegaConf.to_container(config, resolve=True)
+        flat_config = self._flatten_dict(config_dict)
+        # Check for overlapping parameters
+        for path, (key, value) in flat_config.items():
+            cli_key = path.replace("/", "_")
+
+            if cli_key in func_kwargs:
+                if func_kwargs[cli_key] is not None:
+                    cli_value = func_kwargs[cli_key]
+                    if str(value) != str(cli_value):  # Only update if values are different
+                        print(f"Overriding config value '{path}': {value} → {cli_value}")
+                        self._set_in_dict(config_dict, path.split("/"), cli_value)
+                else:
+                    func_kwargs[cli_key] = value
+
+
+        # Convert back to DictConfig
+        return func_kwargs, OmegaConf.create(config_dict)
+
     def add_config_options(self, func: Callable) -> Callable:
         """Add configuration options to a function"""
 
@@ -73,25 +127,36 @@ class ConfigurableApp:
             # Extract config-related parameters
             config_file = kwargs.pop('config_file', None)
             config_args = kwargs.pop('config_args', [])
-
             config_merge_preference = kwargs.pop('config_merge_preference', None)
-
             # Process the configuration
             cfg = self.process_config(config_file, config_args, config_merge_preference)
-
+            # breakpoint()
+            # Handle automatic overrides from command-line arguments
+            kwargs, cfg = self._handle_config_overrides(kwargs, cfg)
+            if self.set_global_config_fn is not None:
+                self.set_global_config_fn(cfg)
             # Call the original function
-            return func(*args, config=cfg, **kwargs)
+            if self.return_config:
+                return func(*args, config=cfg, **kwargs)
+            else:
+                assert self.set_global_config_fn is not None, ("Error, if you do not provide and set_global_config_fn,"
+                                                               " then you have to add a config:DictConfig argument to "
+                                                               "your function ")
+                return func(*args, **kwargs)
 
         # Get original signature and parameters
         sig = inspect.signature(func)
         orig_params = []
-        #We need to make sure that only typer.Option are provided by the user, as typer argument is used for config
         for name, p in sig.parameters.items():
-            # print(name, p)
             if p.name != 'config':
                 if not all([isinstance(x, typer.models.OptionInfo) for x in p.annotation.__metadata__]):
-                    raise typer.BadParameter(f"Paramenter {name} was not provided as typer.Option. typer.Argument is not supported")
+                    raise typer.BadParameter(
+                        f"Parameter {name} was not provided as typer.Option. typer.Argument is not supported"
+                    )
                 orig_params.append(p)
+            else:
+                self.return_config = True
+
         # Add the config parameters to the function
         params = [
             inspect.Parameter(
@@ -104,7 +169,7 @@ class ConfigurableApp:
                 'config_args',
                 inspect.Parameter.KEYWORD_ONLY,
                 default=None,
-                annotation=Annotated[Optional[List[str]], typer.Argument(help="Hydra-style config modifications ")]
+                annotation=Annotated[Optional[List[str]], typer.Argument(help="Hydra-style config modifications")]
             ),
             inspect.Parameter(
                 'config_merge_preference',
@@ -113,13 +178,13 @@ class ConfigurableApp:
                 annotation=Annotated[Optional[MergePreference], typer.Option(help="How to handle config conflicts")]
             )
         ]
+
         # Create new signature with correct parameter order
         run_command.__signature__ = sig.replace(parameters=[*orig_params, *params])
         run_command.__name__ = func.__name__
         run_command.__doc__ = func.__doc__
 
         return run_command
-
     def process_config(
             self,
             config_file: Optional[Path],
@@ -190,10 +255,117 @@ class ConfigurableApp:
         """Run the app with subcommands"""
         self.app()
 
+def dictconfig_to_dataclass(config: DictConfig, target_class: Type[T]) -> T:
+    """
+    Convert an OmegaConf DictConfig to a nested dataclass structure.
+
+    Args:
+        config: OmegaConf DictConfig object
+        target_class: The target dataclass type
+
+    Returns:
+        An instance of the target dataclass
+    """
+    if not is_dataclass(target_class):
+        raise ValueError(f"{target_class.__name__} is not a dataclass")
+
+    # Convert DictConfig to regular dict
+    config_dict = OmegaConf.to_container(config, resolve=True)
+    if config_dict is None:
+        raise ValueError("Failed to convert DictConfig to dict")
+
+    # Process each field in the dataclass
+    init_kwargs = {}
+    for field in fields(target_class):
+        field_value = config_dict.get(field.name)
+        if field_value is None:
+            continue
+
+        # Handle nested dataclass
+        if is_dataclass(field.type):
+            if isinstance(field_value, dict):
+                init_kwargs[field.name] = dictconfig_to_dataclass(
+                    OmegaConf.create(field_value),
+                    field.type
+                )
+        # Handle list of dataclasses
+        elif hasattr(field.type, "__origin__") and field.type.__origin__ is list:
+            if len(field.type.__args__) > 0 and is_dataclass(field.type.__args__[0]):
+                nested_type = field.type.__args__[0]
+                if isinstance(field_value, list):
+                    init_kwargs[field.name] = [
+                        dictconfig_to_dataclass(OmegaConf.create(item), nested_type)
+                        if isinstance(item, dict)
+                        else item
+                        for item in field_value
+                    ]
+                else:
+                    init_kwargs[field.name] = field_value
+        else:
+            init_kwargs[field.name] = field_value
+
+    return target_class(**init_kwargs)
+
+
+def update_dataclass_from_config(dc_instance: Any, config: DictConfig) -> None:
+    """
+    Recursively updates a dataclass instance with values from a DictConfig.
+
+    Args:
+        dc_instance: The dataclass instance to update
+        config: DictConfig containing the update values
+
+    Example:
+        @dataclass
+        class NestedConfig:
+            value: int
+
+        @dataclass
+        class MainConfig:
+            name: str
+            nested: NestedConfig
+
+        config = OmegaConf.create({
+            "name": "new_name",
+            "nested": {"value": 42}
+        })
+
+        instance = MainConfig(name="old_name", nested=NestedConfig(value=0))
+        update_dataclass_from_config(instance, config)
+    """
+    if not is_dataclass(dc_instance):
+        raise ValueError("First argument must be a dataclass instance")
+
+    if not isinstance(config, DictConfig):
+        raise ValueError("Second argument must be a DictConfig")
+
+    # Get all fields of the dataclass
+    dc_fields = {field.name: field for field in fields(dc_instance)}
+
+    # Iterate through the config keys
+    for key, value in config.items():
+        if key not in dc_fields:
+            continue
+
+        if isinstance(value, DictConfig):
+            # If the value is a nested DictConfig and the corresponding
+            # dataclass field is also a dataclass, recurse
+            current_value = getattr(dc_instance, key)
+            if is_dataclass(current_value):
+                update_dataclass_from_config(current_value, value)
+        else:
+            # Update the simple value
+            setattr(dc_instance, key, value)
+
+
 
 # Convenience function
 def create_configurable_app(
         base_config_class: Type[Any],
-        config_store_name: str = "base_config"
+        config_store_name: str = "base_config",
+        set_global_config_fn: Optional[Callable[[DictConfig], None]]=None
 ) -> ConfigurableApp:
-    return ConfigurableApp(base_config_class, config_store_name)
+    return ConfigurableApp(base_config_class, config_store_name, set_global_config_fn=set_global_config_fn)
+
+
+
