@@ -35,7 +35,7 @@ def train(train_chunks_dir: Annotated[str, typer.Option(help="Path to where the 
           train_mode: Annotated[TrainingModes, typer.Option(help="Training mode, either picking or "
                                                                    "selfSupervised")] = None,
           train_learning_rate: Annotated[float, typer.Option(help="The learning rate")] = train_config.learning_rate,
-          train_batch_size: Annotated[int, typer.Option(help="Size of batch for training/fine-tuning")] = train_config.batch,
+          train_batch_size: Annotated[int, typer.Option(help="Size of batch for training/fine-tuning")] = train_config.batch_size,
           train_continue: Annotated[Path, typer.Option(help="Path to pre-existing checkpoint file for fine-tuning with new data")] = None,
           train_restore_full_state: Annotated[bool, typer.Option(help="Restore the network states to the pre-existing checkpoint when fine-tuning")] = True,
           train_compile_model: Annotated[bool, typer.Option(help="Compile model for faster inference")] = False,
