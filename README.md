@@ -1,10 +1,10 @@
-![alt text](assets/logo.png "Title")
+<img src="assets/logo.png">
 
 ### tomoCPT (tomogram Centroid Prediction Tool) is a deep learning based program for enabling centroid prediction of objects in 3D cryo-tomograms.
 
 # Installation
 # Usage
-![alt_text](assets/workflow.png)
+<img src="assets/workflow.png">
 
 # Changelog
 # Development
