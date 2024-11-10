@@ -1,0 +1,2 @@
+from tomocpt.configManager.configManager import create_configurable_app
+

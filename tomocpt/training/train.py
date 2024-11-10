@@ -3,6 +3,7 @@ import os.path as osp
 import shutil
 import subprocess
 import sys
+from enum import Enum
 from typing import Optional, Literal
 import psutil
 from tomocpt import config
@@ -21,13 +22,22 @@ from tomocpt.networks.pickingModel import BasePickingModel
 from tomocpt.networks.selfSupervisedModel import SelfSupervisedModel
 from tomocpt.utils import accelerator_selector
 
+class ModelTypes(Enum):
+    UNET = "UNET"
+    unet = "unet"
+    SwinUNETR = "SwinUNETR"
+    swinunetr = "swinunetr"
 
-def train(chunkedDataDir: Optional[str]= None,
-          modelDir: Optional[str] = None,
+class TrainingModes(Enum):
+    selfSupervised = "selfSupervised"
+    picking = "picking"
+
+def train(chunks_dir: Optional[str]= None,
+          model_dir: Optional[str] = None,
           experimentName: Optional[str] = None,
           epochs: Optional[str] = None,
-          model_type: Literal["UNET", "unet", "SwinUNETR", "swinunetr"] | None = None, # TODO: Define the available models in constants
-          trainingMode: Literal["selfSupervised", "picking"] = "picking",
+          model_type: ModelTypes | None = None, # TODO: Define the available models in constants
+          trainingMode: TrainingModes = "picking",
           learning_rate: Optional[float] = None,
           continueModelDir: Optional[str] = None,
           restoreFullStateWhenContinue: bool = True,
@@ -37,8 +47,8 @@ def train(chunkedDataDir: Optional[str]= None,
           use_tensorboard: bool = True):
     """
 
-    :param chunkedDataDir: the directory with the ready to train chunks.
-    :param modelDir: the directory where the models will be saved
+    :param chunks_dir: the directory with the ready to train chunks.
+    :param model_dir: the directory where the models will be saved
     :param experimentName: dir name to store checkpoints in
     :param epochs: number of epochs to train
     :param model_type: The model type name to be selected. Do not change it if using a previous chekpoint.
@@ -53,8 +63,8 @@ def train(chunkedDataDir: Optional[str]= None,
     :return:
     """
 
-    chunkedDataDir = chunkedDataDir if chunkedDataDir is not None else config.DATA_CHUNKS_DIR
-    modelDir = modelDir if modelDir is not None else config.MODEL_PATH
+    chunks_dir = chunks_dir if chunks_dir is not None else config.chunks_dir
+    model_dir = model_dir if model_dir is not None else config.model_dir
     experimentName = experimentName if experimentName is not None else config.EXPERIMENT_NAME
     epochs = epochs if epochs is not None else config.N_EPOCHS
     model_type = model_type if model_type is not None else network_config.MODEL_TYPE
@@ -107,17 +117,17 @@ def train(chunkedDataDir: Optional[str]= None,
     callbacks += [
         StochasticWeightAveraging(annealing_epochs=network_config.COSINE_LR_SCHEDULE_N_EPOCHS, swa_lrs=0.1 * pl_model.lr)]
 
-    assert os.path.isdir(chunkedDataDir), f"Error, prepared_data_dir: {chunkedDataDir} does not exist "
-    data = Data(data_dir=chunkedDataDir, return_labels=(trainingMode == "picking"),
+    assert os.path.isdir(chunks_dir), f"Error, prepared_data_dir: {chunks_dir} does not exist "
+    data = Data(data_dir=chunks_dir, return_labels=(trainingMode == "picking"),
                 batch_size=batch_size,
                 workers_for_data=config.WORKERS_FOR_DATA)
     data.setup()
     print(len(data.train_dataloader()))
 
-    logger = TensorBoardLogger(save_dir=f'{modelDir}/{experimentName}', name='', version='')
+    logger = TensorBoardLogger(save_dir=f'{model_dir}/{experimentName}', name='', version='')
 
     accel, dev_count = accelerator_selector(use_cuda=use_cuda)
-    trainer = pl.Trainer(default_root_dir=modelDir, devices=f'{dev_count}', accelerator='auto',
+    trainer = pl.Trainer(default_root_dir=model_dir, devices=f'{dev_count}', accelerator='auto',
                          max_epochs=epochs, callbacks=callbacks,
                          logger=logger,
                          overfit_batches= config.OVERFIT_N_BATCHES,
@@ -129,7 +139,7 @@ def train(chunkedDataDir: Optional[str]= None,
         _copyCodeForReproducibility(trainer.log_dir)
 
     if use_tensorboard:
-        subprocess.Popen(["tensorboard", "--logdir", modelDir], stdout=sys.stdout, stderr=open("/dev/null"))
+        subprocess.Popen(["tensorboard", "--logdir", model_dir], stdout=sys.stdout, stderr=open("/dev/null"))
         print("Use the url below to monitor training on tensorboard")
     print("Training starts")
 
@@ -193,8 +203,8 @@ if __name__ == '__main__':
     parser = AutoArgumentParser()
     parser.add_args_from_function(train)
     train(**vars(parser.parse_args()))
-    print(f"Training has ended. Cleaning up {config.DATA_CHUNKS_DIR}")
-    shutil.rmtree(config.DATA_CHUNKS_DIR, ignore_errors=True)
+    print(f"Training has ended. Cleaning up {config.chunks_dir}")
+    shutil.rmtree(config.chunks_dir, ignore_errors=True)
 
 """
 
