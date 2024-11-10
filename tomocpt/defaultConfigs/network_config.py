@@ -16,7 +16,7 @@ class NetworkConfig:
     CHUNK_STRIDE: int = 32
     RANDOM_FRACTION_TO_SAMPLE_TRAIN: float = -1.  # Train on all the chunks
 
-    model_type: ModelTypes = ModelTypes.swinunetr #"swinunetr" # or unet
+    model_type: ModelTypes = ModelTypes.swinunetr
 
 
 

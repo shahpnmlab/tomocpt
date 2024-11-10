@@ -1,9 +1,24 @@
 import os
+from typing import Optional
+
+import numpy as np
+import torch
 import torchio as tio
+from torchio.typing import TypeData
 
 from tomocpt import constants
 from tomocpt.dataManager.dataUtils import get_labels_dirname
 
+
+class MyScalarImage(tio.ScalarImage):
+    @property
+    def affine(self):
+        return super().affine.astype(np.float32)
+
+class MyLabelImage(tio.LabelMap):
+    @property
+    def affine(self):
+        return super().affine.astype(np.float32)
 
 class VolumeDatsetIO(tio.SubjectsDataset):
 
@@ -22,14 +37,15 @@ class VolumeDatsetIO(tio.SubjectsDataset):
                     if return_labels:
                         assert os.path.isfile(full_label_name)
                         subject = tio.Subject({
-                            "input_data": tio.ScalarImage(full_vol_name),
-                            "target_data": tio.LabelMap(full_label_name)
+                            "input_data": MyScalarImage(full_vol_name),
+                            "target_data": MyLabelImage(full_label_name)
                         })
                     else:
                         subject = tio.Subject({
-                            "input_data": tio.ScalarImage(full_vol_name),
-                            "target_data": tio.LabelMap(full_vol_name)
+                            "input_data": MyScalarImage(full_vol_name),
+                            "target_data": MyLabelImage(full_vol_name)
                         })
+
                     lists_of_subjects.append(subject)
         return lists_of_subjects
 
