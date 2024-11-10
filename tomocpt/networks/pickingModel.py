@@ -17,6 +17,13 @@ from monai.networks.nets import SwinUNETR
 BETA_FOR_SOFTPLUS = 2
 
 
+def resolve_batch(batch):
+    x = batch["input_data"][tio.DATA]
+    y = batch["target_data"][tio.DATA]
+    # y = (y>0).float()
+    return x, y
+
+
 class BasePickingModel(BaseModel):    # TODO: Change the name
     def set_default_args(self, lr: float | None,
                          num_levels: int | None):
@@ -27,8 +34,10 @@ class BasePickingModel(BaseModel):    # TODO: Change the name
     def __init__(self, lr: float | None = None,
                  num_levels: int | None = None,
                 model=None):
+
         self.set_default_args(lr=lr,
                               num_levels=num_levels)
+
         super(BasePickingModel, self).__init__()
 
         # TODO:change the model here to change the arch using monai.
@@ -92,12 +101,6 @@ class BasePickingModel(BaseModel):    # TODO: Change the name
         loss = loss.mean()
         return loss
 
-    def resolve_batch(self, batch):
-        x = batch["input_data"][tio.DATA]
-        y = batch["target_data"][tio.DATA]
-        # y = (y>0).float()
-        return x, y
-
     def forward(self, x):
         out = super().forward(x)
         if isinstance(out, (tuple, list)):
@@ -105,23 +108,16 @@ class BasePickingModel(BaseModel):    # TODO: Change the name
         return out
 
     def training_step(self, batch, batch_idx):
-        x, y = self.resolve_batch(batch)
+        x, y = resolve_batch(batch)
         logits = self(x)
-        y_hat = nn.functional.sigmoid(logits)
-        y_pred = nn.functional.softplus(logits, beta=BETA_FOR_SOFTPLUS)
+        y_pred = nn.functional.sigmoid(logits)
         loss = self.loss(y_pred, y)
-        #loss = self.loss(y_hat, y, logits)
-        with torch.no_grad():
-            dice = dice_loss(y_hat, (y > 0).float()[:, :1, ...])
 
         self.log('loss', loss, on_step=False, on_epoch=True, prog_bar=True, sync_dist=True,
                  batch_size=x.shape[0])  # TODO: if on_step=True, reconsider sync_dist
 
-        self.log('dice', dice, on_step=False, on_epoch=True, prog_bar=True, sync_dist=True,
-                 batch_size=x.shape[0])  # TODO: if on_step=True, reconsider sync_dist
-
         if batch_idx == 0:
-            size = y_hat.shape[2]
+            size = y_pred.shape[2]
             grid = torchvision.utils.make_grid(x[:, :, size // 2, :, :])
             tensorboard = self.logger.experiment
             tensorboard.add_image("input", grid.to(dtype=torch.float32), global_step=self.current_epoch)
@@ -132,21 +128,17 @@ class BasePickingModel(BaseModel):    # TODO: Change the name
 
         return loss
 
-    def validation_step(self, batch, batch_idx):
+    def validation_step(self, batch):
         with torch.no_grad():
-            x, y = self.resolve_batch(batch)
+            x, y = resolve_batch(batch)
             logits = self(x)
-            y_hat = nn.functional.sigmoid(logits)
-            y_pred = nn.functional.softplus(logits, beta=BETA_FOR_SOFTPLUS)
+            y_pred = nn.functional.sigmoid(logits)
             loss = self.loss(y_pred, y)
-            dice = dice_loss(y_hat, (y > 0).float()[:, :1, ...])
-            #loss = self.loss(y_hat, y, logits)
 
         self.log('val_loss', loss, on_step=False, on_epoch=True, prog_bar=True, sync_dist=True, batch_size=x.shape[0])
-        self.log('dice', dice, on_step=False, on_epoch=True, prog_bar=True, sync_dist=True, batch_size=x.shape[0])
 
         tensorboard = self.logger.experiment
-        size = y_hat.shape[2]
+        size = y_pred.shape[2]
         # print(x.shape)
         grid1 = torchvision.utils.make_grid(x[:, :, size // 2, :, :])
         tensorboard.add_image("input_val", grid1.to(dtype=torch.float32), global_step=self.current_epoch)
@@ -159,12 +151,39 @@ class BasePickingModel(BaseModel):    # TODO: Change the name
     def predict_step(self, batch, batch_idx, dataloader_idx=0):
         x = batch
         logits = self(x)
-        y_pred = nn.functional.softplus(logits, beta=BETA_FOR_SOFTPLUS)
+        y_pred = nn.functional.sigmoid(logits)
         return y_pred
 
+    """
+    @RUBEN -> What do you think of this way of configuring the optimiser? With a few warmup epochs?
+     def configure_optimizers(self):
+        opt = torch.optim.AdamW(self.parameters(), lr=self.lr, weight_decay=1e-4)
+
+        # Warmup scheduler
+        warmup_scheduler = LinearLR(
+            opt, start_factor=0.1, end_factor=1.0, total_iters=5
+        )
+
+        # Main scheduler
+        main_scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+            opt, verbose=True, factor=constants.FACTOR_REDUCE_LR_PLATEAU_N_EPOCHS,
+            patience=int(1.5 * constants.PATIENT_REDUCE_LR_PLATEAU_N_EPOCHS),
+            cooldown=max(1,constants.PATIENT_REDUCE_LR_PLATEAU_N_EPOCHS // 4))
+
+        # Combine schedulers
+        scheduler = SequentialLR(
+            opt,
+            schedulers=[warmup_scheduler, main_scheduler],
+            milestones=[5]
+        )
+        return {"optimizer": opt, "lr_scheduler": scheduler, "monitor": "val_loss"}
+
+    """
     def configure_optimizers(self):
-        opt = torch.optim.RAdam(self.parameters(), lr=self.lr, betas=(0.9, 0.99),
-                                weight_decay=1e-8, decoupled_weight_decay=True)
+        opt = torch.optim.RAdam(self.parameters(), lr=self.lr,
+                                betas=(network_config.RADAM_BETA_LOW,network_config.RADAM_BETA_HIGH),
+                                weight_decay=network_config.RADAM_WEIGHT_DECAY,
+                                decoupled_weight_decay=True)
 
         conf = {
             'optimizer': opt,

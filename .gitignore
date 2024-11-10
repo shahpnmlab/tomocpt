@@ -26,6 +26,7 @@ share/python-wheels/
 .installed.cfg
 *.egg
 MANIFEST
+refactor/
 
 # PyInstaller
 #  Usually these files are written by vol python script from vol template
