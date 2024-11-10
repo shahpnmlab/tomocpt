@@ -1,6 +1,8 @@
 train:
+  chunks_dir: "/Users/ps/data/wip/tomocpt/refactor/chunks"
   n_epochs: 2
   learning_rate: 0.1
-#  experiment_name: "myKK"
+  experiment_name: "myKK"
+
 network:
   CHUNK_SIZE: 32

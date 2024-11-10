@@ -10,16 +10,14 @@ def makedir(path: str):
         dirname.mkdir(parents=True)
 
 
-def accelerator_selector(use_cuda=None):
-    from pycotool import config
-    if use_cuda is None:
-        use_cuda = config.USE_CUDA
+def accelerator_selector(use_cuda=None, n_cpus=None):
+    assert use_cuda is not None
     if not use_cuda or not torch.cuda.is_available():
         accel = 'cpu'
-        if config.NCPU is None:
+        if n_cpus is None:
             dev_count = os.cpu_count()
         else:
-            dev_count = max(1, config.NCPU)
+            dev_count = max(1, n_cpus)
     else:
         accel = 'gpu'
         dev_count = torch.cuda.device_count()
