@@ -69,7 +69,7 @@ class SelfSupervisedModel(BaseModel):
             self.model = model.model
 
 
-        exampleX = torch.rand(train_config.BATCH_SIZE, 1, n_voxels, n_voxels, n_voxels)
+        exampleX = torch.rand(train_config.batch_size, 1, n_voxels, n_voxels, n_voxels)
         out, hid = self.model(exampleX)
         batchSize, nchan, s, _, _ = hid.shape
         assert batchSize > 1

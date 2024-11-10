@@ -15,7 +15,7 @@ class Data(pl.LightningDataModule):
                          workers_for_data: int | None):
 
         self.data_dir = data_dir if data_dir is not None else config.chunks_dir
-        self.batch_size = batch_size if batch_size is not None else config.BATCH_SIZE
+        self.batch_size = batch_size if batch_size is not None else config.batch_size
         self.workers_for_data = workers_for_data if workers_for_data is not None else config.WORKERS_FOR_DATA
         self.return_labels = return_labels if return_labels is not None else False
 
