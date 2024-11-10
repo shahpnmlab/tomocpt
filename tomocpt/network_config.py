@@ -1,15 +1,17 @@
 
-# ------------------ADVANCED KNOBS --------------------------- #
+# ------------------General configuration--------------------------- #
 CHUNK_SIZE = 64
 CHUNK_STRIDE = 32
 RANDOM_FRACTION_TO_SAMPLE_TRAIN = -1  # Train on all the chunks
-
 MODEL_TYPE = "swinunetr" # or unet
 
+# ------------------Optimiser configuration--------------------------- #
 LEARNING_RATE = 4e-4
-WEIGHT_DECAY = 1e-8
+RADAM_WEIGHT_DECAY = 1e-8
+RADAM_BETA_LOW = 0.9
+RADAM_BETA_HIGH = 0.99
 
-#### THIS IS CONFIG FOR U-NET
+# ------------------Unet configuration--------------------------- #
 IN_CHANNELS = 1
 FIRST_LAYER_OUT_CHANNELS = 32
 NUM_LEVELS = 5
@@ -23,21 +25,21 @@ FACTOR_REDUCE_LR_PLATEAU_N_EPOCHS = 0.5
 COSINE_LR_SCHEDULE_N_EPOCHS = 6
 PATIENT_REDUCE_LR_PLATEAU_N_EPOCHS = 6
 
-##### THIS IS CONFIG FOR SWINUNETR
+# ------------------swinunetr configuration--------------------------- #
 SWINUNETR_FEAT_SIZE = 12*3  # Should be multiple of 12
 DROP_RATE = 0.3
 ATTN_DROP_RATE = 0.3
 DROPOUT_PATH_RATE = 0.2
 
-# THIS IS FOR PRETRAIN
+# ------------------self-supervised training configuration--------------------------- #
 NOISE2NOISE_RAND_MASK_SIZE = 15
 CONTRAST_LOSS_L1_EMB_REGULARIZATION = 1e-4
 CONTRAST_LOSS_TEMPERATURE = 1e-1
 
-#BCE Loss val
+# ------------------BCE Loss val--------------------------- #
 BCE_EPS = 1
 
-#FASTER TRAINING ARGS
+# ------------------FASTER TRAINING ARGS--------------------------- #
 LIMIT_VALIDATION_BATCHES = 1
 VAL_CHECK_INTERVAL = 1
 
