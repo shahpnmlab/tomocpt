@@ -33,11 +33,11 @@ class Data(pl.LightningDataModule):
 
     def train_dataloader(self):
         return DataLoader(self.dataset_training, self.batch_size, num_workers=self.workers_for_data, shuffle=True,
-                          persistent_workers=True if config.N_GPUS > 0 else False)
+                          persistent_workers=True if config.N_GPUS > 0 and config.use_cuda else False)
 
     def val_dataloader(self):
         return DataLoader(self.dataset_val, batch_size=self.batch_size, num_workers=self.workers_for_data,
-                          shuffle=False, persistent_workers=True if config.N_GPUS > 0 else False)
+                          shuffle=False, persistent_workers=True if config.N_GPUS > 0 and config.use_cuda > 0 else False)
 
     def test_dataloader(self):
         return NotImplemented
