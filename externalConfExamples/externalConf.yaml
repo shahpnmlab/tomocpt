@@ -1,6 +1,6 @@
 train:
   n_epochs: 2
-  learning_rate: 0.1
-#  experiment_name: "myKK"
+  learning_rate: 0.999999
+  experiment_name: "myKK"
 network:
   CHUNK_SIZE: 32

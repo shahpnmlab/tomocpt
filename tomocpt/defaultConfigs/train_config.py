@@ -19,6 +19,7 @@ class TrainConfig:
     BATCH_SIZE: int = 2
     WORKERS_FOR_DATA: int = 1
     N_GPUS: int = 1
+    N_CPUS_IF_NO_GPU: int = 4
     USE_CUDA_FOR_DATA: bool = False
 
     learning_rate:float = 4e-4

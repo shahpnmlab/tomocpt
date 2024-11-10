@@ -91,48 +91,55 @@ class ConfigurableApp:
         """Set a value in a nested dictionary using a list of keys."""
         self._get_from_dict(data_dict, map_list[:-1])[map_list[-1]] = value
 
-    def _handle_config_overrides(self, func_kwargs: dict, config: DictConfig) -> Tuple[Dict[str, Any], DictConfig]:
+    def _handle_config_overrides(self, func_kwargs: dict, config: DictConfig, default_config:DictConfig) \
+                                                                        -> Tuple[Dict[str, Any], DictConfig]:
         """
         Handle overrides from command-line arguments that match config paths.
         Args:
             func_kwargs: Dictionary of function arguments
             config: The configuration object
+            default_config: the by default configuration to check it command lines are as by default
         Returns:
             Updated configuration object
         """
         # Convert config to dict for flattening
         config_dict = OmegaConf.to_container(config, resolve=True)
         flat_config = self._flatten_dict(config_dict)
+        flat_default_config = self._flatten_dict(default_config)
         # Check for overlapping parameters
-        for path, (key, value) in flat_config.items():
+        for path, (key, conf_value) in flat_config.items():
             cli_key = path.replace("/", "_")
 
             if cli_key in func_kwargs:
-                if func_kwargs[cli_key] is not None:
+                if func_kwargs[cli_key] is not None and func_kwargs[cli_key] != flat_default_config[path][1]:
                     cli_value = func_kwargs[cli_key]
-                    if str(value) != str(cli_value):  # Only update if values are different
-                        print(f"Overriding config value '{path}': {value} → {cli_value}")
+                    if str(conf_value) != str(cli_value):  # Only update if values are different
+                        print(f"Overriding config conf_value '{path}': {conf_value} → {cli_value}")
                         self._set_in_dict(config_dict, path.split("/"), cli_value)
                 else:
-                    func_kwargs[cli_key] = value
+                    func_kwargs[cli_key] = conf_value
 
 
         # Convert back to DictConfig
         return func_kwargs, OmegaConf.create(config_dict)
 
-    def add_config_options(self, func: Callable) -> Callable:
+    def add_config_options(self, func: Callable, is_command:bool = False) -> Callable:
         """Add configuration options to a function"""
 
         def run_command(*args, **kwargs):
             # Extract config-related parameters
+
             config_file = kwargs.pop('config_file', None)
             config_args = kwargs.pop('config_args', [])
+            if config_args and is_command:
+                config_args = config_args[1:]
             config_merge_preference = kwargs.pop('config_merge_preference', None)
             # Process the configuration
-            cfg = self.process_config(config_file, config_args, config_merge_preference)
+            base_cfg, cfg = self.process_config(config_file, config_args, config_merge_preference)
             # breakpoint()
             # Handle automatic overrides from command-line arguments
-            kwargs, cfg = self._handle_config_overrides(kwargs, cfg)
+            kwargs, cfg = self._handle_config_overrides(kwargs, cfg, base_cfg)
+
             if self.set_global_config_fn is not None:
                 self.set_global_config_fn(cfg)
             # Call the original function
@@ -190,7 +197,7 @@ class ConfigurableApp:
             config_file: Optional[Path],
             config_args: List[str],
             config_merge_preference: Optional[MergePreference]
-    ) -> DictConfig:
+    ) -> Tuple[DictConfig, DictConfig]:
         with hydra.initialize(version_base=None, config_path=None):
             base_cfg = hydra.compose(config_name=self.config_store_name)
 
@@ -221,7 +228,7 @@ class ConfigurableApp:
                         for conflict in conflicts:
                             print(f"  {conflict}")
 
-            cfg = base_cfg
+            cfg = base_cfg.copy()
             if config_merge_preference == MergePreference.COMMAND:
                 if file_cfg:
                     cfg = OmegaConf.merge(cfg, file_cfg)
@@ -233,14 +240,14 @@ class ConfigurableApp:
                 if file_cfg:
                     cfg = OmegaConf.merge(cfg, file_cfg)
 
-            return cfg
+            return base_cfg, cfg
 
     def command(self, *args, **kwargs):
         """Decorator for adding commands with config support"""
 
         def decorator(func: Callable):
             # Add config options to the function
-            wrapped = self.add_config_options(func)
+            wrapped = self.add_config_options(func, is_command=True)
             # Register with Typer
             return self.app.command(*args, **kwargs)(wrapped)
 
@@ -248,7 +255,7 @@ class ConfigurableApp:
 
     def run_with_config(self, func: Callable):
         """Run a single function with config support"""
-        wrapped = self.add_config_options(func)
+        wrapped = self.add_config_options(func, is_command=False)
         typer.run(wrapped)
 
     def run(self):

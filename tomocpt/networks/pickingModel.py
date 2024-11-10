@@ -15,7 +15,7 @@ from monai.networks.nets import SwinUNETR
 BETA_FOR_SOFTPLUS = 2
 
 
-class BasePickingModel(BaseModel):    # TODO: Change the name
+class BasePickingModel(BaseModel):# TODO: Change the name
     def set_default_args(self, lr: float | None,
                          num_levels: int | None):
 

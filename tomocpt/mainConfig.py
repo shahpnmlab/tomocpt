@@ -12,7 +12,7 @@ class MainConfig:
 
 cs = ConfigStore.instance()
 cs.store(name="main", node=MainConfig)
-cs.store(group="run", name="default", node=TrainConfig)
+cs.store(group="train", name="default", node=TrainConfig)
 cs.store(group="network", name="default", node=NetworkConfig)
 
 mainConfig = MainConfig()

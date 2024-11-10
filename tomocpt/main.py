@@ -31,4 +31,5 @@ if __name__ == "__main__":
     """
 python -m tomocpt.main  --config-file /home/sanchezg/sideProjects/tomocpt/externalConfExamples/externalConf.yaml
 python -m tomocpt.main  --train-experiment-name kk --config-file /home/sanchezg/sideProjects/tomocpt/externalConfExamples/externalConf.yam
+python -m tomocpt.main train  --config-file /home/sanchezg/sideProjects/tomocpt/externalConfExamples/externalConf.yaml train.learning_rate=100 --config-merge-preference command
     """

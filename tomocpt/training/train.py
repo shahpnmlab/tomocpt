@@ -6,6 +6,7 @@ import sys
 from typing import Annotated
 import psutil
 import typer
+from functorch.dim import use_c
 from omegaconf import DictConfig
 
 from tomocpt.defaultConfigs.train_config import TrainingModes
@@ -26,24 +27,28 @@ from tomocpt.utils import accelerator_selector
 
 network_config = mainConfig.network
 train_config = mainConfig.train
-def train(train_experiment_name: Annotated[str, typer.Option(help="The name name")] = None,
-          train_chunks_dir: Annotated[str, typer.Option(help="Where the data prepared for training is name")] = None,
-          train_model_dir: Annotated[str, typer.Option(help="Model name")] = None,
-          train_n_epochs: Annotated[int, typer.Option(help="Model name")] = None,
+
+# def _my_train_experiment_name(): #To be used with , default_factory=
+#     return None #train_config.experiment_name #None
+def train(train_experiment_name: Annotated[str, typer.Option(help="The experiment name")] = train_config.experiment_name,
+          train_chunks_dir: Annotated[str, typer.Option(help="Where the data prepared for training is name")] = train_config.chunks_dir,
+          train_model_dir: Annotated[str, typer.Option(help="Model name")] = train_config.model_dir,
+          train_n_epochs: Annotated[int, typer.Option(help="Model name")] = train_config.n_epochs,
           train_mode: Annotated[TrainingModes, typer.Option(help="Executing mode, either picking or "
-                                                                   "selfSupervised name")] = None,
-          train_learning_rate: Annotated[float, typer.Option(help="Model name")] = None,
+                                                                  "selfSupervised name")] = None,
+          train_learning_rate: Annotated[float, typer.Option(help="Model name")] = train_config.learning_rate,
           continueModelDir: Annotated[str, typer.Option(help="Model name")] = None,
           restoreFullStateWhenContinue: Annotated[bool, typer.Option(help="Model name")] = True,
           compileModel: Annotated[bool, typer.Option(help="Model name")] = False,
           batch_size: Annotated[int, typer.Option(help="Model name")] = None,
           use_cuda: Annotated[bool, typer.Option(help="Model name")] = True,
           use_tensorboard: Annotated[bool, typer.Option(help="Model name")] = True,
-          config: DictConfig = None
+          # config: DictConfig = None
           ):
     kwargs = dict(lr=train_learning_rate)
     print(mainConfig)
-    breakpoint()
+    print(mainConfig.train.learning_rate)
+    # breakpoint()
     if train_mode == TrainingModes.picking:
         Model = BasePickingModel
         checkpointer = ModelCheckpoint(monitor='val_loss', filename='weights', verbose=True)
@@ -94,18 +99,21 @@ def train(train_experiment_name: Annotated[str, typer.Option(help="The name name
                 batch_size=batch_size,
                 workers_for_data=train_config.WORKERS_FOR_DATA)
     data.setup()
-    print(len(data.train_dataloader()))
+    print("Data loader len:", len(data.train_dataloader()))
 
     logger = TensorBoardLogger(save_dir=f'{train_model_dir}/{train_experiment_name}', name='', version='')
 
-    accel, dev_count = accelerator_selector(use_cuda=use_cuda)
-    trainer = pl.Trainer(default_root_dir=train_model_dir, devices=f'{dev_count}', accelerator='auto',
+    accel, dev_count = accelerator_selector(use_cuda=use_cuda, n_cpus=train_config.N_CPUS_IF_NO_GPU)
+
+
+    trainer = pl.Trainer(default_root_dir=train_model_dir, devices=f'{dev_count}',
+                         accelerator='auto' if use_cuda else accel,
                          max_epochs=train_n_epochs, callbacks=callbacks,
                          logger=logger,
                          overfit_batches= train_config.OVERFIT_N_BATCHES,
                          # limit_val_batches=constants.LIMIT_VALIDATION_BATCHES,
                          # val_check_interval=constants.VAL_CHECK_INTERVAL,
-                         strategy="ddp_find_unused_parameters_false" if accel == "gpu" else None,
+                         strategy="ddp_find_unused_parameters_false" if accel == "gpu" else "auto",
                          precision=network_config.TORCH_FLOAT_PRECISION)
     if trainer.is_global_zero:
         _copyCodeForReproducibility(trainer.log_dir)
