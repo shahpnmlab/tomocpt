@@ -99,6 +99,7 @@ def train(train_chunks_dir: Annotated[str, typer.Option(help="Path to where the 
                 batch_size=train_batch_size,
                 workers_for_data=train_config.WORKERS_FOR_DATA)
     data.setup()
+
     print(len(data.train_dataloader()))
 
     logger = TensorBoardLogger(save_dir=f'{train_model_dir}/{train_experiment_name}', name='', version='')
@@ -114,13 +115,18 @@ def train(train_chunks_dir: Annotated[str, typer.Option(help="Path to where the 
                          # limit_val_batches=constants.LIMIT_VALIDATION_BATCHES,
                          # val_check_interval=constants.VAL_CHECK_INTERVAL,
                          strategy="ddp_find_unused_parameters_false" if accel == "gpu" else "auto",
-                         precision=network_config.TORCH_FLOAT_PRECISION)
+                         precision=network_config.TORCH_FLOAT_PRECISION,
+                         gradient_clip_val=1.0,
+                         gradient_clip_algorithm='norm',
+                         track_grad_norm=2,
+                         )
 
     if trainer.is_global_zero:
         _copyCodeForReproducibility(trainer.log_dir)
 
     if train_use_tensorboard:
-        subprocess.Popen(["tensorboard", "--logdir", train_model_dir], stdout=sys.stdout, stderr=open("/dev/null"))
+        subprocess.Popen(["tensorboard", "--logdir", f'{train_model_dir}/{train_experiment_name}'],
+                         stdout=sys.stdout, stderr=open("/dev/null"))
         print("Use the url below to monitor training on tensorboard")
     print("Training starts")
 
