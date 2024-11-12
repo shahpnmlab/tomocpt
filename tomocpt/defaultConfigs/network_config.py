@@ -1,5 +1,5 @@
 
-from dataclasses import dataclass, asdict
+from dataclasses import dataclass, asdict, fields
 from enum import Enum
 
 
@@ -17,8 +17,6 @@ class NetworkConfig:
     RANDOM_FRACTION_TO_SAMPLE_TRAIN: float = -1.  # Train on all the chunks
 
     model_type: ModelTypes = ModelTypes.swinunetr
-
-
 
     #### THIS IS CONFIG FOR U-NET
     IN_CHANNELS: int = 1
@@ -56,6 +54,29 @@ class NetworkConfig:
     TORCH_FLOAT_PRECISION: str = '32' # '32' # '16' 'bf16'
 
     SEED_FOR_TRAIN_VAL_SPLIT: int = 113
+
+    def write_yaml(self) -> str:
+        """Convert the dataclass configuration into a YAML-formatted string.
+
+        Returns:
+            str: YAML-formatted string representation of the configuration
+        """
+        import yaml
+
+        # Convert dataclass to dictionary
+        config_dict = {}
+        for field in fields(self):
+            value = getattr(self, field.name)
+
+            # Handle special cases
+            if isinstance(value, ModelTypes):
+                value = value.name  # Convert enum to string
+
+            config_dict[field.name] = value
+
+        # Convert to YAML string with proper indentation
+        yaml_string = yaml.dump(config_dict, default_flow_style=False, sort_keys=False)
+        return yaml_string
 
 if __name__ == "__main__":
     import yaml

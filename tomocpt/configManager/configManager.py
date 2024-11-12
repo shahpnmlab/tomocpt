@@ -27,7 +27,7 @@ class ConfigurableApp:
     """Factory class for creating Typer apps with Hydra config management"""
 
     def __init__(self, base_config_class: Type[Any], config_store_name: str = "base_config",
-                 set_global_config_fn: Optional[Callable[[DictConfig], None]]=None):
+                 set_global_config_fn: Optional[Callable[[DictConfig], None]] = None):
 
         self.base_config_class = base_config_class
         self.config_store_name = config_store_name
@@ -91,8 +91,8 @@ class ConfigurableApp:
         """Set a value in a nested dictionary using a list of keys."""
         self._get_from_dict(data_dict, map_list[:-1])[map_list[-1]] = value
 
-    def _handle_config_overrides(self, func_kwargs: dict, config: DictConfig, default_config:DictConfig) \
-                                                                        -> Tuple[Dict[str, Any], DictConfig]:
+    def _handle_config_overrides(self, func_kwargs: dict, config: DictConfig, default_config: DictConfig) \
+            -> Tuple[Dict[str, Any], DictConfig]:
         """
         Handle overrides from command-line arguments that match config paths.
         Args:
@@ -119,11 +119,10 @@ class ConfigurableApp:
                 else:
                     func_kwargs[cli_key] = conf_value
 
-
         # Convert back to DictConfig
         return func_kwargs, OmegaConf.create(config_dict)
 
-    def add_config_options(self, func: Callable, is_command:bool = False) -> Callable:
+    def add_config_options(self, func: Callable, is_command: bool = False) -> Callable:
         """Add configuration options to a function"""
 
         def run_command(*args, **kwargs):
@@ -192,6 +191,7 @@ class ConfigurableApp:
         run_command.__doc__ = func.__doc__
 
         return run_command
+
     def process_config(
             self,
             config_file: Optional[Path],
@@ -261,6 +261,7 @@ class ConfigurableApp:
     def run(self):
         """Run the app with subcommands"""
         self.app()
+
 
 def dictconfig_to_dataclass(config: DictConfig, target_class: Type[T]) -> T:
     """
@@ -365,14 +366,10 @@ def update_dataclass_from_config(dc_instance: Any, config: DictConfig) -> None:
             setattr(dc_instance, key, value)
 
 
-
 # Convenience function
 def create_configurable_app(
         base_config_class: Type[Any],
         config_store_name: str = "base_config",
-        set_global_config_fn: Optional[Callable[[DictConfig], None]]=None
+        set_global_config_fn: Optional[Callable[[DictConfig], None]] = None
 ) -> ConfigurableApp:
     return ConfigurableApp(base_config_class, config_store_name, set_global_config_fn=set_global_config_fn)
-
-
-

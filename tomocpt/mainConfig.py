@@ -10,6 +10,7 @@ class MainConfig:
     train: TrainConfig = field(default_factory=TrainConfig)
     network: NetworkConfig = field(default_factory=NetworkConfig)
 
+
 cs = ConfigStore.instance()
 cs.store(name="main", node=MainConfig)
 cs.store(group="train", name="default", node=TrainConfig)
