@@ -16,13 +16,13 @@ class TrainConfig:
     n_epochs: int = 10
     mode: TrainingModes = TrainingModes.picking
     restore_full_state: bool = True
+    batch_size: int = 2
+    use_cuda: bool = True
 
     OVERFIT_N_BATCHES: Optional[int] = 10
-    batch_size: int = 2
-    WORKERS_FOR_DATA: int = 1
-    use_cuda: bool = True
+    WORKERS_FOR_DATA: int = 0
     N_GPUS: int = 1
-    N_CPUS_IF_NO_GPU: int = 4
+    N_CPUS_IF_NO_GPU: int = 1
     USE_CUDA_FOR_DATA: bool = False
 
     WEIGHT_DECAY:float = 1e-8
