@@ -1,27 +1,12 @@
 import os
-from typing import Optional
-
-import numpy as np
-import torch
 import torchio as tio
-from torchio.typing import TypeData
 
 from tomocpt import constants
 from tomocpt.dataManager.dataUtils import get_labels_dirname
 
-
-class MyScalarImage(tio.ScalarImage):
-    @property
-    def affine(self):
-        return super().affine.astype(np.float32)
-
-class MyLabelImage(tio.LabelMap):
-    @property
-    def affine(self):
-        return super().affine.astype(np.float32)
-
 class VolumeDatsetIO(tio.SubjectsDataset):
 
+    @staticmethod
     def _load(data_dir:str, return_labels:bool=True):
         lists_of_subjects = []
         
@@ -37,13 +22,13 @@ class VolumeDatsetIO(tio.SubjectsDataset):
                     if return_labels:
                         assert os.path.isfile(full_label_name)
                         subject = tio.Subject({
-                            "input_data": MyScalarImage(full_vol_name),
-                            "target_data": MyLabelImage(full_label_name)
+                            "input_data": tio.ScalarImage(full_vol_name),
+                            "target_data": tio.ScalarImage(full_label_name)
                         })
                     else:
                         subject = tio.Subject({
-                            "input_data": MyScalarImage(full_vol_name),
-                            "target_data": MyLabelImage(full_vol_name)
+                            "input_data": tio.ScalarImage(full_vol_name),
+                            "target_data": tio.ScalarImage(full_vol_name)
                         })
 
                     lists_of_subjects.append(subject)
@@ -55,20 +40,28 @@ class VolumeDatsetIO(tio.SubjectsDataset):
         if isTraining:
             spatial = tio.OneOf({
                 tio.RandomElasticDeformation(): 0.1,
-                tio.RandomBlur(std=1):0.1
-                #RandomAnisotropy
-                #RandomFlip
-                }, p=0.75)
+                tio.RandomBlur(std=1):0.1,
+                tio.RandomElasticDeformation(
+                    num_control_points=(7, 7, 7),
+                    max_displacement=4,
+                    locked_borders=2): 0.3,
+                tio.RandomAffine(degrees=45,
+                                 default_pad_value="otsu"): 0.8,
+            }, p=0.75)
 
+            noise = tio.OneOf({
+                tio.RandomGhosting(num_ghosts=2): 0.2,
+                tio.RandomBlur(std=(0.1, 1.5)): 0.3,
+                tio.RandomBiasField(): 0.2,
+            }, p=0.8)
 
-            transform = tio.Compose([
-                tio.RandomAffine(degrees=45, default_pad_value="otsu", p=0.8),
-                spatial
-            ])
+            intensity = tio.OneOf({
+                tio.RandomBlur(std=(0.1, 1.0)): 0.3
+            })
+
+            transform = tio.Compose([spatial, noise, intensity])
         else:
             transform = None
         listOfSubjects = VolumeDatsetIO._load(data_dir, return_labels=return_labels)
         assert listOfSubjects, f"Error, no valid listOfSubjects at data_dir {data_dir}"
         return VolumeDatsetIO(listOfSubjects, transform=transform, load_getitem=load_getitem)
-
-
