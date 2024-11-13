@@ -91,8 +91,8 @@ class BasePickingModel(BaseModel):# TODO: Change the name
         return loss
 
     def resolve_batch(self, batch):
-        x = batch["input_data"][tio.DATA]
-        y = batch["target_data"][tio.DATA]
+        x = batch["input_data"].data
+        y = batch["target_data"].data
         # y = (y>0).float()
         return x, y
 

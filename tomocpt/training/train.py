@@ -28,22 +28,29 @@ from tomocpt.utils import accelerator_selector
 network_config = mainConfig.network
 train_config = mainConfig.train
 
-def train(train_chunks_dir: Annotated[str, typer.Option(help="Path to where the subvolume chunks are stored")] = train_config.chunks_dir,
-          train_model_dir: Annotated[str, typer.Option(help="Path to where the checkpoints should be saved")] = train_config.model_dir,
-          train_experiment_name: Annotated[str, typer.Option(help="Name for folder to store checkpoints to")] = train_config.experiment_name,
+
+def train(train_chunks_dir: Annotated[
+    str, typer.Option(help="Path to where the subvolume chunks are stored")] = train_config.chunks_dir,
+          train_model_dir: Annotated[
+              str, typer.Option(help="Path to where the checkpoints should be saved")] = train_config.model_dir,
+          train_experiment_name: Annotated[
+              str, typer.Option(help="Name for folder to store checkpoints to")] = train_config.experiment_name,
           train_n_epochs: Annotated[int, typer.Option(help="Number of training epochs")] = train_config.n_epochs,
           train_mode: Annotated[TrainingModes, typer.Option(help="Training mode, either picking or "
-                                                                   "selfSupervised")] = None,
+                                                                 "selfSupervised")] = None,
           train_learning_rate: Annotated[float, typer.Option(help="The learning rate")] = train_config.learning_rate,
-          train_batch_size: Annotated[int, typer.Option(help="Size of batch for training/fine-tuning")] = train_config.batch_size,
-          train_continue: Annotated[Path, typer.Option(help="Path to pre-existing checkpoint file for fine-tuning with new data")] = None,
-          train_restore_full_state: Annotated[bool, typer.Option(help="Restore the network states to the pre-existing checkpoint when fine-tuning")] = True,
+          train_batch_size: Annotated[
+              int, typer.Option(help="Size of batch for training/fine-tuning")] = train_config.batch_size,
+          train_continue: Annotated[
+              Path, typer.Option(help="Path to pre-existing checkpoint file for fine-tuning with new data")] = None,
+          train_restore_full_state: Annotated[bool, typer.Option(
+              help="Restore the network states to the pre-existing checkpoint when fine-tuning")] = True,
           train_compile_model: Annotated[bool, typer.Option(help="Compile model for faster inference")] = False,
           train_use_cuda: Annotated[bool, typer.Option(help="Use GPUs for training")] = True,
-          train_use_tensorboard: Annotated[bool, typer.Option(help="Launch tensorboard for evaluating training")] = True,
+          train_use_tensorboard: Annotated[
+              bool, typer.Option(help="Launch tensorboard for evaluating training")] = True,
           config: DictConfig = None
           ):
-
     kwargs = dict(lr=train_learning_rate)
 
     print(mainConfig)
@@ -92,7 +99,8 @@ def train(train_chunks_dir: Annotated[str, typer.Option(help="Path to where the 
     if train_compile_model:
         pl_model = torch.compile(pl_model)
     callbacks += [
-        StochasticWeightAveraging(annealing_epochs=network_config.COSINE_LR_SCHEDULE_N_EPOCHS, swa_lrs=0.1 * pl_model.lr)]
+        StochasticWeightAveraging(annealing_epochs=network_config.COSINE_LR_SCHEDULE_N_EPOCHS,
+                                  swa_lrs=0.1 * pl_model.lr)]
 
     assert os.path.isdir(train_chunks_dir), f"Error, prepared_data_dir: {train_chunks_dir} does not exist "
     data = Data(data_dir=train_chunks_dir, return_labels=(train_mode == TrainingModes.picking),
@@ -106,19 +114,18 @@ def train(train_chunks_dir: Annotated[str, typer.Option(help="Path to where the 
 
     accel, dev_count = accelerator_selector(use_cuda=train_use_cuda, n_cpus=train_config.N_CPUS_IF_NO_GPU)
 
-
     trainer = pl.Trainer(default_root_dir=train_model_dir, devices=f'{dev_count}',
                          accelerator='auto' if train_use_cuda else accel,
                          max_epochs=train_n_epochs, callbacks=callbacks,
                          logger=logger,
-                         overfit_batches= train_config.OVERFIT_N_BATCHES, # TODO: THIS MUST BE REMOVED BEFORE PRODUCTION!
+                         overfit_batches=train_config.OVERFIT_N_BATCHES,
+                         # TODO: THIS MUST BE REMOVED BEFORE PRODUCTION!
                          # limit_val_batches=constants.LIMIT_VALIDATION_BATCHES,
                          # val_check_interval=constants.VAL_CHECK_INTERVAL,
                          strategy="ddp_find_unused_parameters_false" if accel == "gpu" else "auto",
                          precision=network_config.TORCH_FLOAT_PRECISION,
                          gradient_clip_val=1.0,
                          gradient_clip_algorithm='norm',
-                         track_grad_norm=2,
                          )
 
     if trainer.is_global_zero:
@@ -182,4 +189,3 @@ def _copyCodeForReproducibility(logdir):
     fname = osp.join(logdir, "parent_command.txt")
     with open(fname, "w") as f:
         f.write(parent_command)
-

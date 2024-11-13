@@ -2,5 +2,6 @@ train:
   n_epochs: 2
   learning_rate: 0.999999
   experiment_name: "myKK"
+
 network:
-  CHUNK_SIZE: 32
+  CHUNK_SIZE: 64
