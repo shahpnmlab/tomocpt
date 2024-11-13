@@ -12,7 +12,6 @@ from skimage.transform import resize
 from typing import Callable, Union, Tuple, List, Optional
 
 from tomocpt.constants import LABELS_DIR_NAME_PREFIX
-from tomocpt import mainConfig, constants
 
 
 def symmetrize_padding(inp):
@@ -137,8 +136,7 @@ def resize_volume(volume: np.array, new_shape: Union[Tuple[int], List[int]], chu
         new_shape = [192, 192, 64]
         resized = resize_volume(volume, new_shape, chunk_size=16)
     """
-    if use_gpu is None:
-        use_gpu = config.USE_CUDA_FOR_DATA
+    #TODO: Document what calculate mean does
     if calculate_mean:
         intensity = volume.mean()
     else:
@@ -215,3 +213,33 @@ def get_labels_dirname(require_labels:bool):
     else:
         return LABELS_DIR_NAME_PREFIX%"_selfSup"
 
+def plot_example(x, label):
+    from matplotlib import pyplot as plt
+    if type(x) != np.ndarray:
+        x = x.cpu().detach().numpy()
+    if type(label) != np.ndarray:
+        label = label.cpu().detach().numpy()
+    if len(x.shape) == 4:
+        x = x[0, ...]
+    if len(label.shape) == 4:
+        label = label[0, ...]
+
+    print(x.shape)
+    print(label.shape)
+
+    n = x.shape[0]
+    central = n//2
+    fig, ax = plt.subplots(2,5)
+    ax[0,0].imshow(x[central-central//2,...], cmap="gray")
+    ax[0,1].imshow(x[central-1,...], cmap="gray")
+    ax[0,2].imshow(x[central,...], cmap="gray")
+    ax[0,3].imshow(x[central+1,...], cmap="gray")
+    ax[0,4].imshow(x[central+central//2,...], cmap="gray")
+
+    ax[1,0].imshow(label[central-central//2,...], cmap="gray")
+    ax[1,1].imshow(label[central-1,...], cmap="gray")
+    ax[1,2].imshow(label[central,...], cmap="gray")
+    ax[1,3].imshow(label[central+1,...], cmap="gray")
+    ax[1,4].imshow(label[central+central//2,...], cmap="gray")
+    plt.show()
+    print("")
