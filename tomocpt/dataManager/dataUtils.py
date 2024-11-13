@@ -8,10 +8,11 @@ import torch
 import mrcfile
 import numpy as np
 
-from skimage.transform import resize
-from typing import Callable, Union, Tuple, List, Optional
-
+from typing import Callable, Union, Tuple, List
 from tomocpt.constants import LABELS_DIR_NAME_PREFIX
+from tomocpt import mainConfig, constants
+
+config = mainConfig
 
 
 def symmetrize_padding(inp):
@@ -44,6 +45,7 @@ def symmetrize_padding(inp):
             symmetric.append(i // 2)
             symmetric.append((i // 2) + 1)
     return tuple(symmetric[::-1])
+
 
 def load_mrc(fname: str, normalize: Union[str, Callable, None] = None,
              return_boxSize: bool = False) -> Union[np.array, Tuple[np.array, float]]:
@@ -104,8 +106,7 @@ def get_shape_for_resizing(volume: np.array, original_size: float, new_size: flo
 
 
 def resize_volume(volume: np.array, new_shape: Union[Tuple[int], List[int]], chunk_size,
-                  use_gpu: bool | None=None,calculate_mean:bool=True) -> np.array:
-
+                  use_gpu: bool | None = None, calculate_mean: bool = True) -> np.array:
     """
     Resizes a 3D volume to a new shape using bicubic interpolation. If any dimension of the new shape is smaller
     than the given chunk_size, the function symmetrically pads the volume to match the chunk size.
@@ -137,6 +138,7 @@ def resize_volume(volume: np.array, new_shape: Union[Tuple[int], List[int]], chu
         resized = resize_volume(volume, new_shape, chunk_size=16)
     """
     #TODO: Document what calculate mean does
+    assert use_gpu is not None, "Error, you need to tell if gpu is going to be used"
     if calculate_mean:
         intensity = volume.mean()
     else:
@@ -171,14 +173,12 @@ def resize_volume(volume: np.array, new_shape: Union[Tuple[int], List[int]], chu
                                               mode='constant', value=intensity).squeeze()
     return resized, symmetric_padding
 
-def robust_normalization(data: np.array) -> np.array:
 
+def robust_normalization(data: np.array) -> np.array:
     p5 = np.percentile(data, q=5)
     p95 = np.percentile(data, q=95)
     median = np.median(data)
     return np.clip((data - median) / (p95 - p5), a_min=-3, a_max=3)
-
-
 
 
 def write_segmentation_mask(tensor_mask, outputname, angpix: float = 1, overwrite=True):
@@ -196,10 +196,10 @@ def ang_to_pix(val, sampling):
     return int(val / sampling)
 
 
-
 def get_tomo_dims(raw_tomo_path: str):
     raw_tomo_files = list(Path(raw_tomo_path).rglob('*.mrc'))
     return _get_single_tomo_dims(raw_tomo_files[0])
+
 
 def _get_single_tomo_dims(fname):
     with mrcfile.open(fname, 'r') as f_in:
@@ -207,11 +207,12 @@ def _get_single_tomo_dims(fname):
         one_vol_voxel_size = f_in.voxel_size['x'].astype('float')
     return one_vol_shape, one_vol_voxel_size
 
-def get_labels_dirname(require_labels:bool):
+
+def get_labels_dirname(require_labels: bool):
     if require_labels:
-        return LABELS_DIR_NAME_PREFIX%"_supervised"
+        return LABELS_DIR_NAME_PREFIX % "_supervised"
     else:
-        return LABELS_DIR_NAME_PREFIX%"_selfSup"
+        return LABELS_DIR_NAME_PREFIX % "_selfSup"
 
 def plot_example(x, label):
     from matplotlib import pyplot as plt
