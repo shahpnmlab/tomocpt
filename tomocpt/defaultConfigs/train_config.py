@@ -1,4 +1,4 @@
-from dataclasses import dataclass, fields
+from dataclasses import dataclass, fields, MISSING
 from enum import Enum
 from typing import Optional
 
@@ -7,11 +7,10 @@ class TrainingModes(Enum):
     selfSupervised = "selfSupervised"
     picking = "picking"
 
-
 @dataclass
 class TrainConfig:
-    chunks_dir: str = "/tmp/refactor/chunks/"
-    model_dir: str = "/tmp/model"
+    chunks_dir: Optional[str] = None #"/tmp/refactor/chunks/"
+    model_dir: Optional[str] = None  #"/tmp/model"
     experiment_name: str = "unnamed"
     learning_rate: float = 4e-4
     n_epochs: int = 10
@@ -28,7 +27,7 @@ class TrainConfig:
 
     WEIGHT_DECAY: float = 1e-8
 
-    def write_yaml(self) -> str:
+    def write_yaml(self) -> str: #TODO: This has to be moved to a baseclass
         """Convert the dataclass configuration into a YAML-formatted string.
 
         Returns:

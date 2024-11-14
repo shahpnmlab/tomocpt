@@ -8,7 +8,7 @@ import torch
 import mrcfile
 import numpy as np
 
-from typing import Callable, Union, Tuple, List
+from typing import Callable, Union, Tuple, List, Optional
 from tomocpt.constants import LABELS_DIR_NAME_PREFIX
 from tomocpt import mainConfig, constants
 
@@ -106,7 +106,7 @@ def get_shape_for_resizing(volume: np.array, original_size: float, new_size: flo
 
 
 def resize_volume(volume: np.array, new_shape: Union[Tuple[int], List[int]], chunk_size,
-                  use_gpu: bool | None = None, calculate_mean: bool = True) -> np.array:
+                  use_gpu: bool | None = None, calculate_mean: bool = True) -> Tuple[np.array, Optional[List[int]]]:
     """
     Resizes a 3D volume to a new shape using bicubic interpolation. If any dimension of the new shape is smaller
     than the given chunk_size, the function symmetrically pads the volume to match the chunk size.
@@ -156,7 +156,7 @@ def resize_volume(volume: np.array, new_shape: Union[Tuple[int], List[int]], chu
             size=new_shape, mode='trilinear', antialias=False).squeeze().squeeze().cpu()
     del volume
     gc.collect()
-
+    symmetric_padding = None
     if any(shape) < chunk_size:
         discrepancy = chunk_size - shape
         amount_to_pad = np.zeros_like(discrepancy)

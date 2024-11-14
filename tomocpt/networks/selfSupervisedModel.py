@@ -3,7 +3,6 @@ Modified from https://github.com/Project-MONAI/research-contributions/blob/main/
 
 """
 from typing import Optional
-
 import numpy as np
 from numpy.random import randint
 import torch
@@ -14,8 +13,6 @@ from torch.nn import functional as F
 from tomocpt import constants
 from tomocpt.networks.baseModel import BaseModel
 from tomocpt.networks.pickingModel import train_config
-from tomocpt.networks.swinunetr import MySwinUNETR
-from tomocpt.networks.unet import Unet
 from tomocpt.mainConfig import mainConfig
 network_config = mainConfig.network
 
@@ -27,16 +24,17 @@ class SelfSupervisedModel(BaseModel):
         self.num_levels = num_levels if num_levels is not None else network_config.NUM_LEVELS
 
     def __init__(self, lr: float | None = None,
-                 num_levels: int | None = None, model: Optional[BaseModel] = None):
+                 num_levels: int | None = None, model: Optional[BaseModel] = None, *args, **kwargs):
 
         self.set_default_args(lr = lr,
                               num_levels = num_levels)
         self.model = model
 
-        super(SelfSupervisedModel, self).__init__()
+        super(SelfSupervisedModel, self).__init__( *args, **kwargs)
 
         n_voxels = network_config.CHUNK_SIZE
-
+        from tomocpt.networks.swinunetr import MySwinUNETR
+        from tomocpt.networks.unet import Unet
         MODEL_TYPES = {
             "UNET": lambda: Unet(
                 first_layer_out_channels=network_config.FIRST_LAYER_OUT_CHANNELS,

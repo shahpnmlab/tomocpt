@@ -2,6 +2,7 @@ train:
   n_epochs: 2
   learning_rate: 0.999999
   experiment_name: "myKK"
+  chunks_dir: "data/refactor/chunks"
 
 network:
   CHUNK_SIZE: 64

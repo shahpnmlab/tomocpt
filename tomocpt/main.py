@@ -8,10 +8,11 @@ import tomocpt.mainConfig
 from tomocpt.mainConfig import MainConfig
 from tomocpt.configManager import create_configurable_app, update_dataclass_from_config
 
+from tomocpt.predict.predict import infer
 from tomocpt.training.train import train
+
 from tomocpt.configManager.initializer import init
 from functools import wraps
-
 
 def app_register_command(func):
     @app.command()
@@ -29,7 +30,6 @@ def set_global_config_fn(config: DictConfig):
 app = create_configurable_app(MainConfig, set_global_config_fn=set_global_config_fn)
 
 
-@app.command()
 def init_config(
         config: DictConfig,  # Add this parameter to accept the config
         output_path: Annotated[
@@ -47,7 +47,9 @@ def init_config(
 
 
 # Register other commands
+app_register_command(init_config)
 app_register_command(train)
+app_register_command(infer)
 
 if __name__ == "__main__":
     app.run()
@@ -56,4 +58,9 @@ if __name__ == "__main__":
 python -m tomocpt.main  --config-file /home/sanchezg/sideProjects/tomocpt/externalConfExamples/externalConf.yaml
 python -m tomocpt.main  --train-experiment-name kk --config-file /home/sanchezg/sideProjects/tomocpt/externalConfExamples/externalConf.yam
 python -m tomocpt.main train  --config-file /home/sanchezg/sideProjects/tomocpt/externalConfExamples/externalConf.yaml train.learning_rate=100 --config-merge-preference command
+
+python -m tomocpt.main train  --train-experiment-name "CACOTA"  --config-file /home/sanchezg/sideProjects/tomocpt/externalConfExamples/externalConf.yaml  --config-merge-preference command train.chunks_dir=data/refactor/chunks
+
+
+/tmp/SUPERCACA/CACOTA/checkpoints/weights-v2.ckpt
     """

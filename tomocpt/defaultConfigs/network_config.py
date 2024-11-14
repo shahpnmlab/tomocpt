@@ -55,7 +55,7 @@ class NetworkConfig:
 
     SEED_FOR_TRAIN_VAL_SPLIT: int = 113
 
-    def write_yaml(self) -> str:
+    def write_yaml(self) -> str: #TODO: This has to be moved to a baseclass to avoid repetition
         """Convert the dataclass configuration into a YAML-formatted string.
 
         Returns:

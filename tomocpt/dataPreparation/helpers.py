@@ -3,7 +3,7 @@ import torch
 from tomocpt.dataManager.dataUtils import load_mrc, get_shape_for_resizing, resize_volume
 
 
-def _preprocess_data_mrc(data_fname, particle_size_angst, normalization_function, new_particle_size, chunk_size, use_gpu):
+def _preprocess_data_mrc(data_fname:str, particle_size_angst, normalization_function, new_particle_size, chunk_size, use_gpu):
     if normalization_function == "robust_normalization":
         from pycotool.dataManager.dataUtils import robust_normalization
         normalization_function = robust_normalization
@@ -17,7 +17,7 @@ def _preprocess_data_mrc(data_fname, particle_size_angst, normalization_function
     scalar, new_shape = get_shape_for_resizing(vol, particle_size_pix, new_size=new_particle_size)
     if vol.shape != tuple(new_shape):
         print("\n")
-        print(f"Resizing {data_fname.name} from {tuple(vol.shape)} to {new_shape}, such that the particle size is {new_particle_size}px.")
+        print(f"Resizing {data_fname} from {tuple(vol.shape)} to {new_shape}, such that the particle size is {new_particle_size}px.")
         vol, padding_values = resize_volume(vol, new_shape, chunk_size=chunk_size, use_gpu=use_gpu)
     else:
         padding_values = None

@@ -1,5 +1,4 @@
 import torch
-import torchio as tio
 import torchvision
 from torch import nn
 
@@ -7,10 +6,8 @@ from tomocpt.mainConfig import mainConfig
 network_config = mainConfig.network
 train_config = mainConfig.train
 from tomocpt.networks.baseModel import BaseModel
-from tomocpt.networks.unet import Unet
 from tomocpt.training.losses import gradient3d_loss
 
-from monai.networks.nets import SwinUNETR
 
 BETA_FOR_SOFTPLUS = 2
 
@@ -19,17 +16,19 @@ class BasePickingModel(BaseModel):# TODO: Change the name
     def set_default_args(self, lr: float | None,
                          num_levels: int | None):
 
-        self.lr = lr if lr is not None else network_config.LEARNING_RATE
-        self.num_levels = num_levels if num_levels is not None else network_config.NUM_LEVELS
+        self.lr = lr if lr is not None else train_config.learning_rate
+        self.num_levels = num_levels if num_levels is not None else network_config.NUM_LEVELS #TODO: This is not the way to do it, as it won't be picked up at inference
 
     def __init__(self, lr: float | None = None,
                  num_levels: int | None = None,
-                 model=None):
+                 model=None, *args, **kwargs):
         self.set_default_args(lr=lr,
                               num_levels=num_levels)
-        super(BasePickingModel, self).__init__()
+        super(BasePickingModel, self).__init__(*args, **kwargs)
 
         # TODO:change the model here to change the arch using monai.
+        from monai.networks.nets import SwinUNETR
+        from tomocpt.networks.unet import Unet
 
         MODEL_TYPES = {
             "UNET": lambda: Unet(

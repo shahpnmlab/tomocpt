@@ -1,20 +1,22 @@
 import pytorch_lightning as pl
-from pycotool.constants import CHUNK_SIZE
 
 from tomocpt import constants
 from tomocpt.mainConfig import mainConfig
 network_config = mainConfig.network
 
 class BaseModel(pl.LightningModule):
-    def __init__(self):
+    def __init__(self,
+                 mainConfig=mainConfig,
+                 constants_dict={k: getattr(constants, k) for k in dir(constants) if not k.startswith("__")}):
         super(BaseModel, self).__init__()
 
         self.save_hyperparameters(
-            dict(constants_dict={k: getattr(constants, k) for k in dir(constants) if not k.startswith("__")},
-                 config_dict=network_config
+            dict(constants_dict=constants_dict,
+                 mainConfig=mainConfig
                  )
         ) #TODO: We need to serialize them to dicts
-        self.patch_size = CHUNK_SIZE
+        self.patch_size = mainConfig.network.CHUNK_SIZE
+        self.DESIRED_PARTICLE_PIXELS = mainConfig.prepData.DESIRED_PARTICLE_PIXELS
 
     def forward_and_zero_edges(self, x):
         pred = self.forward(x)

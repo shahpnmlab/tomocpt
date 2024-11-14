@@ -52,8 +52,8 @@ class Data(pl.LightningDataModule):
         )
 
     def transfer_batch_to_device(self, batch: Any, device: torch.device, dataloader_idx: int) -> Any:
-        batch["input_data"] = batch["input_data"].data.to(device)
-        batch["target_data"] = batch["target_data"].data.to(device)
+        batch["input_data"] = batch["input_data"][tio.DATA].to(device)
+        batch["target_data"] = batch["target_data"][tio.DATA].to(device)
         return batch
 
     def train_dataloader(self) -> DataLoader[Dict[str, tio.ScalarImage]]:

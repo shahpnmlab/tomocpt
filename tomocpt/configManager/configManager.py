@@ -1,6 +1,7 @@
 # config_manager.py
 import operator
 import os.path
+import sys
 from dataclasses import is_dataclass, fields
 from enum import Enum
 from functools import wraps, reduce
@@ -10,8 +11,10 @@ import inspect
 
 import typer
 import hydra
+from click import Argument, Option, Command
 from hydra.core.config_store import ConfigStore
 from omegaconf import DictConfig, OmegaConf
+from typer.models import OptionInfo, ArgumentInfo
 from typing_extensions import Annotated
 
 
@@ -21,7 +24,6 @@ class MergePreference(str, Enum):
 
 
 T = TypeVar('T')
-
 
 class ConfigurableApp:
     """Factory class for creating Typer apps with Hydra config management"""
@@ -72,7 +74,7 @@ class ConfigurableApp:
 
         return conflicts
 
-    def _flatten_dict(self, dictionary: dict, parent_key: str = '', separator: str = '/') -> dict:
+    def _flatten_dict(self, dictionary: dict, parent_key: str = '', separator: str = '__') -> dict:
         """Flatten a nested dictionary with path information."""
         items = []
         for key, value in dictionary.items():
@@ -91,33 +93,72 @@ class ConfigurableApp:
         """Set a value in a nested dictionary using a list of keys."""
         self._get_from_dict(data_dict, map_list[:-1])[map_list[-1]] = value
 
-    def _handle_config_overrides(self, func_kwargs: dict, config: DictConfig, default_config: DictConfig) \
+    def _handle_config_overrides(self, func_kwargs: dict, config: DictConfig, default_config: DictConfig, config_merge_preference) \
             -> Tuple[Dict[str, Any], DictConfig]:
         """
         Handle overrides from command-line arguments that match config paths.
         Args:
             func_kwargs: Dictionary of function arguments
             config: The configuration object
-            default_config: the by default configuration to check it command lines are as by default
+            default_config: the by default configuration to check if command lines are as by default
         Returns:
             Updated configuration object
         """
         # Convert config to dict for flattening
+
         config_dict = OmegaConf.to_container(config, resolve=True)
         flat_config = self._flatten_dict(config_dict)
         flat_default_config = self._flatten_dict(default_config)
+
+        # Track conflicts between CLI args and config file
+        conflicts = []
         # Check for overlapping parameters
         for path, (key, conf_value) in flat_config.items():
-            cli_key = path.replace("/", "_")
-
+            cli_key = path.replace("--", "__")
             if cli_key in func_kwargs:
-                if func_kwargs[cli_key] is not None and func_kwargs[cli_key] != flat_default_config[path][1]:
-                    cli_value = func_kwargs[cli_key]
-                    if str(conf_value) != str(cli_value):  # Only update if values are different
-                        print(f"Overriding config conf_value '{path}': {conf_value} → {cli_value}")
-                        self._set_in_dict(config_dict, path.split("/"), cli_value)
+                cli_value = func_kwargs[cli_key]
+                if cli_value is not None and cli_value != flat_default_config[path][1]:
+                    if conf_value is not None and str(conf_value) != str(cli_value):  # Values are different
+                        conflicts.append((path, f"{path}: command={cli_value}, config={conf_value}"))
                 else:
                     func_kwargs[cli_key] = conf_value
+        # If conflicts were found, handle them based on merge preference
+        if conflicts:
+            varname_conflicts, conflicts = zip(*conflicts)
+            if config_merge_preference is None:
+                conflict_msg = "\n  ".join(conflicts)
+                raise typer.BadParameter(
+                    f"Conflicts found between config file and command line arguments:\n  {conflict_msg}\n"
+                    f"Use --config-merge-preference to specify preference (command/configFile)"
+                )
+            else:
+                print(f"\nResolving conflicts with preference: {config_merge_preference}")
+                print("Conflicts found:")
+                for conflict in conflicts:
+                    print(f"  {conflict}")
+
+                # Apply the overrides based on preference
+                for path, (key, conf_value) in flat_config.items():
+                    cli_key = path.replace("--", "__")
+
+                    if cli_key in func_kwargs:
+                        cli_value = func_kwargs[cli_key]
+                        if cli_value in varname_conflicts:
+                            if cli_value is not None and cli_value != flat_default_config[path][1]:
+                                if config_merge_preference == MergePreference.COMMAND:
+                                    self._set_in_dict(config_dict, path.split("/"), cli_value)
+                                else:  # MergePreference.CONFIG_FILE
+                                    func_kwargs[cli_key] = conf_value
+
+        # If no conflicts, apply CLI overrides normally
+        else:
+            for path, (key, conf_value) in flat_config.items():
+                cli_key = path.replace("--", "__")
+                if cli_key in func_kwargs:
+                    cli_value = func_kwargs[cli_key]
+                    if cli_value is not None and cli_value != flat_default_config[path][1]:
+                        self._set_in_dict(config_dict, path.split("/"), cli_value)
+
 
         # Convert back to DictConfig
         return func_kwargs, OmegaConf.create(config_dict)
@@ -135,10 +176,8 @@ class ConfigurableApp:
             config_merge_preference = kwargs.pop('config_merge_preference', None)
             # Process the configuration
             base_cfg, cfg = self.process_config(config_file, config_args, config_merge_preference)
-            # breakpoint()
             # Handle automatic overrides from command-line arguments
-            kwargs, cfg = self._handle_config_overrides(kwargs, cfg, base_cfg)
-
+            kwargs, cfg = self._handle_config_overrides(kwargs, cfg, base_cfg, config_merge_preference)
             if self.set_global_config_fn is not None:
                 self.set_global_config_fn(cfg)
             # Call the original function
@@ -150,23 +189,59 @@ class ConfigurableApp:
                                                                "your function ")
                 return func(*args, **kwargs)
 
+        config_file_argname = "config-file"
+        config_merge_preference_argname  = "config-merge-preference"
+
+        if f"--{config_file_argname}" in sys.argv:
+            config_file = Path(os.path.expanduser(sys.argv[sys.argv.index(f"--{config_file_argname}") + 1]))
+            config_merge_preference = MergePreference.COMMAND
+            if f"-{config_merge_preference_argname}" in sys.argv:
+                config_merge_preference = os.path.expanduser(sys.argv[sys.argv.index(f"--{config_merge_preference_argname}") + 1])
+                if config_merge_preference == "command":
+                    config_merge_preference = MergePreference.COMMAND
+                elif config_merge_preference == "configFile":
+                    config_merge_preference = MergePreference.CONFIG_FILE
+                else:
+                    raise typer.BadParameter("Error, bad parameter for config_merge_preference ")
+            config_args = [x for x in sys.argv if not x.startswith("-") and "=" in x]
+            conf = self.process_config(config_file, config_args, config_merge_preference)[-1]
+        else:
+            conf = None
+
         # Get original signature and parameters
         sig = inspect.signature(func)
         orig_params = []
-        for name, p in sig.parameters.items():
-            if p.name != 'config':
-                if not all([isinstance(x, typer.models.OptionInfo) for x in p.annotation.__metadata__]):
-                    raise typer.BadParameter(
-                        f"Parameter {name} was not provided as typer.Option. typer.Argument is not supported"
-                    )
-                orig_params.append(p)
+        for name, param in sig.parameters.items():
+            if param.name != 'config':
+                # print("p.name", name, param.name)
+                if isinstance(param, inspect.Parameter) and isinstance(param.default, typer.models.OptionInfo):
+                    if isinstance(param.default.default, type(Ellipsis)) and conf is not None:
+                        config_name_split = param.name.split("__")
+                        val = conf[config_name_split[0]]
+                        for _key in config_name_split[1:]:
+                            val = val[_key]
+                        if val is None:# and "--help" not in sys.argv:
+                            val = Ellipsis
+                        param.default.default = val
+
+                    #Param using the syntaxis name: TYPE = typer.Option(help=..., default=...)
+                else:
+                    try:
+                        if not all([isinstance(x, typer.models.OptionInfo) for x in param.annotation.__metadata__]):
+                            raise typer.BadParameter(
+                                f"Parameter {name} was not provided as typer.Option. typer.Argument is not supported"
+                            )
+                    except AttributeError as e:
+                        raise e
+
+                orig_params.append(param)
             else:
                 self.return_config = True
 
         # Add the config parameters to the function
         params = [
             inspect.Parameter(
-                'config_file',
+                config_file_argname.replace("-", "_"),
                 inspect.Parameter.KEYWORD_ONLY,
                 default=None,
                 annotation=Annotated[Optional[Path], typer.Option(help="External YAML config file")]
@@ -178,7 +253,7 @@ class ConfigurableApp:
                 annotation=Annotated[Optional[List[str]], typer.Argument(help="Hydra-style config modifications")]
             ),
             inspect.Parameter(
-                'config_merge_preference',
+                config_merge_preference_argname.replace("-", "_"),
                 inspect.Parameter.KEYWORD_ONLY,
                 default=None,
                 annotation=Annotated[Optional[MergePreference], typer.Option(help="How to handle config conflicts")]

@@ -3,6 +3,7 @@ from hydra.core.config_store import ConfigStore
 
 from tomocpt.defaultConfigs.infer_config import InferConfig
 from tomocpt.defaultConfigs.network_config import NetworkConfig
+from tomocpt.defaultConfigs.prepdata_config import PrepdataConfig
 from tomocpt.defaultConfigs.train_config import TrainConfig
 
 
@@ -11,6 +12,7 @@ class MainConfig:
     train: TrainConfig = field(default_factory=TrainConfig)
     network: NetworkConfig = field(default_factory=NetworkConfig)
     infer: InferConfig = field(default_factory=InferConfig)
+    prepData: PrepdataConfig = field(default_factory=PrepdataConfig)
 
 
 cs = ConfigStore.instance()

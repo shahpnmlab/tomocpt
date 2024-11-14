@@ -1,4 +1,10 @@
-from itertools import batched
+from omegaconf import DictConfig
+
+try:
+    from itertools import batched
+except ImportError:
+    from more_itertools import batched
+
 from typing import Annotated, Optional
 
 import typer
@@ -25,14 +31,15 @@ def infer(tomosDir: Annotated[Path, typer.Option(help="The directory that contai
           modelFname: Annotated[Path, typer.Option(help="The model fname")],
           particleLengthAng: Annotated[float, typer.Option(help="Particle diameter in Angstroms")], #TODO: Pranav, check this
           batch_size: Annotated[int, typer.Option(help="batch size")]=infer_config.batch_size,
-          oversubscribeFactor: int = 1,
-          plot: bool = False,
-          savePreds: bool = False,
-          extractCoords: bool = True,
-          nearest_neigs_angs: Optional[float] = None,
-          deep_threshold: float = 0.3,
-          outCoordFname: str = "tomopicker_coords.star",
-          masksDir: Annotated[Optional[Path], typer.Option(help="The directory with masks")] = None
+          oversubscribeFactor: Annotated[int, typer.Option(help="#TODO")] = 1, #TODO: add most of those things to the config
+          plot: Annotated[bool, typer.Option(help="#TODO")] = False,
+          savePreds: Annotated[bool, typer.Option(help="#TODO")] = False,
+          extractCoords: Annotated[bool, typer.Option(help="#TODO")]  = True,
+          nearest_neigs_angs: Annotated[Optional[float], typer.Option(help="#TODO")] = None,
+          deep_threshold: Annotated[float, typer.Option(help="#TODO")] = 0.3,
+          outCoordFname: Annotated[str, typer.Option(help="#TODO")] = "tomopicker_coords.star",
+          masksDir: Annotated[Optional[Path], typer.Option(help="The directory with masks")] = None,
+          config: DictConfig = None
           ):
     """
     :param tomosDir: path to folder containing tomograms
@@ -97,14 +104,15 @@ def infer(tomosDir: Annotated[Path, typer.Option(help="The directory that contai
             all_tomo_centroids_and_scores["rlnCoordinateZ"].append(predicted_centroid[0])
             all_tomo_centroids_and_scores["rlnAutopickFigureOfMerit"].append(predicted_centroid[3])
 
-        df_optics = pd.DataFrame({ #TODO: Why do you invent this optical group?
-            'rlnOpticsGroup': [1],
-            "rlnOpticsGroupName": ["OpticsGroup1"],
-            'rlnSphericalAberration': [2.7],
-            'rlnVoltage': [300],
-            'rlnImagePixelSize': [voxel_sizes[0]],
-            'rlnImageDimensionality': [3]
-        })
+        # TODO: Why do you invent this optical group?
+        # df_optics = pd.DataFrame({
+        #     'rlnOpticsGroup': [1],
+        #     "rlnOpticsGroupName": ["OpticsGroup1"],
+        #     'rlnSphericalAberration': [2.7],
+        #     'rlnVoltage': [300],
+        #     'rlnImagePixelSize': [[x for x in voxel_sizes if x][0]],
+        #     'rlnImageDimensionality': [3]
+        # })
         df_particles = pd.DataFrame(data=all_tomo_centroids_and_scores)
 
         star_data = {
