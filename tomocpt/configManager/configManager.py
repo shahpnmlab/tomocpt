@@ -1,3 +1,4 @@
+import sys
 from dataclasses import is_dataclass, fields
 from typing import Any, Callable, Dict, List, Optional, Type, TypeVar, Union, Tuple, Set
 from typing_extensions import Annotated
@@ -172,6 +173,20 @@ class ConfigurableApp:
 
     def command(self, *typer_args, config: Any = None, **typer_kwargs):
         def decorator(func: Callable):
+            # Get config file value if present
+            config_file_path = None
+            for i, arg in enumerate(sys.argv):
+                if arg == '--config_file':
+                    if i + 1 < len(sys.argv):
+                        config_file_path = sys.argv[i + 1]
+                elif arg.startswith('--config_file='):
+                    config_file_path = arg.split('=', 1)[1]
+
+            # Load config file if present
+            yaml_config = None
+            if config_file_path:
+                yaml_config = OmegaConf.load(config_file_path)
+
             original_sig = inspect.signature(func)
             func_params = [p for p in original_sig.parameters.values() if p.name != 'config']
             cli_params, paths = self.config_manager.create_cli_parameters(config)
@@ -228,6 +243,35 @@ class ConfigurableApp:
                     annotation=Annotated[Optional[List[str]], typer.Argument(help="Hydra-style config modifications")]
                 )
             ]
+
+            # Update cli_params with values from config file if present
+            if yaml_config:
+                updated_cli_params = []
+                for param in cli_params:
+                    param_path = _normalize_path(param.name).split('.')
+                    curr_config = yaml_config
+                    found_value = True
+
+                    # Navigate the yaml config structure
+                    for p in param_path:
+                        if hasattr(curr_config, p):
+                            curr_config = getattr(curr_config, p)
+                        else:
+                            found_value = False
+                            break
+                    if found_value:
+                        # Create new parameter with default from yaml
+                        new_param = inspect.Parameter(
+                            param.name,
+                            param.kind,
+                            annotation=param.annotation,
+                            default=curr_config
+                        )
+                        updated_cli_params.append(new_param)
+                    else:
+                        updated_cli_params.append(param)
+
+                cli_params = updated_cli_params
 
             # Organize parameters
             required_params = []

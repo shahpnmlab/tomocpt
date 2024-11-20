@@ -26,7 +26,7 @@ class ModelType(str, Enum):
 
 @dataclass
 class NetworkConfig:
-    CHUNK_SIZE: Annotated[int, typer.Option(help="The patch size of the cubes")]  = 64
+    CHUNK_SIZE: Annotated[int, typer.Option(help="The patch size of the cubes")]  = 64 #TODO: isn't CHUNK_SIZE something that depends on prep_data, so it should not be here (and needs to be sotred in the network hparams just to avoid needing it at inference?
     CHUNK_STRIDE: int = 32 #TODO: Pranav. Is CHUNK STRIDE USED IN TRAINING? I though it was only in inference. If so, remove this and move to inference
     RANDOM_FRACTION_TO_SAMPLE_TRAIN: float = -1.  # Train on all the chunks #TODO: Move this to train or to prep
 

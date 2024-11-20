@@ -21,7 +21,7 @@ configForInference = mainConfig.infer
 
 app.register_command(train, configForTrain)
 app.register_command(infer, configForInference)
-app.register_command(init_config, None)
+app.register_command(init_config, None) #TODO: init_config needs to be modified to generate a config file for train, another for inference and so one
 
 if __name__ == "__main__":
     app.run()
@@ -29,7 +29,7 @@ if __name__ == "__main__":
 
 python -m tomocpt.main train --network.model_type unet --chunks_dir data/refactor/chunks/ --model_dir /tmp/unet --n_epochs 2 OVERFIT_N_BATCHES=10
 python -m tomocpt.main train --network.model_type unet --chunks_dir data/refactor/chunks/ --model_dir /tmp/unet   --n_epochs 2 OVERFIT_N_BATCHES=10 network.KERNEL_SIZE=7
- 
+python -m tomocpt.main train --config_file externalConfExamples/trainExternalConf.yaml 
 
 python -m tomocpt.main infer --tomosDir data/refactor/datasets/particle1/tomograms/ --predsDir /tmp/kk_inference --modelFname /tmp/unet/unnamed/checkpoints/weights.ckpt  --particleLengthAng 250
 

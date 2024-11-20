@@ -1,9 +1,0 @@
-train:
-  n_epochs: 32
-  learning_rate: 0.999999
-  experiment_name: "myKK"
-  chunks_dir: "data/refactor/chunks"
-  model_dir: "/tmp/modeldir"
-
-network:
-  CHUNK_SIZE: 64
