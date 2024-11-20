@@ -186,10 +186,8 @@ def write_segmentation_mask(tensor_mask, outputname, angpix: float = 1, overwrit
         m = tensor_mask.numpy()
     else:
         m = tensor_mask
-    if not overwrite:
-        mrcfile.write(outputname, data=m, voxel_size=angpix)
-    else:
-        mrcfile.write(outputname, data=m, voxel_size=angpix, overwrite=True)
+
+    mrcfile.write(outputname, data=m, voxel_size=angpix, overwrite=overwrite)
 
 
 def ang_to_pix(val, sampling):

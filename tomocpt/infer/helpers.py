@@ -9,6 +9,7 @@ import torchio as tio
 import numpy as np
 import pandas as pd
 import starfile
+from numpy.core.defchararray import lower
 from skimage.feature import peak_local_max
 from skimage.morphology import cube
 from torch.utils.data import DataLoader
@@ -16,8 +17,8 @@ from tqdm import tqdm
 
 from tomocpt.dataManager.dataUtils import load_mrc, write_segmentation_mask, resize_volume, plot_example
 from tomocpt.dataPreparation.helpers import _preprocess_data_mrc
-from tomocpt.networks.pickingModel import BasePickingModel
-from tomocpt.predict.predict import infer_config
+from tomocpt.mainConfig import mainConfig
+infer_config = mainConfig.infer
 
 logger = logging.getLogger(__name__)
 
@@ -197,7 +198,7 @@ def extract_cube_at_predicted_centroid(predicted_segmentation_mask: np.array, ce
     return np.max(subvol)
 
 
-def extract_centroids_from_pred(input_tensor: np.array, nn_ang_distance: float, particle_ang_length: float,
+def extract_centroids_from_pred(input_tensor: np.array, nn_ang_distance: Optional[float], particle_ang_length: float,
                                 threshold: float, angpix: float):
     if nn_ang_distance is None:
         min_dist = particle_ang_length / angpix
@@ -210,8 +211,8 @@ def extract_centroids_from_pred(input_tensor: np.array, nn_ang_distance: float, 
 
 def _infer_one_tomo(tomoFname: str, output_fname: str, particle_ang_length: float, model: torch.nn.Module, gpu_id: int,
                     patch_size:int, batch_size:int,
-                    plot: bool = False, save_preds: bool = False, extract_coords: bool = True,
-                    nearest_neigs_angs: Optional[float] = None, threshold: float = 0.3, maskFname: Optional[str] = None):
+                    plot: bool, save_pred_mask: bool, extract_coords: bool,
+                    nearest_neigs_angs: Optional[float], threshold: float, maskFname: Optional[str]):
     """
     :param tomoFname: the filename with the tomogram
     :param output_fname: path to directory to store inferred output
@@ -221,7 +222,7 @@ def _infer_one_tomo(tomoFname: str, output_fname: str, particle_ang_length: floa
     :param patch_size: Size of chunk to run inference on
     :param batch_size: batch size. Number of chunks to process together in the GPU
     :param plot: plot raw inference_data and segmentation mask for quick viz.
-    :param save_preds: whether to save the predicted segmentation mask
+    :param save_pred_mask: whether to save the predicted segmentation mask
     :param extract_coords: whether to extract coordinates from the predicted segmentation mask
     :param nearest_neigs_angs: nearest neighbor distance (Å
     :param threshold: threshold for peak detection
@@ -229,6 +230,7 @@ def _infer_one_tomo(tomoFname: str, output_fname: str, particle_ang_length: floa
     :return:
     """
 
+    voxel_size = np.nan
     if not Path(output_fname).exists():
         (vol, new_shape, old_shape, voxel_size,
          padding_values, scalar) = _preprocess_data_mrc(tomoFname, normalization_function="robust_normalization",
@@ -274,14 +276,16 @@ def _infer_one_tomo(tomoFname: str, output_fname: str, particle_ang_length: floa
         output_tensor = output_tensor.cpu().numpy()
         #output_tensor = resize(output_tensor, output_shape=old_shape, mode='constant', cval=0)
         output_tensor, sym_padding = resize_volume(output_tensor, new_shape=old_shape, calculate_mean=False, chunk_size=patch_size, use_gpu=gpu_id >=0)
-
-        if save_preds:
+        if save_pred_mask:
             write_segmentation_mask(output_tensor, output_fname, angpix=voxel_size, overwrite=True)
         if plot:
             plot_example(subject["input_data"][tio.DATA], output_tensor)
 
-    else: #Do we want to reload it?
+    elif extract_coords:
         output_tensor, voxel_size = load_mrc(output_fname, normalize=None, return_boxSize=True)
+        logger.info(f"Mask is already available for {output_fname}")
+    else:
+        return [], [], voxel_size
 
     if extract_coords:
         coords_array = extract_centroids_from_pred(output_tensor,
@@ -295,8 +299,7 @@ def _infer_one_tomo(tomoFname: str, output_fname: str, particle_ang_length: floa
         else:
             centroids_and_scores = np.zeros((coords_array.shape[0], 4))
             for i, centroid_peak in enumerate(coords_array):
-                # centroids_and_scores[i, 0] = tomoFname.replace(tag if tag is not None, "")
-                tomoFnameList.append(Path(tomoFname).stem)
+                tomoFnameList.append(Path(tomoFname).stem) #TODO: Are you sure that you want only the steam?
                 centroids_and_scores[i, 0] = centroid_peak[0]
                 centroids_and_scores[i, 1] = centroid_peak[1]
                 centroids_and_scores[i, 2] = centroid_peak[2]
@@ -306,34 +309,3 @@ def _infer_one_tomo(tomoFname: str, output_fname: str, particle_ang_length: floa
     return [], [], voxel_size
 
 
-def infer_tomos(tomoFnames: List[Path], predsDir: str, modelFname: str, gpu_id: int, particleLengthAng: float,
-                batch_size: int,
-                plot: bool = False, save_preds: bool = False, extract_coords: bool = True,
-                nearest_neigs_angs: Optional[float] = None, threshold: float = 0.3, masksDir: Optional[str] = None):
-
-    kwargs = {"map_location": f"cuda:{gpu_id}"}
-    # model = torch.load(modelFname, weights_only=False)
-    #TODO: Model loading may not be picking well the config.
-    model = BasePickingModel.load_from_checkpoint(modelFname, **kwargs) #TODO: we want to cache this
-    patch_size = model.patch_size
-    model = model.eval().cuda(gpu_id)
-
-    tomo_names, one_tomo_centroids_and_scores, voxel_sizes = [], [], []
-    for data_fname in tomoFnames:
-        output_fname = str(Path(predsDir) / data_fname.name)
-        mask_fname = Path(masksDir) / data_fname.name if masksDir else None
-        _tomo_names, _one_tomo_centroids_and_scores, vx = _infer_one_tomo(tomoFname=str(data_fname),
-                                                                          output_fname=output_fname,
-                                                                          particle_ang_length=particleLengthAng,
-                                                                          model=model, gpu_id=gpu_id,
-                                                                          patch_size=patch_size, batch_size=batch_size,
-                                                                          plot=plot, save_preds=save_preds,
-                                                                          extract_coords=extract_coords,
-                                                                          nearest_neigs_angs=nearest_neigs_angs,
-                                                                          threshold=threshold,
-                                                                          maskFname=str(mask_fname) if mask_fname
-                                                                                    else None)
-        tomo_names.extend(_tomo_names)
-        one_tomo_centroids_and_scores.extend(_one_tomo_centroids_and_scores)
-        voxel_sizes.append(vx)
-    return tomo_names, one_tomo_centroids_and_scores, voxel_sizes

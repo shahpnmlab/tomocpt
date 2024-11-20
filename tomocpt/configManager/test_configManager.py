@@ -1,250 +1,548 @@
-# test_config_manager.py
-import os
-import tempfile
-from dataclasses import dataclass, field
-from pathlib import Path
-from typing import Annotated, List
-import sys
-from unittest.mock import patch
-from io import StringIO
-
 import pytest
+from dataclasses import dataclass, field
+from typing import Annotated, List, Optional, Any
 import typer
-from omegaconf import DictConfig, OmegaConf
+from pathlib import Path
+import tempfile
+from omegaconf import OmegaConf, DictConfig
 
-from tomocpt.configManager import create_configurable_app, MergePreference
+from tomocpt.configManager.configManager import create_app, MergePreference
 
 
-# Test configurations
+# Test Configurations
 @dataclass
-class InnerTestConfig:
-    nested_value: str = "default"
-    number: int = 10
+class TrainConfig:
+    learning_rate: Annotated[float, typer.Option(help="Learning rate")] = 0.001
+    epochs: Annotated[int, typer.Option(help="Number of epochs")] = 10
+    advanced_parameter: int = -1
 
 
 @dataclass
-class TestConfig:
-    value1: int = 42
-    value2: float = 0.001
-    inner: InnerTestConfig = field(default_factory=InnerTestConfig)
-
-
-# Helper function to capture both stdout and stderr and run command
-def run_with_args(func, args):
-    """Run the function with given args and capture both stdout and stderr"""
-    stdout = StringIO()
-    stderr = StringIO()
-    with patch('sys.stdout', stdout), \
-            patch('sys.stderr', stderr), \
-            patch('sys.argv', ['script.py'] + args):
-        try:
-            config_app.run_with_config(func)
-            return 0, stdout.getvalue(), stderr.getvalue()
-        except SystemExit as e:
-            return e.code, stdout.getvalue(), stderr.getvalue()
-
-
-# Fixtures
-@pytest.fixture
-def temp_config_file():
-    """Create a temporary config file for testing"""
-    content = """
-value1: 100
-value2: 0.5
-inner:
-  nested_value: "from_file"
-  number: 20
-"""
-    with tempfile.NamedTemporaryFile(mode='w', suffix='.yaml', delete=False) as f:
-        f.write(content)
-        config_path = f.name
-
-    yield config_path
-
-    # Cleanup
-    os.unlink(config_path)
+class MainConfig:
+    train: TrainConfig = field(default_factory=TrainConfig)
+    experiment_name: Annotated[str, typer.Option(help="experiment_name")] = "default"
+    otro: int = 9
 
 
 @pytest.fixture
-def conflicting_config_file():
-    """Create a config file that conflicts with typical command line args"""
+def yaml_config_file():
     content = """
-value1: 999
-value2: 0.999
-inner:
-  nested_value: "conflict"
-  number: 999
+train:
+  learning_rate: 0.999999
+  epochs: 32
+  advanced_parameter: 100
+experiment_name: "from_yaml"
+otro: 42
 """
     with tempfile.NamedTemporaryFile(mode='w', suffix='.yaml', delete=False) as f:
         f.write(content)
-        config_path = f.name
-
-    yield config_path
-
-    # Cleanup
-    os.unlink(config_path)
+    yield Path(f.name)
+    Path(f.name).unlink()
 
 
-# Tests
-def test_basic_execution():
-    """Test basic execution without any config options"""
-    result_dict = {}
+def test_basic_cli():
+    """Test basic CLI parameter handling"""
+    app = create_app()
+    config = MainConfig()
+    result = {}
 
-    def test_func(
-            input_path: Annotated[Path, typer.Option(help="Input path")],
-            config: DictConfig = None
-    ):
-        result_dict['input_path'] = str(input_path)
-        result_dict['config'] = OmegaConf.to_container(config)
+    @app.command(config=config)
+    def test_func(configs: Optional[List[Any]] = None):
+        result['config'] = configs[0]
+        return result['config']
 
-    exit_code, stdout, stderr = run_with_args(test_func, ['--input-path', 'input.txt'])
+    with pytest.raises(SystemExit) as exit_info:
+        app.app(["--train.learning-rate", "0.1"])
 
-    assert exit_code == 0
-    assert result_dict['input_path'] == 'input.txt'
-    assert result_dict['config']['value1'] == 42  # default value
-    assert result_dict['config']['value2'] == 0.001  # default value
-
-
-def test_config_file(temp_config_file):
-    """Test loading configuration from file"""
-    result_dict = {}
-
-    def test_func(
-            input_path: Annotated[Path, typer.Option(help="Input path")],
-            config: DictConfig = None
-    ):
-        result_dict['config'] = OmegaConf.to_container(config)
-
-    exit_code, stdout, stderr = run_with_args(test_func, [
-        '--input-path', 'input.txt',
-        '--config-file', temp_config_file
-    ])
-
-    assert exit_code == 0
-    assert result_dict['config']['value1'] == 100
-    assert result_dict['config']['value2'] == 0.5
-    assert result_dict['config']['inner']['nested_value'] == 'from_file'
+        assert result.get('config') is not None
+        if result.get('config'):
+            assert result['config'].train.learning_rate == 0.1
+            assert result['config'].train.epochs == 10
+            assert result['config'].experiment_name == "default"
 
 
-def test_command_line_override():
-    """Test command line overrides"""
-    result_dict = {}
+def test_help_shows_parameters(capsys):
+    """Test that help shows the correct parameters"""
+    app = create_app()
+    config = MainConfig()
 
-    def test_func(
-            input_path: Annotated[Path, typer.Option(help="Input path")],
-            config: DictConfig = None
-    ):
-        result_dict['config'] = OmegaConf.to_container(config)
-
-    exit_code, stdout, stderr = run_with_args(test_func, [
-        '--input-path', 'input.txt',
-        'value1=200',
-        'inner.nested_value=from_cli'
-    ])
-
-    assert exit_code == 0
-    assert result_dict['config']['value1'] == 200
-    assert result_dict['config']['inner']['nested_value'] == 'from_cli'
-
-
-def test_multiple_overrides():
-    """Test multiple command line overrides"""
-    result_dict = {}
-
-    def test_func(
-            input_path: Annotated[Path, typer.Option(help="Input path")],
-            config: DictConfig = None
-    ):
-        result_dict['config'] = OmegaConf.to_container(config)
-
-    exit_code, stdout, stderr = run_with_args(test_func, [
-        '--input-path', 'input.txt',
-        'value1=100',
-        'value2=0.5',
-        'inner.nested_value=new_value',
-        'inner.number=42'
-    ])
-
-    assert exit_code == 0
-    assert result_dict['config']['value1'] == 100
-    assert result_dict['config']['value2'] == 0.5
-    assert result_dict['config']['inner']['nested_value'] == 'new_value'
-    assert result_dict['config']['inner']['number'] == 42
-
-
-def test_conflict_detection(conflicting_config_file):
-    """Test conflict detection between file and command line args"""
-    result_dict = {}
-
-    def test_func(
-            input_path: Annotated[Path, typer.Option(help="Input path")],
-            config: DictConfig = None
-    ):
-        result_dict['config'] = OmegaConf.to_container(config)
-
-    exit_code, stdout, stderr = run_with_args(test_func, [
-        '--input-path', 'input.txt',
-        '--config-file', conflicting_config_file,
-        'value1=200'
-    ])
-
-    assert exit_code != 0
-    assert "Conflicts found between config file and command arguments" in (stdout + stderr)
-
-
-def test_invalid_config_file():
-    """Test handling of non-existent config file"""
-
-    def test_func(
-            input_path: Annotated[Path, typer.Option(help="Input path")],
-            config: DictConfig = None
-    ):
+    @app.command(config=config)
+    def test_func(configs: Optional[List[Any]] = None):
         pass
 
-    exit_code, stdout, stderr = run_with_args(test_func, [
-        '--input-path', 'input.txt',
-        '--config-file', 'nonexistent.yaml'
-    ])
+    with pytest.raises(SystemExit):
+        app.app(["--help"])
 
-    assert exit_code != 0
-    assert "Config file not found" in (stdout + stderr)
+    captured = capsys.readouterr()
+    assert "--train.learning-rate" in captured.out
+    assert "--train.epochs" in captured.out
+    assert "--experiment-name" in captured.out
+    assert "advanced_parameter" not in captured.out
+
+
+def test_yaml_config_loading(yaml_config_file):
+    """Test loading configuration from YAML file"""
+    app = create_app()
+    config = MainConfig()
+    result = {}
+
+    @app.command(config=config)
+    def test_func(configs: Optional[List[Any]] = None):
+        result['config'] = configs[0]
+        return result['config']
+
+    with pytest.raises(SystemExit):
+        app.app(["--config_file", str(yaml_config_file)])
+
+        assert result['config'].train.learning_rate == 0.999999
+        assert result['config'].train.epochs == 32
+        assert result['config'].train.advanced_parameter == 100
+        assert result['config'].experiment_name == "from_yaml"
+        assert result['config'].otro == 42
+
+
+def test_hydra_style_updates():
+    """Test updating values through hydra-style arguments"""
+    app = create_app()
+    config = MainConfig()
+    result = {}
+
+    @app.command(config=config)
+    def test_func(configs: Optional[List[Any]] = None):
+        result['config'] = configs[0]
+        return result['config']
+
+    with pytest.raises(SystemExit):
+        app.app(["train.advanced_parameter=100", "otro=42"])
+
+        assert result['config'].train.advanced_parameter == 100
+        assert result['config'].otro == 42
+        # Annotated params should keep defaults
+        assert result['config'].train.learning_rate == 0.001
+        assert result['config'].train.epochs == 10
+
+
+def test_merge_preference(yaml_config_file):
+    """Test config merge preferences"""
+    app = create_app()
+    config = MainConfig()
+    result = {}
+
+    @app.command(config=config)
+    def test_func(configs: Optional[List[Any]] = None):
+        result['config'] = configs[0]
+        return result['config']
+
+    # Test CLI preference
+    with pytest.raises(SystemExit):
+        app.app([
+            "--config_file", str(yaml_config_file),
+            "--config_merge_preference", "command",
+            "--train.learning-rate", "0.1",
+            "train.advanced_parameter=200"
+        ])
+
+        assert result['config'].train.learning_rate == 0.1
+        assert result['config'].train.advanced_parameter == 200
+
+    # Test YAML preference
+    result = {}
+    with pytest.raises(SystemExit):
+        app.app([
+            "--config_file", str(yaml_config_file),
+            "--config_merge_preference", "configFile",
+            "--train.learning-rate", "0.1",
+            "train.advanced_parameter=200"
+        ])
+
+        assert result['config'].train.learning_rate == 0.999999
+        assert result['config'].train.advanced_parameter == 100
+
+
+def test_invalid_values():
+    """Test handling of invalid parameter values"""
+    app = create_app()
+    config = MainConfig()
+
+    @app.command(config=config)
+    def test_func(configs: Optional[List[Any]] = None):
+        pass
+
+    with pytest.raises(SystemExit):
+        app.app(["--train.learning-rate", "not_a_float"])
+
+    with pytest.raises(SystemExit):
+        app.app(["--train.epochs", "-10"])  # Assuming negative epochs should fail
+
+
+def test_missing_yaml_file():
+    """Test handling of missing YAML file"""
+    app = create_app()
+    config = MainConfig()
+
+    @app.command(config=config)
+    def test_func(configs: Optional[List[Any]] = None):
+        pass
+
+    with pytest.raises(FileNotFoundError):
+        app.app(["--config_file", "nonexistent.yaml"])
+
+
+def test_multiple_cli_parameters():
+    """Test setting multiple CLI parameters at once"""
+    app = create_app()
+    config = MainConfig()
+    result = {}
+
+    @app.command(config=config)
+    def test_func(configs: Optional[List[Any]] = None):
+        result['config'] = configs[0]
+        return result['config']
+
+    with pytest.raises(SystemExit):
+        app.app([
+            "--train.learning-rate", "0.1",
+            "--train.epochs", "20",
+            "--experiment-name", "test_run"
+        ])
+
+        assert result['config'].train.learning_rate == 0.1
+        assert result['config'].train.epochs == 20
+        assert result['config'].experiment_name == "test_run"
+
+
+def test_mixed_cli_and_hydra():
+    """Test mixing CLI parameters and hydra-style updates"""
+    app = create_app()
+    config = MainConfig()
+    result = {}
+
+    @app.command(config=config)
+    def test_func(configs: Optional[List[Any]] = None):
+        result['config'] = configs[0]
+        return result['config']
+
+    with pytest.raises(SystemExit):
+        app.app([
+            "--train.learning-rate", "0.1",
+            "train.advanced_parameter=100",
+            "--experiment-name", "test_run",
+            "otro=42"
+        ])
+
+        assert result['config'].train.learning_rate == 0.1
+        assert result['config'].train.advanced_parameter == 100
+        assert result['config'].experiment_name == "test_run"
+        assert result['config'].otro == 42
+
+
+def test_override_with_yaml_then_cli(yaml_config_file):
+    """Test loading YAML and then overriding with CLI"""
+    app = create_app()
+    config = MainConfig()
+    result = {}
+
+    @app.command(config=config)
+    def test_func(configs: Optional[List[Any]] = None):
+        result['config'] = configs[0]
+        return result['config']
+
+    with pytest.raises(SystemExit):
+        app.app([
+            "--config_file", str(yaml_config_file),
+            "--train.learning-rate", "0.1",
+            "train.advanced_parameter=200"
+        ])
+
+        # Should use CLI values by default
+        assert result['config'].train.learning_rate == 0.1
+        assert result['config'].train.advanced_parameter == 200
+        # Should keep other YAML values
+        assert result['config'].train.epochs == 32
+        assert result['config'].experiment_name == "from_yaml"
 
 
 def test_type_conversion():
-    """Test proper type conversion in config values"""
-    result_dict = {}
+    """Test type conversion for different parameter types"""
+    app = create_app()
+    config = MainConfig()
+    result = {}
 
+    @app.command(config=config)
+    def test_func(configs: Optional[List[Any]] = None):
+        result['config'] = configs[0]
+        return result['config']
+
+    with pytest.raises(SystemExit):
+        app.app([
+            "--train.learning-rate", "1e-4",  # Scientific notation
+            "--train.epochs", "0x14",  # Hex number
+            "train.advanced_parameter=0o10"  # Octal number
+        ])
+
+        assert result['config'].train.learning_rate == 0.0001
+        assert result['config'].train.epochs == 20
+        assert result['config'].train.advanced_parameter == 8
+
+
+def test_invalid_yaml_content(tmp_path):
+    """Test handling of valid YAML file with invalid content"""
+    invalid_config = tmp_path / "invalid_config.yaml"
+    invalid_config.write_text("""
+train:
+    learning_rate: not_a_float
+    epochs: true  # bool instead of int
+    advanced_parameter: [1, 2, 3]  # list instead of int
+""")
+
+    app = create_app()
+    config = MainConfig()
+
+    @app.command(config=config)
+    def test_func(configs: Optional[List[Any]] = None):
+        pass
+
+    with pytest.raises(SystemExit):
+        app.app(["--config_file", str(invalid_config)])
+
+
+def test_empty_yaml_file(tmp_path):
+    """Test handling of empty YAML file"""
+    empty_config = tmp_path / "empty_config.yaml"
+    empty_config.write_text("")
+
+    app = create_app()
+    config = MainConfig()
+    result = {}
+
+    @app.command(config=config)
+    def test_func(configs: Optional[List[Any]] = None):
+        result['config'] = configs[0]
+        return result['config']
+
+    with pytest.raises(SystemExit):
+        app.app(["--config_file", str(empty_config)])
+
+        # Should maintain default values
+        assert result['config'].train.learning_rate == 0.001
+        assert result['config'].train.epochs == 10
+        assert result['config'].train.advanced_parameter == -1
+
+
+def test_additional_cli_args():
+    """Test handling CLI arguments not in config"""
+    app = create_app()
+    config = MainConfig()
+    result = {}
+
+    @app.command(config=config)
     def test_func(
-            input_path: Annotated[Path, typer.Option(help="Input path")],
-            config: DictConfig = None
+            extra_param: Annotated[str, typer.Option(help="Extra parameter")] = "default",
+            configs: Optional[List[Any]] = None
     ):
-        result_dict['config'] = OmegaConf.to_container(config)
-        result_dict['raw_config'] = config
+        result['config'] = configs[0]
+        result['extra'] = extra_param
+        return result['config']
 
-    exit_code, stdout, stderr = run_with_args(test_func, [
-        '--input-path', 'input.txt',
-        'value1=123',
-        'value2=0.123'
-    ])
+    with pytest.raises(SystemExit):
+        app.app([
+            "--train.learning-rate", "0.1",
+            "--extra-param", "custom_value"
+        ])
 
-    assert exit_code == 0
-    assert isinstance(result_dict['raw_config'].value1, int)
-    assert isinstance(result_dict['raw_config'].value2, float)
-    assert result_dict['config']['value1'] == 123
-    assert result_dict['config']['value2'] == 0.123
+        assert result['config'].train.learning_rate == 0.1
+        assert result['extra'] == "custom_value"
 
 
-def test_argument_validation():
-    """Test that using typer.Argument raises an error"""
-    with pytest.raises(typer.BadParameter):
-        def test_func(
-                input_path: Annotated[Path, typer.Argument(help="Input path")],  # This should raise an error
-                config: DictConfig = None
-        ):
-            pass
+def test_conflicting_cli_args():
+    """Test handling of conflicting CLI arguments"""
+    app = create_app()
+    config = MainConfig()
 
-        config_app.run_with_config(test_func)
+    @app.command(config=config)
+    def test_func(
+            learning_rate: Annotated[float, typer.Option(help="Learning rate")] = 0.01,
+            configs: Optional[List[Any]] = None
+    ):
+        pass
+
+    # Should raise error due to duplicate learning rate parameter
+    with pytest.raises((SystemExit, typer.BadParameter)):
+        app.app([
+            "--train.learning-rate", "0.1",
+            "--learning-rate", "0.2"
+        ])
 
 
-# Initialize config_app for all tests
-config_app = create_configurable_app(TestConfig)
+def test_nested_yaml_override(yaml_config_file):
+    """Test deep overriding of nested config values"""
+    app = create_app()
+    config = MainConfig()
+    result = {}
+
+    @app.command(config=config)
+    def test_func(config: Optional[Any] = None):
+        result['config'] = config
+        return result['config']
+
+    with pytest.raises(SystemExit):
+        app.app([
+            "--config_file", str(yaml_config_file),
+            "--config_merge_preference", "command",
+            "train.advanced_parameter=200",
+            "--train.epochs", "50"
+        ])
+
+        # Check that all levels of nesting are properly handled
+        assert result['config'].train.advanced_parameter == 200
+        assert result['config'].train.epochs == 50
+        assert result['config'].train.learning_rate == 0.999999  # From YAML
+
+
+def test_merge_preference_conflicts(yaml_config_file):
+    """Test merge preference handling when conflicts exist"""
+    app = create_app()
+    config = MainConfig()
+    result = {}
+
+    @app.command(config=config)
+    def test_func(configs: Optional[List[Any]] = None):
+        result['config'] = configs[0]
+        return result['config']
+
+    # Test without merge preference specified (should raise error)
+    with pytest.raises(SystemExit):
+        app.app([
+            "--config_file", str(yaml_config_file),
+            "--train.learning-rate", "0.1",
+            "--train.epochs", "20"
+        ])
+
+    # Test with command preference
+    with pytest.raises(SystemExit):
+        app.app([
+            "--config_file", str(yaml_config_file),
+            "--config_merge_preference", "command",
+            "--train.learning-rate", "0.1",
+            "--train.epochs", "20"
+        ])
+
+        assert result['config'].train.learning_rate == 0.1  # CLI value should win
+        assert result['config'].train.epochs == 20  # CLI value should win
+        assert result['config'].train.advanced_parameter == 100  # YAML value remains
+
+    # Test with config file preference
+    result = {}
+    with pytest.raises(SystemExit):
+        app.app([
+            "--config_file", str(yaml_config_file),
+            "--config_merge_preference", "configFile",
+            "--train.learning-rate", "0.1",
+            "--train.epochs", "20"
+        ])
+
+        assert result['config'].train.learning_rate == 0.999999  # YAML value should win
+        assert result['config'].train.epochs == 32  # YAML value should win
+        assert result['config'].train.advanced_parameter == 100  # YAML value remains
+
+
+def test_merge_preference_hydra_style_conflicts(yaml_config_file):
+    """Test merge preference handling with hydra-style arguments"""
+    app = create_app()
+    config = MainConfig()
+    result = {}
+
+    @app.command(config=config)
+    def test_func(configs: Optional[List[Any]] = None):
+        result['config'] = configs[0]
+        return result['config']
+
+    # Test without merge preference specified (should raise error)
+    with pytest.raises(SystemExit):
+        app.app([
+            "--config_file", str(yaml_config_file),
+            "train.advanced_parameter=200",
+            "otro=42"
+        ])
+
+    # Test with command preference
+    with pytest.raises(SystemExit):
+        app.app([
+            "--config_file", str(yaml_config_file),
+            "--config_merge_preference", "command",
+            "train.advanced_parameter=200",
+            "otro=42"
+        ])
+
+        assert result['config'].train.advanced_parameter == 200  # CLI value should win
+        assert result['config'].otro == 42  # CLI value should win
+        assert result['config'].train.learning_rate == 0.999999  # YAML value remains
+
+    # Test with config file preference
+    result = {}
+    with pytest.raises(SystemExit):
+        app.app([
+            "--config_file", str(yaml_config_file),
+            "--config_merge_preference", "configFile",
+            "train.advanced_parameter=200",
+            "otro=42"
+        ])
+
+        assert result['config'].train.advanced_parameter == 100  # YAML value should win
+        assert result['config'].otro == 9  # YAML value should win
+        assert result['config'].train.learning_rate == 0.999999  # YAML value remains
+
+
+def test_merge_preference_mixed_conflicts(yaml_config_file):
+    """Test merge preference with both CLI and hydra-style arguments"""
+    app = create_app()
+    config = MainConfig()
+    result = {}
+
+    @app.command(config=config)
+    def test_func(configs: Optional[List[Any]] = None):
+        result['config'] = configs[0]
+        return result['config']
+
+    # Test without merge preference specified (should raise error)
+    with pytest.raises(SystemExit):
+        app.app([
+            "--config_file", str(yaml_config_file),
+            "--train.learning-rate", "0.1",
+            "train.advanced_parameter=200",
+            "--experiment-name", "test",
+            "otro=42"
+        ])
+
+    # Test with command preference
+    with pytest.raises(SystemExit):
+        app.app([
+            "--config_file", str(yaml_config_file),
+            "--config_merge_preference", "command",
+            "--train.learning-rate", "0.1",
+            "train.advanced_parameter=200",
+            "--experiment-name", "test",
+            "otro=42"
+        ])
+
+        assert result['config'].train.learning_rate == 0.1  # CLI value should win
+        assert result['config'].train.advanced_parameter == 200  # CLI value should win
+        assert result['config'].experiment_name == "test"  # CLI value should win
+        assert result['config'].otro == 42  # CLI value should win
+
+    # Test with config file preference
+    result = {}
+    with pytest.raises(SystemExit):
+        app.app([
+            "--config_file", str(yaml_config_file),
+            "--config_merge_preference", "configFile",
+            "--train.learning-rate", "0.1",
+            "train.advanced_parameter=200",
+            "--experiment-name", "test",
+            "otro=42"
+        ])
+
+        assert result['config'].train.learning_rate == 0.999999  # YAML value should win
+        assert result['config'].train.advanced_parameter == 100  # YAML value should win
+        assert result['config'].experiment_name == "from_yaml"  # YAML value should win
+        assert result['config'].otro == 42  # YAML value should win

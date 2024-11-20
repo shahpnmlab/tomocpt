@@ -1,7 +1,8 @@
 
-from dataclasses import dataclass, fields, MISSING
+from dataclasses import dataclass, fields
 from enum import Enum
 from typing import Optional
+from omegaconf import MISSING
 
 @dataclass
 class PrepdataConfig:

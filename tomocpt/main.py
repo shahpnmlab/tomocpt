@@ -1,66 +1,36 @@
-from pathlib import Path
-from typing import Annotated, Optional
-
+from dataclasses import dataclass, field
+from functools import wraps
+from typing import Annotated, List, Optional
 import typer
 from omegaconf import DictConfig
 
-import tomocpt.mainConfig
-from tomocpt.mainConfig import MainConfig
-from tomocpt.configManager import create_configurable_app, update_dataclass_from_config
-
-from tomocpt.predict.predict import infer
+from tomocpt.configManager.configManager import create_app
+from tomocpt.configManager.initializer import init_config
+from tomocpt.defaultConfigs.infer_config import InferConfig
+from tomocpt.defaultConfigs.network_config import NetworkConfig
+from tomocpt.defaultConfigs.train_config import TrainConfig
+from tomocpt.infer.infer import infer
+from tomocpt.mainConfig import mainConfig
 from tomocpt.training.train import train
 
-from tomocpt.configManager.initializer import init
-from functools import wraps
-
-def app_register_command(func):
-    @app.command()
-    @wraps(func)
-    def wrapper(*args, **kwargs):
-        return func(*args, **kwargs)
-
-    return wrapper
+app = create_app()
 
 
-def set_global_config_fn(config: DictConfig):
-    update_dataclass_from_config(tomocpt.mainConfig.mainConfig, config)
+configForTrain = mainConfig.train
+configForInference = mainConfig.infer
 
-
-app = create_configurable_app(MainConfig, set_global_config_fn=set_global_config_fn)
-
-
-def init_config(
-        config: DictConfig,  # Add this parameter to accept the config
-        output_path: Annotated[
-            Optional[Path],
-            typer.Option(
-                "--output-path", "-o",
-                help="Path where to save the config file"
-            )
-        ] = Path.cwd() / "config.yaml"
-):
-    """Initialize a new configuration file with default values."""
-    # Create parent directory if it doesn't exist
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    init(output_path)
-
-
-# Register other commands
-app_register_command(init_config)
-app_register_command(train)
-app_register_command(infer)
+app.register_command(train, configForTrain)
+app.register_command(infer, configForInference)
+app.register_command(init_config, None)
 
 if __name__ == "__main__":
     app.run()
-
     """
-python -m tomocpt.main  --config-file /home/sanchezg/sideProjects/tomocpt/externalConfExamples/externalConf.yaml
-python -m tomocpt.main  --train-experiment-name kk --config-file /home/sanchezg/sideProjects/tomocpt/externalConfExamples/externalConf.yam
-python -m tomocpt.main train  --config-file /home/sanchezg/sideProjects/tomocpt/externalConfExamples/externalConf.yaml train.learning_rate=100 --config-merge-preference command
 
-python -m tomocpt.main train  --train-experiment-name "CACOTA"  --config-file /home/sanchezg/sideProjects/tomocpt/externalConfExamples/externalConf.yaml  --config-merge-preference command train.chunks_dir=data/refactor/chunks
+python -m tomocpt.main train --network.model_type unet --chunks_dir data/refactor/chunks/ --model_dir /tmp/unet --n_epochs 2 OVERFIT_N_BATCHES=10
+ python -m tomocpt.main train --network.model_type unet --chunks_dir data/refactor/chunks/ --model_dir /tmp/unet   --n_epochs 2 OVERFIT_N_BATCHES=10 network.KERNEL_SIZE=7
+ 
 
+python -m tomocpt.main infer --tomosDir data/refactor/datasets/particle1/tomograms/ --predsDir /tmp/kk_inference --modelFname /tmp/unet/unnamed/checkpoints/weights.ckpt  --particleLengthAng 250
 
-/tmp/SUPERCACA/CACOTA/checkpoints/weights-v2.ckpt
     """

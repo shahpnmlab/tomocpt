@@ -1,21 +1,24 @@
-# config_manager.py
-import operator
-import os.path
-import sys
 from dataclasses import is_dataclass, fields
-from enum import Enum
-from functools import wraps, reduce
-from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Type, TypeVar, Union, MutableMapping, Tuple
-import inspect
-
-import typer
-import hydra
-from click import Argument, Option, Command
-from hydra.core.config_store import ConfigStore
-from omegaconf import DictConfig, OmegaConf
-from typer.models import OptionInfo, ArgumentInfo
+from typing import Any, Callable, Dict, List, Optional, Type, TypeVar, Union, Tuple, Set
 from typing_extensions import Annotated
+from pathlib import Path
+import inspect
+import typer
+from omegaconf import OmegaConf, DictConfig, MISSING
+from enum import Enum
+from functools import wraps
+
+
+def _normalize_path(path: str) -> str:
+    """Normalize parameter path to dot notation"""
+    return path.replace("__", ".")
+
+typer.main.get_command_name = lambda name: _normalize_path(name) #.replace("_", "-")
+
+
+class ConfigurationError(Exception):
+    """Raised when there are conflicts in configuration settings"""
+    pass
 
 
 class MergePreference(str, Enum):
@@ -23,428 +26,411 @@ class MergePreference(str, Enum):
     CONFIG_FILE = "configFile"
 
 
-T = TypeVar('T')
+class ConfigManager:
+    def __init__(self):
+        self.registered_configs = {}
 
-class ConfigurableApp:
-    """Factory class for creating Typer apps with Hydra config management"""
+    def _get_default_value(self, config_obj: Any, path: str) -> Any:
+        """Get the default value for a given parameter path"""
+        parts = path.split('.')
+        curr_obj = config_obj
+        try:
+            for part in parts[:-1]:
+                curr_obj = getattr(curr_obj, part)
+            return getattr(curr_obj, parts[-1])
+        except AttributeError:
+            return None
 
-    def __init__(self, base_config_class: Type[Any], config_store_name: str = "base_config",
-                 set_global_config_fn: Optional[Callable[[DictConfig], None]] = None):
+    def _get_valid_paths(self, config_obj: Any, prefix: str = '') -> Set[str]:
+        paths = set()
+        for field in fields(type(config_obj)):
+            field_value = getattr(config_obj, field.name)
+            current_path = f"{prefix}.{field.name}" if prefix else field.name
+            paths.add(current_path)
 
-        self.base_config_class = base_config_class
-        self.config_store_name = config_store_name
-        self.set_global_config_fn = set_global_config_fn
-        self.return_config = False
-        self.app = typer.Typer()
+            if is_dataclass(type(field_value)):
+                paths.update(self._get_valid_paths(field_value, current_path))
+        return paths
 
-        # Register the config with Hydra
-        cs = ConfigStore.instance()
-        cs.store(name=config_store_name, node=base_config_class)
+    def _process_nested_dataclass(self, obj: Any, prefix: str = '') -> List[
+        Tuple[str, Any, typer.models.OptionInfo, Any]]:
+        """Recursively process dataclasses but only create CLI params for Annotated fields"""
+        params = []
 
-    def _extract_override_values(self, overrides: List[str]) -> Dict[str, str]:
-        values = {}
-        for override in overrides:
-            key, value = override.split('=', 1)
-            values[key.strip()] = value.strip()
-        return values
+        for field in fields(type(obj)):
+            field_type = field.type
+            field_value = getattr(obj, field.name)
+            current_path = f"{prefix}{field.name}" if prefix else field.name
 
-    def _extract_config_values(self, config: DictConfig) -> Dict[str, Any]:
-        values = {}
+            if str(field.type).startswith("typing.Annotated["):
+                field_type = field.type.__args__[0]
+                if is_dataclass(field_type):
+                    if field_value is MISSING:
+                        field_value = field_type()
+                    new_prefix = f"{prefix}{field.name}__" if prefix else f"{field.name}__"
+                    nested_params = self._process_nested_dataclass(field_value, new_prefix)
+                    params.extend(nested_params)
+                elif any(isinstance(m, typer.models.OptionInfo) for m in field.type.__metadata__):
+                    for metadata in field.type.__metadata__:
+                        if isinstance(metadata, typer.models.OptionInfo):
+                            if field_value is MISSING:
+                                new_option = typer.Option(
+                                    default=...,
+                                    help=metadata.help,
+                                    **{k: v for k, v in metadata.__dict__.items()
+                                       if k not in ['default', 'help', 'param_decls']}
+                                )
+                                params.append((current_path, field_type, new_option, MISSING))
+                            else:
+                                params.append((current_path, field_type, metadata, field_value))
+            elif is_dataclass(type(field_value)):
+                # Add nested paths for hydra-style access without creating CLI params
+                new_prefix = f"{prefix}{field.name}__" if prefix else f"{field.name}__"
+                nested_params = self._process_nested_dataclass(field_value, new_prefix)
+                params.extend(nested_params)
 
-        def extract_recursive(cfg: Union[Dict, DictConfig], prefix: str = ""):
-            for key, value in cfg.items():
-                full_key = f"{prefix}{key}" if prefix else key
-                if isinstance(value, (dict, DictConfig)):
-                    extract_recursive(value, f"{full_key}.")
-                else:
-                    values[full_key] = value
+        return params
 
-        extract_recursive(config)
-        return values
+    def _get_annotated_options(self, config_obj: Any) -> Tuple[List[tuple], List[tuple], Set[str]]:
+        """Returns (required_params, optional_params, valid_paths)"""
+        if config_obj is None:
+            return [], [], set()
 
-    def _find_conflicts(self, override_values: Dict[str, str], config: DictConfig) -> List[str]:
-        conflicts = []
-        config_dict = self._extract_config_values(config)
+        all_params = self._process_nested_dataclass(config_obj)
+        # print([p[0] for p in all_params])
+        # breakpoint()
+        required_params = []
+        optional_params = []
+        valid_paths = self._get_valid_paths(config_obj)
 
-        for key, override_value in override_values.items():
-            if key in config_dict:
-                config_value = config_dict[key]
-                if str(override_value) != str(config_value):
-                    conflicts.append(f"{key}: command={override_value}, config={config_value}")
-
-        return conflicts
-
-    def _flatten_dict(self, dictionary: dict, parent_key: str = '', separator: str = '__') -> dict:
-        """Flatten a nested dictionary with path information."""
-        items = []
-        for key, value in dictionary.items():
-            new_key = f"{parent_key}{separator}{key}" if parent_key else key
-            if isinstance(value, MutableMapping):
-                items.extend(self._flatten_dict(value, new_key, separator=separator).items())
+        for param_name, field_type, option, field_value in all_params:
+            if field_value is MISSING:
+                required_params.append((param_name, field_type, option))
             else:
-                items.append((new_key, (key, value)))
-        return dict(items)
+                optional_params.append((param_name, field_type, option, field_value))
 
-    def _get_from_dict(self, data_dict: dict, map_list: list) -> Any:
-        """Get a value from a nested dictionary using a list of keys."""
-        return reduce(operator.getitem, map_list, data_dict)
+        return required_params, optional_params, valid_paths
 
-    def _set_in_dict(self, data_dict: dict, map_list: list, value: Any) -> None:
-        """Set a value in a nested dictionary using a list of keys."""
-        self._get_from_dict(data_dict, map_list[:-1])[map_list[-1]] = value
+    def create_cli_parameters(self, config_obj: Any) -> Tuple[List[inspect.Parameter], Set[str]]:
+        if config_obj is None:
+            return [], set([])
+        required_params, optional_params, valid_paths = self._get_annotated_options(config_obj)
 
-    def _handle_config_overrides(self, func_kwargs: dict, config: DictConfig, default_config: DictConfig, config_merge_preference) \
-            -> Tuple[Dict[str, Any], DictConfig]:
-        """
-        Handle overrides from command-line arguments that match config paths.
-        Args:
-            func_kwargs: Dictionary of function arguments
-            config: The configuration object
-            default_config: the by default configuration to check if command lines are as by default
-        Returns:
-            Updated configuration object
-        """
-        # Convert config to dict for flattening
-
-        config_dict = OmegaConf.to_container(config, resolve=True)
-        flat_config = self._flatten_dict(config_dict)
-        flat_default_config = self._flatten_dict(default_config)
-
-        # Track conflicts between CLI args and config file
-        conflicts = []
-        # Check for overlapping parameters
-        for path, (key, conf_value) in flat_config.items():
-            cli_key = path.replace("--", "__")
-            if cli_key in func_kwargs:
-                cli_value = func_kwargs[cli_key]
-                if cli_value is not None and cli_value != flat_default_config[path][1]:
-                    if conf_value is not None and str(conf_value) != str(cli_value):  # Values are different
-                        conflicts.append((path, f"{path}: command={cli_value}, config={conf_value}"))
-                else:
-                    func_kwargs[cli_key] = conf_value
-        # If conflicts were found, handle them based on merge preference
-        if conflicts:
-            varname_conflicts, conflicts = zip(*conflicts)
-            if config_merge_preference is None:
-                conflict_msg = "\n  ".join(conflicts)
-                raise typer.BadParameter(
-                    f"Conflicts found between config file and command line arguments:\n  {conflict_msg}\n"
-                    f"Use --config-merge-preference to specify preference (command/configFile)"
-                )
-            else:
-                print(f"\nResolving conflicts with preference: {config_merge_preference}")
-                print("Conflicts found:")
-                for conflict in conflicts:
-                    print(f"  {conflict}")
-
-                # Apply the overrides based on preference
-                for path, (key, conf_value) in flat_config.items():
-                    cli_key = path.replace("--", "__")
-
-                    if cli_key in func_kwargs:
-                        cli_value = func_kwargs[cli_key]
-                        if cli_value in varname_conflicts:
-                            if cli_value is not None and cli_value != flat_default_config[path][1]:
-                                if config_merge_preference == MergePreference.COMMAND:
-                                    self._set_in_dict(config_dict, path.split("/"), cli_value)
-                                else:  # MergePreference.CONFIG_FILE
-                                    func_kwargs[cli_key] = conf_value
-
-        # If no conflicts, apply CLI overrides normally
-        else:
-            for path, (key, conf_value) in flat_config.items():
-                cli_key = path.replace("--", "__")
-                if cli_key in func_kwargs:
-                    cli_value = func_kwargs[cli_key]
-                    if cli_value is not None and cli_value != flat_default_config[path][1]:
-                        self._set_in_dict(config_dict, path.split("/"), cli_value)
-
-
-        # Convert back to DictConfig
-        return func_kwargs, OmegaConf.create(config_dict)
-
-    def add_config_options(self, func: Callable, is_command: bool = False) -> Callable:
-        """Add configuration options to a function"""
-
-        def run_command(*args, **kwargs):
-            # Extract config-related parameters
-
-            config_file = kwargs.pop('config_file', None)
-            config_args = kwargs.pop('config_args', [])
-            if config_args and is_command:
-                config_args = config_args[1:]
-            config_merge_preference = kwargs.pop('config_merge_preference', None)
-            # Process the configuration
-            base_cfg, cfg = self.process_config(config_file, config_args, config_merge_preference)
-            # Handle automatic overrides from command-line arguments
-            kwargs, cfg = self._handle_config_overrides(kwargs, cfg, base_cfg, config_merge_preference)
-            if self.set_global_config_fn is not None:
-                self.set_global_config_fn(cfg)
-            # Call the original function
-            if self.return_config:
-                return func(*args, config=cfg, **kwargs)
-            else:
-                assert self.set_global_config_fn is not None, ("Error, if you do not provide and set_global_config_fn,"
-                                                               " then you have to add a config:DictConfig argument to "
-                                                               "your function ")
-                return func(*args, **kwargs)
-
-        config_file_argname = "config-file"
-        config_merge_preference_argname  = "config-merge-preference"
-
-        if f"--{config_file_argname}" in sys.argv:
-            config_file = Path(os.path.expanduser(sys.argv[sys.argv.index(f"--{config_file_argname}") + 1]))
-            config_merge_preference = MergePreference.COMMAND
-            if f"-{config_merge_preference_argname}" in sys.argv:
-                config_merge_preference = os.path.expanduser(sys.argv[sys.argv.index(f"--{config_merge_preference_argname}") + 1])
-                if config_merge_preference == "command":
-                    config_merge_preference = MergePreference.COMMAND
-                elif config_merge_preference == "configFile":
-                    config_merge_preference = MergePreference.CONFIG_FILE
-                else:
-                    raise typer.BadParameter("Error, bad parameter for config_merge_preference ")
-            config_args = [x for x in sys.argv if not x.startswith("-") and "=" in x]
-            conf = self.process_config(config_file, config_args, config_merge_preference)[-1]
-        else:
-            conf = None
-
-        # Get original signature and parameters
-        sig = inspect.signature(func)
-        orig_params = []
-        for name, param in sig.parameters.items():
-            if param.name != 'config':
-                # print("p.name", name, param.name)
-                if isinstance(param, inspect.Parameter) and isinstance(param.default, typer.models.OptionInfo):
-                    if isinstance(param.default.default, type(Ellipsis)) and conf is not None:
-                        config_name_split = param.name.split("__")
-                        val = conf[config_name_split[0]]
-                        for _key in config_name_split[1:]:
-                            val = val[_key]
-                        if val is None:# and "--help" not in sys.argv:
-                            val = Ellipsis
-                        param.default.default = val
-
-                    #Param using the syntaxis name: TYPE = typer.Option(help=..., default=...)
-                else:
-                    try:
-                        if not all([isinstance(x, typer.models.OptionInfo) for x in param.annotation.__metadata__]):
-                            raise typer.BadParameter(
-                                f"Parameter {name} was not provided as typer.Option. typer.Argument is not supported"
-                            )
-                    except AttributeError as e:
-                        raise e
-
-                orig_params.append(param)
-            else:
-                self.return_config = True
-
-        # Add the config parameters to the function
-        params = [
+        # Create required parameters (without defaults)
+        required_parameters = [
             inspect.Parameter(
-                config_file_argname.replace("-", "_"),
-                inspect.Parameter.KEYWORD_ONLY,
-                default=None,
-                annotation=Annotated[Optional[Path], typer.Option(help="External YAML config file")]
-            ),
-            inspect.Parameter(
-                'config_args',
-                inspect.Parameter.KEYWORD_ONLY,
-                default=None,
-                annotation=Annotated[Optional[List[str]], typer.Argument(help="Hydra-style config modifications")]
-            ),
-            inspect.Parameter(
-                config_merge_preference_argname.replace("-", "_"),
-                inspect.Parameter.KEYWORD_ONLY,
-                default=None,
-                annotation=Annotated[Optional[MergePreference], typer.Option(help="How to handle config conflicts")]
+                name,
+                inspect.Parameter.POSITIONAL_OR_KEYWORD,  # Make required params positional
+                annotation=Annotated[type_, option]
             )
+            for name, type_, option in required_params
         ]
 
-        # Create new signature with correct parameter order
-        run_command.__signature__ = sig.replace(parameters=[*orig_params, *params])
-        run_command.__name__ = func.__name__
-        run_command.__doc__ = func.__doc__
+        # Create optional parameters (with defaults)
+        optional_parameters = [
+            inspect.Parameter(
+                name,
+                inspect.Parameter.KEYWORD_ONLY,  # Keep optional params as keyword-only
+                annotation=Annotated[type_, option],
+                default=default
+            )
+            for name, type_, option, default in optional_params
+        ]
 
-        return run_command
+        return [*required_parameters, *optional_parameters], valid_paths
 
-    def process_config(
-            self,
-            config_file: Optional[Path],
-            config_args: List[str],
-            config_merge_preference: Optional[MergePreference]
-    ) -> Tuple[DictConfig, DictConfig]:
-        with hydra.initialize(version_base=None, config_path=None):
-            base_cfg = hydra.compose(config_name=self.config_store_name)
 
-            file_cfg = None
-            if config_file is not None:
-                if not os.path.isfile(config_file):
-                    raise typer.BadParameter(f"Config file not found: {config_file}")
-                file_cfg = OmegaConf.load(config_file)
+class ConfigurableApp:
+    def __init__(self):
+        self.app = typer.Typer()
+        self.config_manager = ConfigManager()
 
-            cmd_cfg = None
-            if config_args:
-                cmd_cfg = hydra.compose(config_name=self.config_store_name, overrides=config_args)
+    def _get_typed_value(self, key: str, value: str, curr_obj: Any, attr: str) -> Any:
+        """Get properly typed value from type hints for config parameters"""
+        field_type = None
 
-            if config_args and file_cfg:
-                override_values = self._extract_override_values(config_args)
-                conflicts = self._find_conflicts(override_values, file_cfg)
+        # Get the field from the dataclass
+        for field in fields(type(curr_obj)):
+            if field.name == attr:
+                if str(field.type).startswith("typing.Optional"):
+                    if value.lower() == "none":
+                        return None
+                    field_type = field.type.__args__[0]  # Get the inner type of Optional
+                elif str(field.type).startswith("typing.Annotated"):
+                    field_type = field.type.__args__[0]  # Get the actual type from Annotated
+                else:
+                    field_type = field.type
+                break
 
-                if conflicts:
-                    if config_merge_preference is None:
-                        conflict_msg = "\n  ".join(conflicts)
-                        raise typer.BadParameter(
-                            f"Conflicts found between config file and command arguments:\n  {conflict_msg}\n"
-                            f"Use --config-merge-preference to specify preference (command/configFile)"
-                        )
-                    else:
-                        print(f"\nResolving conflicts with preference: {config_merge_preference}")
-                        print("Conflicts found:")
-                        for conflict in conflicts:
-                            print(f"  {conflict}")
+        if field_type is None:
+            raise ConfigurationError(f"Could not determine type for parameter '{key}'")
 
-            cfg = base_cfg.copy()
-            if config_merge_preference == MergePreference.COMMAND:
-                if file_cfg:
-                    cfg = OmegaConf.merge(cfg, file_cfg)
-                if cmd_cfg:
-                    cfg = OmegaConf.merge(cfg, cmd_cfg)
-            else:
-                if cmd_cfg:
-                    cfg = OmegaConf.merge(cfg, cmd_cfg)
-                if file_cfg:
-                    cfg = OmegaConf.merge(cfg, file_cfg)
+        try:
+            return field_type(value)
+        except ValueError:
+            raise ConfigurationError(f"Could not convert value '{value}' to type {field_type} for parameter '{key}'")
 
-            return base_cfg, cfg
-
-    def command(self, *args, **kwargs):
-        """Decorator for adding commands with config support"""
-
+    def command(self, *typer_args, config: Any = None, **typer_kwargs):
         def decorator(func: Callable):
-            # Add config options to the function
-            wrapped = self.add_config_options(func, is_command=True)
-            # Register with Typer
-            return self.app.command(*args, **kwargs)(wrapped)
+            original_sig = inspect.signature(func)
+            func_params = [p for p in original_sig.parameters.values() if p.name != 'config']
+            cli_params, paths = self.config_manager.create_cli_parameters(config)
+
+            # Create parameter mappings
+            config_param_map = {param.name: param for param in cli_params}
+            config_param_types = {
+                param.name: param.annotation.__args__[0] if str(param.annotation).startswith("typing.Annotated")
+                else param.annotation for param in cli_params
+            }
+
+            # Validate function parameters
+            for func_param in func_params:
+                if func_param.name in config_param_map:
+                    config_type = config_param_types[func_param.name]
+                    func_type = func_param.annotation if func_param.annotation != inspect.Parameter.empty else type(
+                        None)
+                    if func_type != config_type:
+                        raise ConfigurationError(
+                            f"Type mismatch for '{func_param.name}': function expects {func_type}, config provides {config_type}"
+                        )
+
+                    config_param = config_param_map[func_param.name]
+                    config_default = config_param.default
+                    func_default = func_param.default
+
+                    if func_default != inspect.Parameter.empty and config_default != inspect.Parameter.empty:
+                        if func_default != config_default:
+                            raise ConfigurationError(
+                                f"Default value mismatch for '{func_param.name}': function:{func_default}, config:{config_default}"
+                            )
+                    elif func_default != inspect.Parameter.empty:
+                        raise ConfigurationError(
+                            f"Parameter '{func_param.name}' required in config but has default {func_default} in function"
+                        )
+
+            extra_params = [
+                inspect.Parameter(
+                    'config_file',
+                    inspect.Parameter.KEYWORD_ONLY,
+                    annotation=Annotated[Optional[Path], typer.Option(help="Config file")],
+                    default=None
+                ),
+                inspect.Parameter(
+                    'config_merge_preference',
+                    inspect.Parameter.KEYWORD_ONLY,
+                    annotation=Annotated[Optional[MergePreference], typer.Option()],
+                    default=None
+                ),
+                inspect.Parameter(
+                    'config_args',
+                    inspect.Parameter.KEYWORD_ONLY,
+                    default=None,
+                    annotation=Annotated[Optional[List[str]], typer.Argument(help="Hydra-style config modifications")]
+                )
+            ]
+
+            # Organize parameters
+            required_params = []
+            optional_params = []
+            processed_params = set()
+
+            for param in func_params:
+                if param.name in config_param_map:
+                    config_param = config_param_map[param.name]
+                    (required_params if config_param.default == inspect.Parameter.empty else optional_params).append(
+                        config_param)
+                    processed_params.add(param.name)
+                else:
+                    (required_params if param.default == inspect.Parameter.empty and param.name != "kwargs"
+                     else optional_params).append(param)
+
+            for param in cli_params:
+                if param.name not in processed_params:
+                    (required_params if param.default == inspect.Parameter.empty else optional_params).append(param)
+
+            optional_params.extend(extra_params)
+
+            @wraps(func)
+            def wrapped(*args, config_args: Optional[List[str]] = None, config_file: Optional[Path] = None,
+                        config_merge_preference: Optional[MergePreference] = None, **kwargs):
+                cli_params = {}
+                for k, v in kwargs.items():
+                    if k in config_param_map:
+                        cli_params[k] = v
+                        path = k.split('__')
+                        curr_obj = config
+                        for p in path[:-1]:
+                            curr_obj = getattr(curr_obj, p)
+                        setattr(curr_obj, path[-1], v)
+
+                if config_args:
+                    for arg in config_args:
+                        if '=' not in arg:
+                            raise typer.BadParameter(f"Invalid arg {arg}. Missing '='?")
+                        key, value = arg.split('=', 1)
+                        path = key.split('.')
+                        curr_obj = config
+
+                        for p in path[:-1]:
+                            if not hasattr(curr_obj, p):
+                                raise ConfigurationError(f"Invalid path: {key}")
+                            curr_obj = getattr(curr_obj, p)
+
+                        if not hasattr(curr_obj, path[-1]):
+                            raise ConfigurationError(f"Invalid parameter: {key}")
+
+                        # Get field type from dataclass
+                        field_type = None
+                        for field in fields(type(curr_obj)):
+                            if field.name == path[-1]:
+                                if str(field.type).startswith("typing.Optional"):
+                                    if value.lower() == "none":
+                                        setattr(curr_obj, path[-1], None)
+                                        continue
+                                    field_type = field.type.__args__[0]
+                                elif str(field.type).startswith("typing.Annotated"):
+                                    field_type = field.type.__args__[0]
+                                else:
+                                    field_type = field.type
+                                break
+
+                        if field_type is None:
+                            raise ConfigurationError(f"Cannot determine type for '{key}'")
+
+                        try:
+                            if isinstance(field_type, type) and issubclass(field_type, Enum):
+                                typed_value = field_type(value)
+                            elif str(field_type).startswith("typing.Tuple"):
+                                tuple_types = field_type.__args__
+                                cleaned_value = value.strip("()[]{}").split(",")
+                                if len(cleaned_value) != len(tuple_types):
+                                    raise ConfigurationError(
+                                        f"Tuple length mismatch for {key}: expected {len(tuple_types)}, got {len(cleaned_value)}"
+                                    )
+                                typed_value = tuple(t(v.strip()) for t, v in zip(tuple_types, cleaned_value))
+                            else:
+                                typed_value = field_type(value)
+                            setattr(curr_obj, path[-1], typed_value)
+                        except ValueError as e:
+                            raise ConfigurationError(
+                                f"Cannot convert '{value}' to {field_type} for '{key}': {str(e)}"
+                            )
+
+                if config_file:
+                    yaml_config = OmegaConf.load(config_file)
+                    self._update_from_yaml(config, yaml_config, config_merge_preference)
+
+                func_kwargs = {k: v for k, v in kwargs.items() if k not in config_param_map}
+                if 'config' in original_sig.parameters:
+                    func_kwargs['config'] = config
+
+                return func(*args, **func_kwargs)
+
+            wrapped.__signature__ = inspect.Signature(parameters=[*required_params, *optional_params])
+            return self.app.command(*typer_args, **typer_kwargs)(wrapped)
 
         return decorator
 
-    def run_with_config(self, func: Callable):
-        """Run a single function with config support"""
-        wrapped = self.add_config_options(func, is_command=False)
-        typer.run(wrapped)
+    def _update_from_yaml(self, config_obj: Any, yaml_config: DictConfig,
+                          merge_preference: Optional[MergePreference]) -> None:
+        """Update config object from YAML config"""
+
+        # Track updates to detect conflicts
+        yaml_updates = {}
+
+        def _update_value(obj: Any, key: str, value: Any, path: str = ''):
+            if hasattr(obj, key):
+                current_value = getattr(obj, key)
+                full_path = f"{path}.{key}" if path else key
+
+                # If the attribute exists and is either a simple type or None
+                if isinstance(current_value, (int, float, str, bool)) or current_value is None:
+                    # Check if value would be changed
+                    try:
+                        typed_value = type(current_value)(value) if current_value is not None else value
+                        if current_value is not None and current_value != typed_value:
+                            if merge_preference is None:
+                                raise ConfigurationError(
+                                    f"Conflict detected for parameter '{full_path}': "
+                                    f"Current value: {current_value}, YAML value: {value}. "
+                                    "Please specify merge_preference to resolve conflicts."
+                                )
+                            if merge_preference == MergePreference.CONFIG_FILE:
+                                yaml_updates[full_path] = (current_value, typed_value)
+                                setattr(obj, key, typed_value)
+                                print(f"Updated {full_path}: {current_value} -> {typed_value}")
+                            else:  # MergePreference.COMMAND
+                                print(f"Keeping current value for {full_path}: {current_value} (YAML value: {value})")
+                    except (ValueError, TypeError):
+                        print(f"Warning: Could not convert {value} to {type(current_value)} for {full_path}")
+                elif is_dataclass(type(current_value)):
+                    if hasattr(value, 'items'):  # Handles both dict and DictConfig
+                        for k, v in value.items():
+                            _update_value(current_value, k, v, full_path)
+
+        # Handle flat config structure in YAML
+        for section, values in yaml_config.items():
+            if hasattr(values, 'items'):  # Handles both dict and DictConfig
+                # Try to find matching section in config
+                if hasattr(config_obj, section):
+                    section_obj = getattr(config_obj, section)
+                    if is_dataclass(type(section_obj)):
+                        for key, value in values.items():
+                            _update_value(section_obj, key, value, section)
+                else:
+                    # Try to match flattened keys
+                    for key, value in values.items():
+                        # Handle nested keys like 'n_epochs' in 'train' section
+                        if hasattr(config_obj, 'train') and hasattr(getattr(config_obj, 'train'), key):
+                            _update_value(getattr(config_obj, 'train'), key, value, 'train')
+            else:
+                # Handle top-level values
+                _update_value(config_obj, section, values)
+
+        # Report all updates if any occurred
+        if yaml_updates and merge_preference == MergePreference.CONFIG_FILE:
+            print("\nSummary of updates from YAML:")
+            for path, (old_val, new_val) in yaml_updates.items():
+                print(f"  {path}: {old_val} -> {new_val}")
 
     def run(self):
-        """Run the app with subcommands"""
         self.app()
 
+    def register_command(self, func, config):  # TODO: can we have this as a class method in app?
+        @self.command(config=config)
+        @wraps(func)
+        def wrapper(*args, **kwargs):
+            return func(*args, **kwargs)
+        return wrapper
 
-def dictconfig_to_dataclass(config: DictConfig, target_class: Type[T]) -> T:
+
+def update_config(target: Any, source: Any):
     """
-    Convert an OmegaConf DictConfig to a nested dataclass structure.
-
-    Args:
-        config: OmegaConf DictConfig object
-        target_class: The target dataclass type
-
-    Returns:
-        An instance of the target dataclass
+    Recursively updates the fields of a target dataclass with values from the source dataclass.
+    Handles omegaconf.MISSING by keeping the non-MISSING value.
     """
-    if not is_dataclass(target_class):
-        raise ValueError(f"{target_class.__name__} is not a dataclass")
+    if not (is_dataclass(target) and is_dataclass(source)):
+        raise ValueError("Both target and source must be dataclass instances of the same type.")
 
-    # Convert DictConfig to regular dict
-    config_dict = OmegaConf.to_container(config, resolve=True)
-    if config_dict is None:
-        raise ValueError("Failed to convert DictConfig to dict")
+    for field in fields(target):
+        field_name = field.name
+        target_value = getattr(target, field_name)
+        source_value = getattr(source, field_name)
 
-    # Process each field in the dataclass
-    init_kwargs = {}
-    for field in fields(target_class):
-        field_value = config_dict.get(field.name)
-        if field_value is None:
+        # Handle MISSING values
+        if source_value == MISSING and target_value != MISSING:
+            continue  # Keep the target value
+        elif target_value == MISSING and source_value != MISSING:
+            setattr(target, field_name, source_value)
             continue
 
-        # Handle nested dataclass
-        if is_dataclass(field.type):
-            if isinstance(field_value, dict):
-                init_kwargs[field.name] = dictconfig_to_dataclass(
-                    OmegaConf.create(field_value),
-                    field.type
-                )
-        # Handle list of dataclasses
-        elif hasattr(field.type, "__origin__") and field.type.__origin__ is list:
-            if len(field.type.__args__) > 0 and is_dataclass(field.type.__args__[0]):
-                nested_type = field.type.__args__[0]
-                if isinstance(field_value, list):
-                    init_kwargs[field.name] = [
-                        dictconfig_to_dataclass(OmegaConf.create(item), nested_type)
-                        if isinstance(item, dict)
-                        else item
-                        for item in field_value
-                    ]
-                else:
-                    init_kwargs[field.name] = field_value
+        # Check if the field is a nested dataclass
+        if is_dataclass(target_value) and is_dataclass(source_value):
+            update_config(target_value, source_value)
         else:
-            init_kwargs[field.name] = field_value
-
-    return target_class(**init_kwargs)
-
-
-def update_dataclass_from_config(dc_instance: Any, config: DictConfig) -> None:
-    """
-    Recursively updates a dataclass instance with values from a DictConfig.
-
-    Args:
-        dc_instance: The dataclass instance to update
-        config: DictConfig containing the update values
-
-    Example:
-        @dataclass
-        class NestedConfig:
-            value: int
-
-        @dataclass
-        class MainConfig:
-            name: str
-            nested: NestedConfig
-
-        config = OmegaConf.create({
-            "name": "new_name",
-            "nested": {"value": 42}
-        })
-
-        instance = MainConfig(name="old_name", nested=NestedConfig(value=0))
-        update_dataclass_from_config(instance, config)
-    """
-    if not is_dataclass(dc_instance):
-        raise ValueError("First argument must be a dataclass instance")
-
-    if not isinstance(config, DictConfig):
-        raise ValueError("Second argument must be a DictConfig")
-
-    # Get all fields of the dataclass
-    dc_fields = {field.name: field for field in fields(dc_instance)}
-
-    # Iterate through the config keys
-    for key, value in config.items():
-        if key not in dc_fields:
-            continue
-
-        if isinstance(value, DictConfig):
-            # If the value is a nested DictConfig and the corresponding
-            # dataclass field is also a dataclass, recurse
-            current_value = getattr(dc_instance, key)
-            if is_dataclass(current_value):
-                update_dataclass_from_config(current_value, value)
-        else:
-            # Update the simple value
-            setattr(dc_instance, key, value)
+            # Update the field value in the target dataclass
+            setattr(target, field_name, source_value)
 
 
-# Convenience function
-def create_configurable_app(
-        base_config_class: Type[Any],
-        config_store_name: str = "base_config",
-        set_global_config_fn: Optional[Callable[[DictConfig], None]] = None
-) -> ConfigurableApp:
-    return ConfigurableApp(base_config_class, config_store_name, set_global_config_fn=set_global_config_fn)
+def create_app() -> ConfigurableApp:
+    return ConfigurableApp()

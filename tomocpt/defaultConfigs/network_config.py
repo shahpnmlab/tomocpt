@@ -1,24 +1,35 @@
 
-from dataclasses import dataclass, asdict, fields
+from dataclasses import dataclass, asdict, fields, field
 from enum import Enum
+from typing import Annotated, Union, Optional
+
+import typer
 
 
-# ------------------ADVANCED KNOBS --------------------------- #
-class ModelTypes(Enum):
+class ModelType(str, Enum):
     UNET = "UNET"
-    unet = "unet"
     SwinUNETR = "SwinUNETR"
-    swinunetr = "swinunetr"
+
+@dataclass
+class ArtchConfig:
+    model_type: Annotated[ModelType, typer.Option(help="Type of model")] = ModelType.UNET
+    model_kwargs: Annotated[Optional[str], typer.Option(
+        help='Additional model arguments as JSON string. Example: \'{"depth":5,"features":64}\''
+    )] = None
+
 
 @dataclass
 class NetworkConfig:
-    CHUNK_SIZE: int = 64
-    CHUNK_STRIDE: int = 32
-    RANDOM_FRACTION_TO_SAMPLE_TRAIN: float = -1.  # Train on all the chunks
+    CHUNK_SIZE: Annotated[int, typer.Option(help="The patch size of the cubes")]  = 64
+    CHUNK_STRIDE: int = 32 #TODO: Pranav. Is CHUNK STRIDE USED IN TRAINING? I though it was only in inference. If so, remove this
+    RANDOM_FRACTION_TO_SAMPLE_TRAIN: float = -1.  # Train on all the chunks #TODO: Move this to train or to prep
 
-    model_type: ModelTypes = ModelTypes.swinunetr
+    model_type: Annotated[ModelType, typer.Option(help="The model type", case_sensitive=False)] = ModelType.SwinUNETR
+    # model_kwargs: Annotated[Optional[str], typer.Option(help='Additional model arguments as JSON string. Example: \'{"depth":5,"features":64}\'')] = None
 
-    #### THIS IS CONFIG FOR U-NET
+    # model_arch: Annotated[Union[UNetConfig, ResNetConfig], typer.Option(help="Experimental model artchitecture")] = field(default_factory=UNetConfig)
+
+    #### THIS IS CONFIG FOR U-NET #TODO: Should we want independent confi files for U-net and swin?
     IN_CHANNELS: int = 1
     FIRST_LAYER_OUT_CHANNELS: int = 32
     NUM_LEVELS: int = 5
@@ -28,9 +39,9 @@ class NetworkConfig:
     LAST_ACTIVATION_LAYER: str = "linear" #or "sigmoid"
     STRIDE_CONV_INSTEAD_OF_POOLING: bool = False
     OUTPUT_DIM: str = "same"
-    FACTOR_REDUCE_LR_PLATEAU_N_EPOCHS:float = 0.5
-    COSINE_LR_SCHEDULE_N_EPOCHS: int = 6
-    PATIENT_REDUCE_LR_PLATEAU_N_EPOCHS: int = 6
+    FACTOR_REDUCE_LR_PLATEAU_N_EPOCHS:float = 0.5 #TODO: Move to train_config
+    COSINE_LR_SCHEDULE_N_EPOCHS: int = 6 #TODO: Move to train_config
+    PATIENT_REDUCE_LR_PLATEAU_N_EPOCHS: int = 6 #TODO: Move to train_config
 
     ##### THIS IS CONFIG FOR SWINUNETR
     SWINUNETR_FEAT_SIZE: int = 12*3  # Should be multiple of 12
@@ -54,33 +65,5 @@ class NetworkConfig:
     TORCH_FLOAT_PRECISION: str = '32' # '32' # '16' 'bf16'
 
     SEED_FOR_TRAIN_VAL_SPLIT: int = 113
-
-    def write_yaml(self) -> str: #TODO: This has to be moved to a baseclass to avoid repetition
-        """Convert the dataclass configuration into a YAML-formatted string.
-
-        Returns:
-            str: YAML-formatted string representation of the configuration
-        """
-        import yaml
-
-        # Convert dataclass to dictionary
-        config_dict = {}
-        for field in fields(self):
-            value = getattr(self, field.name)
-
-            # Handle special cases
-            if isinstance(value, ModelTypes):
-                value = value.name  # Convert enum to string
-
-            config_dict[field.name] = value
-
-        # Convert to YAML string with proper indentation
-        yaml_string = yaml.dump(config_dict, default_flow_style=False, sort_keys=False)
-        return yaml_string
-
-if __name__ == "__main__":
-    import yaml
-    print(yaml.dump(asdict(NetworkConfig())))
-
 
 

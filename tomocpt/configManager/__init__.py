@@ -1,2 +1,2 @@
-from tomocpt.configManager.configManager import create_configurable_app, update_dataclass_from_config
+# from tomocpt.configManager.configManager import create_configurable_app, update_dataclass_from_config
 

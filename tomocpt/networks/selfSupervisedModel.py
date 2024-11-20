@@ -12,25 +12,17 @@ from torch import nn
 from torch.nn import functional as F
 from tomocpt import constants
 from tomocpt.networks.baseModel import BaseModel
-from tomocpt.networks.pickingModel import train_config
 from tomocpt.mainConfig import mainConfig
-network_config = mainConfig.network
 
 class SelfSupervisedModel(BaseModel):
-    def set_default_args(self, lr: float | None,
-                         num_levels: int | None):
 
-        self.lr = lr if lr is not None else network_config.learning_rate
-        self.num_levels = num_levels if num_levels is not None else network_config.NUM_LEVELS
 
     def __init__(self, lr: float | None = None,
                  num_levels: int | None = None, model: Optional[BaseModel] = None, *args, **kwargs):
 
-        self.set_default_args(lr = lr,
-                              num_levels = num_levels)
-        self.model = model
+        super(SelfSupervisedModel, self).__init__(lr, num_levels, *args, **kwargs)
 
-        super(SelfSupervisedModel, self).__init__( *args, **kwargs)
+        network_config = mainConfig.train.network
 
         n_voxels = network_config.CHUNK_SIZE
         from tomocpt.networks.swinunetr import MySwinUNETR
@@ -67,7 +59,7 @@ class SelfSupervisedModel(BaseModel):
             self.model = model.model
 
 
-        exampleX = torch.rand(train_config.batch_size, 1, n_voxels, n_voxels, n_voxels)
+        exampleX = torch.rand(self.hparams.mainConfig.train.batch_size, 1, n_voxels, n_voxels, n_voxels)
         out, hid = self.model(exampleX)
         batchSize, nchan, s, _, _ = hid.shape
         assert batchSize > 1
@@ -183,6 +175,7 @@ class SelfSupervisedModel(BaseModel):
         return y_hat
 
     def configure_optimizers(self):
+        network_config = mainConfig.train.network
         opt = torch.optim.RAdam(self.parameters(), lr=self.lr, betas=(0.9, 0.99),
                                 weight_decay=1e-8) #decoupled_weight_decay=True)
 
@@ -275,8 +268,7 @@ class ContrastLoss(nn.Module):
     # batch states are independent and we will optimize the runtime of 'forward'
     full_state_update: bool = True
 
-    def __init__(self, temperature = network_config.CONTRAST_LOSS_TEMPERATURE,
-                 l1_embeddings_w = network_config.CONTRAST_LOSS_L1_EMB_REGULARIZATION):
+    def __init__(self, temperature, l1_embeddings_w):
         """
         Low temperature penalizes much more embeddings that are the same
         """
@@ -327,11 +319,13 @@ class LossPretrain(torch.nn.Module):
 
 
 if __name__ == "__main__":
-    lFun = ContrastLoss(temperature=0.1)
+    lFun = ContrastLoss(temperature=0.1, l1_embeddings_w=2)
     print(lFun(torch.rand(50, 3), torch.rand(50, 3)))
     print(lFun(torch.tensor([[1, 0, 0], [1, 0, 1.], [1, 1, 1]]), torch.tensor([[1, 0, 0], [1, 0, 1.], [1, 1, 1]])))
     print(lFun(torch.tensor([[1, 0, 0], [1, 0, 0.], [1, 1, 1]]), torch.tensor([[1, 0, 0], [1, 0, 0.], [1, 1, 1]])))
     print(lFun(torch.tensor([[1, 0, 0], [1, 0, 0.], [1, 0, 0.]]), torch.tensor([[1, 0, 0], [1, 0, 0.], [1, 0, 0.]])))
+
+    network_config = mainConfig.train.network
 
     network_config.model_type = "SwinUNETR"  # "UNET" #"SwinUNETR"
     model = SelfSupervisedModel()

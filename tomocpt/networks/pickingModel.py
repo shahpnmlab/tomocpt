@@ -1,41 +1,32 @@
+import hydra
 import torch
 import torchvision
 from torch import nn
 
-from tomocpt.mainConfig import mainConfig
-network_config = mainConfig.network
-train_config = mainConfig.train
 from tomocpt.networks.baseModel import BaseModel
 from tomocpt.training.losses import gradient3d_loss
 
 
-BETA_FOR_SOFTPLUS = 2
+# BETA_FOR_SOFTPLUS = 2
 
 
 class BasePickingModel(BaseModel):# TODO: Change the name
-    def set_default_args(self, lr: float | None,
-                         num_levels: int | None):
-
-        self.lr = lr if lr is not None else train_config.learning_rate
-        self.num_levels = num_levels if num_levels is not None else network_config.NUM_LEVELS #TODO: This is not the way to do it, as it won't be picked up at inference
 
     def __init__(self, lr: float | None = None,
                  num_levels: int | None = None,
                  model=None, *args, **kwargs):
-        self.set_default_args(lr=lr,
-                              num_levels=num_levels)
-        super(BasePickingModel, self).__init__(*args, **kwargs)
+        super(BasePickingModel, self).__init__(lr, num_levels, *args, **kwargs)
 
-        # TODO:change the model here to change the arch using monai.
         from monai.networks.nets import SwinUNETR
         from tomocpt.networks.unet import Unet
+        network_config = self.hparams.config.train.network
 
         MODEL_TYPES = {
             "UNET": lambda: Unet(
                 first_layer_out_channels=network_config.FIRST_LAYER_OUT_CHANNELS,
                 last_activation="linear",
                 stride_conv_instead_pooling=True,
-                num_levels=num_levels
+                num_levels=self.num_levels
             ),
             "SWINUNETR": lambda: SwinUNETR(
                 img_size=(network_config.CHUNK_SIZE, network_config.CHUNK_SIZE, network_config.CHUNK_SIZE),
@@ -156,8 +147,11 @@ class BasePickingModel(BaseModel):# TODO: Change the name
         return y_pred
 
     def configure_optimizers(self):
-        opt = torch.optim.RAdam(self.parameters(), lr=self.lr, betas=(0.9, 0.99),
-                                weight_decay=train_config.WEIGHT_DECAY) #, decoupled_weight_decay=True)
+        network_config = self.hparams.config.train.network
+
+        print(self.hparams.config.train.optimizer)
+        opt = hydra.utils.instantiate(self.hparams.config.train.optimizer, params=self.parameters()) #, decoupled_weight_decay=True
+        # opt = torch.optim.RAdam(self.parameters(), lr=self.lr, betas=(0.9, 0.99), weight_decay=self.hparams.mainConfig.train.WEIGHT_DECAY) #, decoupled_weight_decay=True)
 
         conf = {
             'optimizer': opt,
@@ -178,7 +172,8 @@ class BasePickingModel(BaseModel):# TODO: Change the name
 if __name__ == "__main__":
     model = BasePickingModel()
     batch_size = 3
-
+    from tomocpt.mainConfig import mainConfig
+    network_config = mainConfig.network
     batch = dict(
         input_data=dict(data=torch.randn(batch_size, 1, *(network_config.CHUNK_SIZE,) * 3)),
         target_data=dict(data=torch.randn(batch_size, 1, *(network_config.CHUNK_SIZE,) * 3)),
