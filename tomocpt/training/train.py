@@ -37,7 +37,7 @@ def train(
     kwargs = dict(lr=mainConfig.train.optimizer.lr)
 
     print(mainConfig)
-
+    train__config = mainConfig.train
     network__config = mainConfig.train.network
     assert mainConfig.train.model_dir
     assert mainConfig.train.chunks_dir
@@ -50,7 +50,7 @@ def train(
         checkpointer = ModelCheckpoint(monitor='val_loss', filename='weights', verbose=True)
         callbacks = [
             TQDMProgressBar(refresh_rate=10),
-            EarlyStopping(monitor='val_loss', patience=2 * network__config.COSINE_LR_SCHEDULE_N_EPOCHS, verbose=True),
+            EarlyStopping(monitor='val_loss', patience=2 * train__config.COSINE_LR_SCHEDULE_N_EPOCHS, verbose=True),
             checkpointer,
             LearningRateMonitor(logging_interval='epoch'),
         ]
@@ -62,7 +62,7 @@ def train(
                                        verbose=True)
         callbacks = [
             TQDMProgressBar(refresh_rate=10),
-            EarlyStopping(monitor='val_loss', patience=2 * network__config.COSINE_LR_SCHEDULE_N_EPOCHS, verbose=True),
+            EarlyStopping(monitor='val_loss', patience=2 * train__config.COSINE_LR_SCHEDULE_N_EPOCHS, verbose=True),
             checkpointer,
             LearningRateMonitor(logging_interval='epoch'),
         ]
@@ -88,7 +88,7 @@ def train(
     if compile_model:
         pl_model = torch.compile(pl_model)
     callbacks += [
-        StochasticWeightAveraging(annealing_epochs=network__config.COSINE_LR_SCHEDULE_N_EPOCHS,
+        StochasticWeightAveraging(annealing_epochs=train__config.COSINE_LR_SCHEDULE_N_EPOCHS,
                                   swa_lrs=0.1 * pl_model.lr)]
 
     data = Data(data_dir=mainConfig.train.chunks_dir, return_labels=(mainConfig.train.mode == TrainingModes.picking),

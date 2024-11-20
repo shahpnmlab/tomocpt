@@ -25,35 +25,9 @@ class SelfSupervisedModel(BaseModel):
         network_config = mainConfig.train.network
 
         n_voxels = network_config.CHUNK_SIZE
-        from tomocpt.networks.swinunetr import MySwinUNETR
-        from tomocpt.networks.unet import Unet
-        MODEL_TYPES = {
-            "UNET": lambda: Unet(
-                first_layer_out_channels=network_config.FIRST_LAYER_OUT_CHANNELS,
-                last_activation="linear",
-                stride_conv_instead_pooling=True,
-                num_levels=num_levels
-            ),
-            "SWINUNETR": lambda: MySwinUNETR(
-                img_size=(network_config.CHUNK_SIZE, network_config.CHUNK_SIZE, network_config.CHUNK_SIZE),
-                in_channels=1,
-                out_channels=1,
-                feature_size=network_config.SWINUNETR_FEAT_SIZE,
-                use_v2=True,
-                use_checkpoint=True,
-                drop_rate=network_config.DROP_RATE,
-                attn_drop_rate=network_config.ATTN_DROP_RATE,
-                dropout_path_rate=network_config.DROPOUT_PATH_RATE,
-            )
-        }
 
         if model is None:
-            self.model_name = network_config.model_type.value
-            model_constructor = MODEL_TYPES.get(self.model_name.upper())
-            if model_constructor:
-                self.model = model_constructor()
-            else:
-                raise ValueError(f"Unknown model type: {self.model_name}")
+            self.model_name, self.model = self.build_model()
         else:
             self.model_name = model.model_name
             self.model = model.model
@@ -63,7 +37,6 @@ class SelfSupervisedModel(BaseModel):
         out, hid = self.model(exampleX)
         batchSize, nchan, s, _, _ = hid.shape
         assert batchSize > 1
-        self.model_name = network_config.model_type
         print(f"SelfSupervisedModel using {self.model_name}")
 
         def generateHead(outDims, bias=False):
@@ -174,25 +147,6 @@ class SelfSupervisedModel(BaseModel):
         y_hat = self(x)
         return y_hat
 
-    def configure_optimizers(self):
-        network_config = mainConfig.train.network
-        opt = torch.optim.RAdam(self.parameters(), lr=self.lr, betas=(0.9, 0.99),
-                                weight_decay=1e-8) #decoupled_weight_decay=True)
-
-        conf = {
-            'optimizer': opt,
-        }
-
-        conf.update({
-            'lr_scheduler': torch.optim.lr_scheduler.ReduceLROnPlateau(opt, verbose=True,
-                                                                       factor=network_config.FACTOR_REDUCE_LR_PLATEAU_N_EPOCHS,
-                                                                       cooldown=max(1,
-                                                                                    network_config.PATIENT_REDUCE_LR_PLATEAU_N_EPOCHS // 4),
-                                                                       patience=int(
-                                                                           1.5 * network_config.PATIENT_REDUCE_LR_PLATEAU_N_EPOCHS)),
-            'monitor': 'val_loss'
-        })
-        return conf
 
 
 def patch_rand_drop(x, x_rep=None, max_drop=0.3, max_block_sz=0.25, tolr=0.05):

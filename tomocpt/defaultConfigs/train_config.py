@@ -44,5 +44,7 @@ class TrainConfig:
     N_CPUS_IF_NO_GPU: int = 1
     USE_CUDA_FOR_DATA: bool = False
 
-    # WEIGHT_DECAY: float = 1e-8
+    FACTOR_REDUCE_LR_PLATEAU_N_EPOCHS: float = 0.5  # TODO: Move to train_config
+    COSINE_LR_SCHEDULE_N_EPOCHS: int = 6  # TODO: Move to train_config
+    PATIENT_REDUCE_LR_PLATEAU_N_EPOCHS: int = 6  # TODO: Move to train_config
 

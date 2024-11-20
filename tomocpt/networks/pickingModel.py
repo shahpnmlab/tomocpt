@@ -1,3 +1,5 @@
+import importlib
+
 import hydra
 import torch
 import torchvision
@@ -17,37 +19,9 @@ class BasePickingModel(BaseModel):# TODO: Change the name
                  model=None, *args, **kwargs):
         super(BasePickingModel, self).__init__(lr, num_levels, *args, **kwargs)
 
-        from monai.networks.nets import SwinUNETR
-        from tomocpt.networks.unet import Unet
-        network_config = self.hparams.config.train.network
-
-        MODEL_TYPES = {
-            "UNET": lambda: Unet(
-                first_layer_out_channels=network_config.FIRST_LAYER_OUT_CHANNELS,
-                last_activation="linear",
-                stride_conv_instead_pooling=True,
-                num_levels=self.num_levels
-            ),
-            "SWINUNETR": lambda: SwinUNETR(
-                img_size=(network_config.CHUNK_SIZE, network_config.CHUNK_SIZE, network_config.CHUNK_SIZE),
-                in_channels=1,
-                out_channels=1,
-                feature_size=network_config.SWINUNETR_FEAT_SIZE,
-                use_v2=True,
-                use_checkpoint=True,
-                drop_rate=network_config.DROP_RATE,
-                attn_drop_rate=network_config.ATTN_DROP_RATE,
-                dropout_path_rate=network_config.DROPOUT_PATH_RATE,
-            )
-        }
 
         if model is None:
-            self.model_name = str(network_config.model_type.value)
-            model_constructor = MODEL_TYPES.get(self.model_name.upper())
-            if model_constructor:
-                self.model = model_constructor()
-            else:
-                raise ValueError(f"Unknown model type: {network_config.model_type.value}")
+            self.model_name, self.model = self.build_model()
         else:
             self.model_name = model.model_name
             self.model = model.model
@@ -146,27 +120,6 @@ class BasePickingModel(BaseModel):# TODO: Change the name
         y_pred = nn.functional.sigmoid(logits)
         return y_pred
 
-    def configure_optimizers(self):
-        network_config = self.hparams.config.train.network
-
-        print(self.hparams.config.train.optimizer)
-        opt = hydra.utils.instantiate(self.hparams.config.train.optimizer, params=self.parameters()) #, decoupled_weight_decay=True
-        # opt = torch.optim.RAdam(self.parameters(), lr=self.lr, betas=(0.9, 0.99), weight_decay=self.hparams.mainConfig.train.WEIGHT_DECAY) #, decoupled_weight_decay=True)
-
-        conf = {
-            'optimizer': opt,
-        }
-
-        conf.update({
-            'lr_scheduler': torch.optim.lr_scheduler.ReduceLROnPlateau(opt, verbose=True,
-                                                                       factor=network_config.FACTOR_REDUCE_LR_PLATEAU_N_EPOCHS,
-                                                                       cooldown=max(1,
-                                                                                    network_config.PATIENT_REDUCE_LR_PLATEAU_N_EPOCHS // 4),
-                                                                       patience=int(
-                                                                           1.5 * network_config.PATIENT_REDUCE_LR_PLATEAU_N_EPOCHS)),
-            'monitor': 'val_loss'
-        })
-        return conf
 
 
 if __name__ == "__main__":

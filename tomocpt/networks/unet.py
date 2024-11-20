@@ -3,7 +3,6 @@ from typing import Literal, Optional
 import torch
 import torch.nn as nn
 
-from tomocpt.mainConfig import mainConfig
 
 NORM_LAYER = nn.InstanceNorm3d
 
@@ -120,6 +119,7 @@ class Unet(nn.Module):
         :param kwargs:
         """
         super(Unet, self).__init__()
+        from tomocpt.mainConfig import mainConfig
 
         first_layer_out_channels = first_layer_out_channels if first_layer_out_channels else  mainConfig.train.network.FIRST_LAYER_OUT_CHANNELS
         num_levels = num_levels if num_levels else mainConfig.train.network.NUM_LEVELS
