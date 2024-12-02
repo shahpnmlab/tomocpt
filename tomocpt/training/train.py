@@ -13,12 +13,6 @@ from typing import Annotated, Optional
 from pytorch_lightning.loggers import TensorBoardLogger
 import pytorch_lightning as pl
 
-from tomocpt.dataManager.dataLoaderLightning import Data
-
-from tomocpt.networks.pickingModel import BasePickingModel
-
-from tomocpt.networks.selfSupervisedModel import SelfSupervisedModel
-from tomocpt.utils import accelerator_selector
 
 
 
@@ -27,16 +21,18 @@ def train(
         continue_training: Annotated[Optional[Path], typer.Option(help="Path to pre-existing checkpoint file for fine-tuning with new data")] = None,
         launch_tensorboard: Annotated[bool, typer.Option(help="Launch tensorboard for evaluating training")] = True,
         config: DictConfig = None):
-
-    from pytorch_lightning.callbacks import TQDMProgressBar, EarlyStopping, ModelCheckpoint, LearningRateMonitor, \
-        StochasticWeightAveraging  # TODO: Importing from pytorch_lightning.callbacks is launching a jit warning. Why?
-
     from tomocpt.mainConfig import mainConfig
     torch.set_float32_matmul_precision(mainConfig.train.network.TORCH_MATMUL_PRECISION)
     from tomocpt.defaultConfigs.train_config import TrainingModes
+    from tomocpt.dataManager.dataLoaderLightning import Data
+    from tomocpt.networks.pickingModel import BasePickingModel
+    from tomocpt.networks.selfSupervisedModel import SelfSupervisedModel
+    from tomocpt.utils import accelerator_selector
+    from pytorch_lightning.callbacks import TQDMProgressBar, EarlyStopping, ModelCheckpoint, LearningRateMonitor, \
+        StochasticWeightAveraging  # TODO: Importing from pytorch_lightning.callbacks is launching a jit warning. Why?
+
     kwargs = dict(lr=mainConfig.train.optimizer.lr)
 
-    print(mainConfig)
     train__config = mainConfig.train
     network__config = mainConfig.train.network
     assert mainConfig.train.model_dir

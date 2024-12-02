@@ -9,7 +9,6 @@ import torchio as tio
 import numpy as np
 import pandas as pd
 import starfile
-from numpy.core.defchararray import lower
 from skimage.feature import peak_local_max
 from skimage.morphology import cube
 from torch.utils.data import DataLoader
@@ -18,9 +17,11 @@ from tqdm import tqdm
 from tomocpt.dataManager.dataUtils import load_mrc, write_segmentation_mask, resize_volume, plot_example
 from tomocpt.dataPreparation.helpers import _preprocess_data_mrc
 from tomocpt.mainConfig import mainConfig
+
 infer_config = mainConfig.infer
 
 logger = logging.getLogger(__name__)
+
 
 def write_relion_star_file(output_dir: str,
                            tomo_names: List[str],
@@ -136,7 +137,6 @@ def write_warp_star_file(output_dir: str,
         all_tomo_centroids_and_scores["rlnCoordinateZ"].append(predicted_centroid[0])
         all_tomo_centroids_and_scores["rlnAutopickFigureOfMerit"].append(predicted_centroid[3])
 
-
     # Create particles table
     df_particles = pd.DataFrame(data=all_tomo_centroids_and_scores)
 
@@ -152,10 +152,11 @@ def write_warp_star_file(output_dir: str,
 
     return output_path
 
+
 def write_sg_motive_list(output_dir: str,
                          tomo_names: List[str],
                          predicted_centroids_with_scores: List[List[float]],
-                         output_filename: str = "tomocpt_coords.star") -> Path: #TODO: This is incomple
+                         output_filename: str = "tomocpt_coords.star") -> Path:  # TODO: This is incomple
     return None
 
 
@@ -209,8 +210,9 @@ def extract_centroids_from_pred(input_tensor: np.array, nn_ang_distance: Optiona
                                     exclude_border=True)
     return centroid_peaks
 
+
 def _infer_one_tomo(tomoFname: str, output_fname: str, particle_ang_length: float, model: torch.nn.Module, gpu_id: int,
-                    patch_size:int, batch_size:int,
+                    patch_size: int, batch_size: int,
                     plot: bool, save_pred_mask: bool, extract_coords: bool,
                     nearest_neigs_angs: Optional[float], threshold: float, maskFname: Optional[str]):
     """
@@ -234,10 +236,10 @@ def _infer_one_tomo(tomoFname: str, output_fname: str, particle_ang_length: floa
     if not Path(output_fname).exists():
         (vol, new_shape, old_shape, voxel_size,
          padding_values, scalar) = _preprocess_data_mrc(tomoFname, normalization_function="robust_normalization",
-                                                             new_particle_size=model.DESIRED_PARTICLE_PIXELS,
-                                                             particle_size_angst=particle_ang_length,
-                                                             chunk_size=patch_size,
-                                                             use_gpu=infer_config.USE_CUDA_FOR_DATA)
+                                                        new_particle_size=model.DESIRED_PARTICLE_PIXELS,
+                                                        particle_size_angst=particle_ang_length,
+                                                        chunk_size=patch_size,
+                                                        use_gpu=infer_config.USE_CUDA_FOR_DATA)
         if maskFname and Path(maskFname).exists():
             logger.info("Loading mask")
             try:
@@ -253,11 +255,13 @@ def _infer_one_tomo(tomoFname: str, output_fname: str, particle_ang_length: floa
             except Exception as e:
                 logger.warning(f"Error processing mask: {str(e)}. Using the whole volume for inference.")
         else:
-            logger.warning(f"No mask provided or mask file not found for {Path(tomoFname).name}. Using the whole volume for inference.")
+            logger.warning(
+                f"No mask provided or mask file not found for {Path(tomoFname).name}. Using the whole volume for inference.")
         vol = vol.unsqueeze(0)
         subject = tio.Subject({"input_data": tio.ScalarImage(tensor=vol)})
 
-        grid_sampler = tio.GridSampler(subject, patch_size=patch_size, patch_overlap=patch_size // 4, #TODO: the //4 needs to be moved to the config
+        grid_sampler = tio.GridSampler(subject, patch_size=patch_size, patch_overlap=patch_size // 4,
+                                       # TODO: the //4 needs to be moved to the config
                                        padding_mode='reflect')
         patch_loader = DataLoader(grid_sampler, batch_size=batch_size)
         del vol
@@ -274,8 +278,9 @@ def _infer_one_tomo(tomoFname: str, output_fname: str, particle_ang_length: floa
         output_tensor = output_tensor.squeeze(0)
         output_tensor = unpad(output_tensor, padding_values)
         output_tensor = output_tensor.cpu().numpy()
-        #output_tensor = resize(output_tensor, output_shape=old_shape, mode='constant', cval=0)
-        output_tensor, sym_padding = resize_volume(output_tensor, new_shape=old_shape, calculate_mean=False, chunk_size=patch_size, use_gpu=gpu_id >=0)
+        # output_tensor = resize(output_tensor, output_shape=old_shape, mode='constant', cval=0)
+        output_tensor, sym_padding = resize_volume(output_tensor, new_shape=old_shape, calculate_mean=False,
+                                                   chunk_size=patch_size, use_gpu=gpu_id >= 0)
         if save_pred_mask:
             write_segmentation_mask(output_tensor, output_fname, angpix=voxel_size, overwrite=True)
         if plot:
@@ -289,7 +294,8 @@ def _infer_one_tomo(tomoFname: str, output_fname: str, particle_ang_length: floa
 
     if extract_coords:
         coords_array = extract_centroids_from_pred(output_tensor,
-                                                   nn_ang_distance=nearest_neigs_angs, particle_ang_length=particle_ang_length,
+                                                   nn_ang_distance=nearest_neigs_angs,
+                                                   particle_ang_length=particle_ang_length,
                                                    threshold=threshold, angpix=voxel_size)
         tomoFnameList = []
         centroids_and_scores = []
@@ -299,7 +305,7 @@ def _infer_one_tomo(tomoFname: str, output_fname: str, particle_ang_length: floa
         else:
             centroids_and_scores = np.zeros((coords_array.shape[0], 4))
             for i, centroid_peak in enumerate(coords_array):
-                tomoFnameList.append(Path(tomoFname).stem) #TODO: Are you sure that you want only the steam?
+                tomoFnameList.append(Path(tomoFname).stem)  # TODO: Are you sure that you want only the steam?
                 centroids_and_scores[i, 0] = centroid_peak[0]
                 centroids_and_scores[i, 1] = centroid_peak[1]
                 centroids_and_scores[i, 2] = centroid_peak[2]
@@ -307,5 +313,3 @@ def _infer_one_tomo(tomoFname: str, output_fname: str, particle_ang_length: floa
             centroids_and_scores = centroids_and_scores.tolist()
         return tomoFnameList, centroids_and_scores, voxel_size
     return [], [], voxel_size
-
-

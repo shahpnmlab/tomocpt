@@ -2,14 +2,14 @@ from omegaconf import MISSING
 from typing import Annotated
 
 import typer
-from omegaconf import DictConfig, OmegaConf
+from enum import Enum
+from pathlib import Path
+from omegaconf import OmegaConf
 
+from tomocpt.defaultConfigs.prepdata_config import PrepdataConfig
 from tomocpt.defaultConfigs.infer_config import InferConfig
 from tomocpt.defaultConfigs.train_config import TrainConfig
 from tomocpt.defaultConfigs.network_config import NetworkConfig
-from pathlib import Path
-import yaml
-from enum import Enum
 
 
 def convert_config_to_dict(config_obj):
@@ -22,16 +22,14 @@ def convert_config_to_dict(config_obj):
         else:
             if value is NotImplemented:
                 value = MISSING
+            if isinstance(value, Path):
+                value = str(value)
             config_dict[key] = value
+
     return config_dict
 
 
-
-def init_config(output_path: Annotated[Path,
-                            typer.Option(help="The directory that contains the tomograms "
-                                              "with the same particle size")] = Path.cwd() / "config.yaml",
-         config: DictConfig=None,  # Add this parameter to accept the config
-         ) -> None:
+def init(output_path: Annotated[Path, typer.Option(help="Path to save config.yaml file")] = Path.cwd() / "config.yaml") -> None:
     """
     Function to create a template config file for running tomoCPT
 
@@ -48,11 +46,13 @@ def init_config(output_path: Annotated[Path,
         output_path = Path(output_path)
 
     # Create config instances
+    prepare_conf = PrepdataConfig()
     train_conf = TrainConfig()
     network_conf = NetworkConfig()
     infer_conf = InferConfig()
     # Prepare the config dictionary with proper enum handling and correct section names
     config_dict = {
+        "prep": convert_config_to_dict(prepare_conf),
         "train": convert_config_to_dict(train_conf),
         "network": convert_config_to_dict(network_conf),
         "infer": convert_config_to_dict(infer_conf)
@@ -69,4 +69,4 @@ def init_config(output_path: Annotated[Path,
 
 
 if __name__ == '__main__':
-    init_config(Path("/tmp/config.yaml"))
+    init(Path("/tmp/config.yaml"))

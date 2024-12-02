@@ -1,27 +1,22 @@
-from dataclasses import dataclass, field
-from functools import wraps
-from typing import Annotated, List, Optional
-import typer
-from omegaconf import DictConfig
-
 from tomocpt.configManager.configManager import create_app
-from tomocpt.configManager.initializer import init_config
-from tomocpt.defaultConfigs.infer_config import InferConfig
-from tomocpt.defaultConfigs.network_config import NetworkConfig
-from tomocpt.defaultConfigs.train_config import TrainConfig
-from tomocpt.infer.infer import infer
 from tomocpt.mainConfig import mainConfig
+from tomocpt.configManager.initializer import init
+from tomocpt.labels.run import prepare_labels
 from tomocpt.training.train import train
+from tomocpt.infer.infer import infer
+
 
 app = create_app()
 
 
-configForTrain = mainConfig.train
-configForInference = mainConfig.infer
+config_for_train = mainConfig.train
+config_for_inference = mainConfig.infer
+config_for_label_vol_preparation = mainConfig.prepData
 
-app.register_command(train, configForTrain)
-app.register_command(infer, configForInference)
-app.register_command(init_config, None) #TODO: init_config needs to be modified to generate a config file for train, another for inference and so one
+app.register_command(init, None) #TODO: init_config needs to be modified to generate a config file for train, another for inference and so one
+app.register_command(prepare_labels, config_for_label_vol_preparation)
+app.register_command(train, config_for_train)
+app.register_command(infer, config_for_inference)
 
 if __name__ == "__main__":
     app.run()

@@ -1,10 +1,6 @@
 import typer
 from omegaconf import DictConfig
-
-try:
-    from itertools import batched
-except ImportError:
-    from more_itertools import batched
+from itertools import batched
 
 from typing import Annotated
 
@@ -13,12 +9,7 @@ from joblib import Parallel, delayed
 from tomocpt.utils import accelerator_selector
 from tomocpt.infer.helpers import * #TODO: * imports are not a good practise
 
-logging.basicConfig( #TODO: you want to extract this to another .py file, so you can import it everywhere
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    datefmt='%Y-%m-%d %H:%M:%S'
-)
-
+from tomocpt.logging import default_logger
 
 def infer(plot: Annotated[bool, typer.Option(help="#TODO")] = False,
           config: DictConfig = None):

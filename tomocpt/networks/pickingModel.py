@@ -9,9 +9,6 @@ from tomocpt.networks.baseModel import BaseModel
 from tomocpt.training.losses import gradient3d_loss
 
 
-# BETA_FOR_SOFTPLUS = 2
-
-
 class BasePickingModel(BaseModel):# TODO: Change the name
 
     def __init__(self, lr: float | None = None,
