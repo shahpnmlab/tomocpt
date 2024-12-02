@@ -143,7 +143,7 @@ class ConfigManager:
 
 class ConfigurableApp:
     def __init__(self):
-        self.app = typer.Typer()
+        self.app = typer.Typer(no_args_is_help=True, add_completion=False, pretty_exceptions_short=True, pretty_exceptions_show_locals=False)
         self.config_manager = ConfigManager()
 
     def _get_typed_value(self, key: str, value: str, curr_obj: Any, attr: str) -> Any:
