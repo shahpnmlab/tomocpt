@@ -6,17 +6,18 @@ from typing import Annotated
 
 from joblib import Parallel, delayed
 
-from tomocpt.utils import accelerator_selector
 from tomocpt.infer.helpers import * #TODO: * imports are not a good practise
 
 from tomocpt.logging import default_logger
 
-def infer(plot: Annotated[bool, typer.Option(help="#TODO")] = False,
+def infer(plot: Annotated[bool, typer.Option(help="#TODO")] = False, #TODO: should this be removed?
           config: DictConfig = None):
-
 
     from tomocpt.mainConfig import mainConfig
     infer_config = mainConfig.infer
+    from tomocpt.utils import accelerator_selector
+
+
     tomosDirPath = Path(infer_config.tomosDir).resolve()
 
     Path(infer_config.predsDir).mkdir(parents=True, exist_ok=True)
