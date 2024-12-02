@@ -215,3 +215,31 @@ def get_labels_dirname(require_labels:bool):
     else:
         return LABELS_DIR_NAME_PREFIX%"_selfSup"
 
+
+def plot_example(*tensors, title=None):
+    from matplotlib import pyplot as plt
+    try:
+        import cupy
+    except ImportError:
+        cupy = None
+    fig, ax = plt.subplots(len(tensors), 5, squeeze=False)
+
+    for i, x in enumerate(tensors):
+        if isinstance(x, torch.Tensor):
+            x = x.cpu().detach().numpy()
+        elif cupy and isinstance(x, cupy.ndarray):
+            x = cupy.asnumpy(x)
+        print(x.shape)
+
+        n = x.shape[0]
+        central = n // 2
+        if title is not None:
+            fig.suptitle(title, fontsize=16)
+        ax[i, 0].imshow(x[central - central // 2, ...], cmap="gray")
+        ax[i, 1].imshow(x[central - 1, ...], cmap="gray")
+        ax[i, 2].imshow(x[central, ...], cmap="gray")
+        ax[i, 3].imshow(x[central + 1, ...], cmap="gray")
+        ax[i, 4].imshow(x[central + central // 2, ...], cmap="gray")
+
+    plt.show()
+    print("")
