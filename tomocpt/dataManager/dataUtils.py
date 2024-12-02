@@ -106,7 +106,7 @@ def get_shape_for_resizing(volume: np.array, original_size: float, new_size: flo
 
 
 def resize_volume(volume: np.array, new_shape: Union[Tuple[int], List[int]], chunk_size,
-                  use_gpu: bool | None = None, calculate_mean: bool = True) -> Tuple[np.array, Optional[List[int]]]:
+                  use_gpu: bool | None = None, mean_as_padding_value: bool = True) -> Tuple[np.array, Optional[List[int]]]:
     """
     Resizes a 3D volume to a new shape using bicubic interpolation. If any dimension of the new shape is smaller
     than the given chunk_size, the function symmetrically pads the volume to match the chunk size.
@@ -115,6 +115,8 @@ def resize_volume(volume: np.array, new_shape: Union[Tuple[int], List[int]], chu
         volume (np.array): A 3D numpy array representing the volume to be resized.
         new_shape (Union[Tuple[int], List[int]]): A tuple or list of 3 integers representing the new shape of the volume.
         chunk_size (int): An integer representing the chunk size.
+        use_gpu (bool):
+        mean_as_padding_value (bool): Uses the mean of the volume as padding value
 
     Returns:
         np.array: A 3D numpy array representing the resized volume.
@@ -137,9 +139,8 @@ def resize_volume(volume: np.array, new_shape: Union[Tuple[int], List[int]], chu
         new_shape = [192, 192, 64]
         resized = resize_volume(volume, new_shape, chunk_size=16)
     """
-    #TODO: Document what calculate mean does
     assert use_gpu is not None, "Error, you need to tell if gpu is going to be used"
-    if calculate_mean:
+    if mean_as_padding_value:
         intensity = volume.mean()
     else:
         intensity = 0

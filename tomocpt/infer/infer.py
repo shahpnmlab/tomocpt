@@ -1,6 +1,12 @@
 import typer
 from omegaconf import DictConfig
-from itertools import batched
+
+from tomocpt.defaultConfigs.infer_config import OutputFormat
+
+try:
+    from itertools import batched
+except:
+    from more_itertools import batched
 
 from typing import Annotated
 
@@ -61,25 +67,16 @@ def infer(plot: Annotated[bool, typer.Option(help="#TODO")] = False, #TODO: shou
             all_tomo_centroids_and_scores["rlnCoordinateZ"].append(predicted_centroid[0])
             all_tomo_centroids_and_scores["rlnAutopickFigureOfMerit"].append(predicted_centroid[3])
 
-        # TODO: Why do you invent this optical group?
-        # df_optics = pd.DataFrame({
-        #     'rlnOpticsGroup': [1],
-        #     "rlnOpticsGroupName": ["OpticsGroup1"],
-        #     'rlnSphericalAberration': [2.7],
-        #     'rlnVoltage': [300],
-        #     'rlnImagePixelSize': [[x for x in voxel_sizes if x][0]],
-        #     'rlnImageDimensionality': [3]
-        # })
-        df_particles = pd.DataFrame(data=all_tomo_centroids_and_scores)
-
-        star_data = {
-            #'optics': df_optics, #TODO: Pranav, check why you don't include the optical group.
-            'particles': df_particles
-        }
-        star_out = Path(f"{infer_config.predsDir}/{infer_config.outCoordFname}")
-        starfile.write(star_data, star_out, float_format="%0.2f", overwrite=True)
-        logger.info(f"# coordinates: {df_particles.shape[0]}")
-        logger.info(f"Predicted coordinates are stored here: {star_out}")
+        if mainConfig.infer.outCoordFormat == OutputFormat.relion:
+            write_relion_star_file(output_dir=mainConfig.infer.predsDir,
+                                       tomo_names=tomoNames,
+                                       predicted_centroids_with_scores=predicted_centroids_with_scores,
+                                       voxel_size = voxel_sizes, #TODO: voxel_sizes is a list of voxel_sizes!!
+                                       output_filename = mainConfig.infer.outCoordFname,
+                                       version= 3.1) #TODO: put this into config
+        else:
+            raise NotImplementedError()
+        logger.info(f"Predicted coordinates are stored here: {mainConfig.infer.outCoordFname}") #TODO: print the absolute path instead
 
 
 MODEL = None

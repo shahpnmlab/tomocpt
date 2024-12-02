@@ -1,3 +1,4 @@
+import copy
 import sys
 from dataclasses import is_dataclass, fields
 from typing import Any, Callable, Dict, List, Optional, Type, TypeVar, Union, Tuple, Set
@@ -144,6 +145,7 @@ class ConfigManager:
 class ConfigurableApp:
     def __init__(self):
         self.app = typer.Typer(pretty_exceptions_show_locals=False,
+                               pretty_exceptions_enable=False,
                                pretty_exceptions_short=True,
                                no_args_is_help=True,
                                add_completion=False)
@@ -187,13 +189,17 @@ class ConfigurableApp:
 
             # Load config file if present
             yaml_config = None
+            yaml_updated_config = None
             if config_file_path:
                 yaml_config = OmegaConf.load(config_file_path)
+
+                if config is not None:
+                    yaml_updated_config = copy.deepcopy(config)
+                    merge_config(yaml_config, yaml_updated_config) #This hides the required parameters from help if they are defined in the yaml
 
             original_sig = inspect.signature(func)
             func_params = [p for p in original_sig.parameters.values() if p.name != 'config']
             cli_params, paths = self.config_manager.create_cli_parameters(config)
-
             # Create parameter mappings
             config_param_map = {param.name: param for param in cli_params}
             config_param_types = {
@@ -252,7 +258,7 @@ class ConfigurableApp:
                 updated_cli_params = []
                 for param in cli_params:
                     param_path = _normalize_path(param.name).split('.')
-                    curr_config = yaml_config
+                    curr_config = yaml_updated_config
                     found_value = True
 
                     # Navigate the yaml config structure
@@ -264,16 +270,19 @@ class ConfigurableApp:
                             break
                     if found_value:
                         # Create new parameter with default from yaml
+                        if curr_config == MISSING:
+                            kwargs = {}
+                        else:
+                            kwargs = dict(default=curr_config)
                         new_param = inspect.Parameter(
                             param.name,
                             param.kind,
                             annotation=param.annotation,
-                            default=curr_config
+                            **kwargs
                         )
                         updated_cli_params.append(new_param)
                     else:
                         updated_cli_params.append(param)
-
                 cli_params = updated_cli_params
 
             # Organize parameters
@@ -363,9 +372,9 @@ class ConfigurableApp:
                                 f"Cannot convert '{value}' to {field_type} for '{key}': {str(e)}"
                             )
 
-                if config_file:
-                    yaml_config = OmegaConf.load(config_file)
-                    self._update_from_yaml(config, yaml_config, config_merge_preference)
+                # if config_file:
+                #     yaml_config = OmegaConf.load(config_file)
+                #     self._update_from_yaml(config, yaml_config, config_merge_preference)
 
                 func_kwargs = {k: v for k, v in kwargs.items() if k not in config_param_map}
                 if 'config' in original_sig.parameters:
@@ -449,6 +458,41 @@ class ConfigurableApp:
         def wrapper(*args, **kwargs):
             return func(*args, **kwargs)
         return wrapper
+
+
+def merge_config(yaml_config: DictConfig, config: Any) -> Any:
+    """
+    Merge YAML config into a dataclass config object.
+    """
+    if not is_dataclass(config):
+        return config
+
+    # For each field in the dataclass
+    for field in fields(config):
+        field_name = field.name
+        current_value = getattr(config, field_name)
+
+        # Find the field in yaml_config, checking both top level and nested
+        yaml_value = None
+        if field_name in yaml_config:
+            yaml_value = yaml_config[field_name]
+        else:
+            # Search in all top-level dictionaries
+            for section in yaml_config.values():
+                if isinstance(section, DictConfig) and field_name in section:
+                    yaml_value = section[field_name]
+                    break
+
+        if yaml_value is not None:
+            if is_dataclass(current_value) and isinstance(yaml_value, DictConfig):
+                # Recursively merge nested dataclass
+                setattr(config, field_name, merge_config(yaml_value, current_value))
+            else:
+                # Direct update for non-dataclass fields
+                setattr(config, field_name, yaml_value)
+    return config
+
+
 
 
 def update_config(target: Any, source: Any):

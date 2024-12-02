@@ -38,13 +38,13 @@ class BaseModel(pl.LightningModule):
         )
         self.set_default_args(lr=lr, num_levels=num_levels)
 
-        self.patch_size = self.hparams.config.train.network.CHUNK_SIZE
-        self.DESIRED_PARTICLE_PIXELS = self.hparams.config.prepData.DESIRED_PARTICLE_PIXELS
+        self.patch_size = self.hparams.config.train.CHUNK_SIZE
+        self.DESIRED_PARTICLE_PIXELS = self.hparams.config.prepData.desired_particle_pixel_size
 
 
     def build_model(self):
         network_config = self.hparams.config.train.network
-        model_name, model = network_config.build_model(img_size=network_config.CHUNK_SIZE)
+        model_name, model = network_config.build_model(img_size=self.patch_size)
         return model_name, model
 
     def forward_and_zero_edges(self, x):

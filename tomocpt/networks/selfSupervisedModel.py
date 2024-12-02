@@ -22,9 +22,8 @@ class SelfSupervisedModel(BaseModel):
 
         super(SelfSupervisedModel, self).__init__(lr, num_levels, *args, **kwargs)
 
-        network_config = mainConfig.train.network
 
-        n_voxels = network_config.CHUNK_SIZE
+        n_voxels = mainConfig.train.CHUNK_SIZE
 
         if model is None:
             self.model_name, self.model = self.build_model()
@@ -46,7 +45,7 @@ class SelfSupervisedModel(BaseModel):
                 nn.Linear(nchan, outDims, bias=bias)
             )
 
-        contrastiveEmbSize = 256 #TODO: Check if this needs to go into network_config
+        contrastiveEmbSize = mainConfig.train.network.SELF_SUPERVISED_EMBEDING_SIZE
         self.rotation_head = generateHead(4, bias=True)
         self.contrastive_head = generateHead(contrastiveEmbSize, bias=False)
 
@@ -82,8 +81,7 @@ class SelfSupervisedModel(BaseModel):
         return loss, losses_tasks, (x, x1, x2), (contrastive1_p, contrastive2_p), imgs_recon
 
     def training_step(self, batch, batch_idx):
-        loss, losses_tasks, (x, x1, x2), (contrastive1_p, contrastive2_p), imgs_recon = self._step(batch, batch_idx)
-        # TODO: if on_step=True, reconsider sync_dist
+        loss, losses_tasks, (x, x1, x2), (contrastive1_p, contrastive2_p), imgs_recon = self._step(batch, batch_idx) #if on_step=True, reconsider sync_dist
         self.log('loss', loss, on_step=False, on_epoch=True, prog_bar=True, sync_dist=True, batch_size=x.shape[0])
         self.log('loss_rot', losses_tasks[0], on_step=False, on_epoch=True, prog_bar=True, sync_dist=True,
                  batch_size=x.shape[0])
@@ -254,7 +252,7 @@ class ContrastLoss(nn.Module):
 
 
 class LossPretrain(torch.nn.Module):
-    def __init__(self, rotLossW=1.0, contrasLossW=1.0, reconsLossW=10.0):
+    def __init__(self, rotLossW=1.0, contrasLossW=1.0, reconsLossW=10.0): #TODO: Pranav, you can change here the weight of each term of the self supervised loss
         super().__init__()
         self.rot_loss = torch.nn.CrossEntropyLoss()
         self.recon_loss = torch.nn.L1Loss()
@@ -284,7 +282,7 @@ if __name__ == "__main__":
     network_config.model_type = "SwinUNETR"  # "UNET" #"SwinUNETR"
     model = SelfSupervisedModel()
 
-    chunk_size = network_config.CHUNK_SIZE
+    chunk_size = mainConfig.train.CHUNK_SIZE
     batchSize = 3
     x = torch.rand(batchSize, 1, chunk_size, chunk_size, chunk_size)
     out = model(x)

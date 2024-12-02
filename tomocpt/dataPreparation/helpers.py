@@ -11,7 +11,7 @@ def _preprocess_data_mrc(data_fname:str, particle_size_angst, normalization_func
         raise NotImplementedError(f"We only have robust_normalization and you used {normalization_function}")
 
     vol, voxel_size = load_mrc(data_fname, normalize=normalization_function, return_boxSize=True)
-    particle_size_pix = particle_size_angst / voxel_size #TODO: pranav check if this is correct
+    particle_size_pix = particle_size_angst / voxel_size #TODO: pranav check if particle_size_angst is diameter or radius. This should be checked everywhere
     old_shape = vol.shape
     vol = torch.tensor(vol)
     scalar, new_shape = get_shape_for_resizing(vol, particle_size_pix, new_size=new_particle_size)

@@ -35,7 +35,5 @@ def test():
     print(out.shape)
 
 
-    #TODO: downsample to 10A/pxl
-
 if __name__ == "__main__":
     test()

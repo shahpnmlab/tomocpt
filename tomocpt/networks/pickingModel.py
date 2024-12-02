@@ -9,7 +9,7 @@ from tomocpt.networks.baseModel import BaseModel
 from tomocpt.training.losses import gradient3d_loss
 
 
-class BasePickingModel(BaseModel):# TODO: Change the name
+class BasePickingModel(BaseModel):
 
     def __init__(self, lr: float | None = None,
                  num_levels: int | None = None,
@@ -76,7 +76,7 @@ class BasePickingModel(BaseModel):# TODO: Change the name
         loss = self.loss(y_pred, y)
 
         self.log('loss', loss, on_step=False, on_epoch=True, prog_bar=True, sync_dist=True,
-                 batch_size=x.shape[0])  # TODO: if on_step=True, reconsider sync_dist
+                 batch_size=x.shape[0])  # if on_step=True, reconsider sync_dist
 
         if batch_idx == 0:
             size = y_pred.shape[2]
@@ -123,10 +123,10 @@ if __name__ == "__main__":
     model = BasePickingModel()
     batch_size = 3
     from tomocpt.mainConfig import mainConfig
-    network_config = mainConfig.network
+    train_config = mainConfig.train
     batch = dict(
-        input_data=dict(data=torch.randn(batch_size, 1, *(network_config.CHUNK_SIZE,) * 3)),
-        target_data=dict(data=torch.randn(batch_size, 1, *(network_config.CHUNK_SIZE,) * 3)),
+        input_data=dict(data=torch.randn(batch_size, 1, *(train_config.CHUNK_SIZE,) * 3)),
+        target_data=dict(data=torch.randn(batch_size, 1, *(train_config.CHUNK_SIZE,) * 3)),
     )
 
     out = model.predict_step(batch["input_data"]["data"], 0, dataloader_idx=0)

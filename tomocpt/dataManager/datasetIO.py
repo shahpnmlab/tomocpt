@@ -11,7 +11,7 @@ class VolumeDatsetIO(tio.SubjectsDataset):
     def _load(data_dir: str, return_labels: bool = True):
         lists_of_subjects = []
 
-        for root, dirs, files in os.walk(os.path.join(data_dir), topdown=False):  # TODO: possibly split train/test/val
+        for root, dirs, files in os.walk(os.path.join(data_dir), topdown=False):
             for name in files:
                 if name.startswith(constants.VOLUMES_DIR_NAME_PREFIX) and name.endswith(constants.CUBES_EXTENSION):
                     realRoot, _ = os.path.split(root)

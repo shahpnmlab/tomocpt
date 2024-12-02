@@ -25,7 +25,7 @@ class OptimizerConfig:
 
 @dataclass
 class TrainConfig:
-    optimizer: Annotated[OptimizerConfig, typer.Option(help="The optimizer")] = field(default_factory=OptimizerConfig) #TODO: This is experimental. The syntacix optimizer.__target__="string" seems to work
+    optimizer: Annotated[OptimizerConfig, typer.Option(help="The optimizer")] = field(default_factory=OptimizerConfig) #TODO: Please try if you can actually change the optimizer in the config and/or command line
 
     network: Annotated[NetworkConfig, typer.Option(help="The network config")] = field(default_factory=NetworkConfig)
 
@@ -48,3 +48,7 @@ class TrainConfig:
     COSINE_LR_SCHEDULE_N_EPOCHS: int = 6  # TODO: Move to train_config
     PATIENT_REDUCE_LR_PLATEAU_N_EPOCHS: int = 6  # TODO: Move to train_config
 
+    CHUNK_SIZE: Annotated[int, typer.Option(help="The patch size of the cubes")] = 64
+    CHUNK_STRIDE: int = 32
+    RANDOM_FRACTION_TO_SAMPLE_TRAIN: float = -1.  # Train on all the chunks
+    SEED_FOR_TRAIN_VAL_SPLIT: int = 113

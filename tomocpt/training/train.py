@@ -21,6 +21,7 @@ def train(
         continue_training: Annotated[Optional[Path], typer.Option(help="Path to pre-existing checkpoint file for fine-tuning with new data")] = None,
         launch_tensorboard: Annotated[bool, typer.Option(help="Launch tensorboard for evaluating training")] = True,
         config: DictConfig = None):
+
     from tomocpt.mainConfig import mainConfig
     torch.set_float32_matmul_precision(mainConfig.train.network.TORCH_MATMUL_PRECISION)
     from tomocpt.defaultConfigs.train_config import TrainingModes
@@ -29,7 +30,7 @@ def train(
     from tomocpt.networks.selfSupervisedModel import SelfSupervisedModel
     from tomocpt.utils import accelerator_selector
     from pytorch_lightning.callbacks import TQDMProgressBar, EarlyStopping, ModelCheckpoint, LearningRateMonitor, \
-        StochasticWeightAveraging  # TODO: Importing from pytorch_lightning.callbacks is launching a jit warning. Why?
+        StochasticWeightAveraging  # TODO: Importing from pytorch_lightning.callbacks is launching a jit warning. Why?. Could it be version related
 
     kwargs = dict(lr=mainConfig.train.optimizer.lr)
 

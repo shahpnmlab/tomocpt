@@ -102,7 +102,7 @@ def write_relion_star_file(output_dir: str,
 def write_warp_star_file(output_dir: str,
                          tomo_names: List[str],
                          predicted_centroids_with_scores: List[List[float]],
-                         output_filename: str = "tomocpt_coords.star") -> Path:
+                         output_filename: str | None = None) -> Path:
     """
     Write particle coordinates and scores to a WARP-compatible star file format.
 
@@ -116,7 +116,10 @@ def write_warp_star_file(output_dir: str,
     Returns:
         Path: Path to the written star file
     """
-    # Initialize the data dictionary for particle coordinates
+    # Initialize the data dictionary for particle coordinatesç
+    if output_filename is None:
+        output_filename = mainConfig.infer.outCoordFname
+
     all_tomo_centroids_and_scores = {
         "rlnMicrographName": [],
         "rlnCoordinateX": [],
@@ -157,7 +160,7 @@ def write_sg_motive_list(output_dir: str,
                          tomo_names: List[str],
                          predicted_centroids_with_scores: List[List[float]],
                          output_filename: str = "tomocpt_coords.star") -> Path:  # TODO: This is incomple
-    return None
+    raise NotImplementedError()
 
 
 def apply_mask(tomo: np.ndarray, mask: np.ndarray) -> np.ndarray:
@@ -244,8 +247,8 @@ def _infer_one_tomo(tomoFname: str, output_fname: str, particle_ang_length: floa
             logger.info("Loading mask")
             try:
                 m = load_mrc(maskFname, normalize=None, return_boxSize=False)
-                mask, _ = resize_volume(m, new_shape=new_shape, calculate_mean=False,
-                                        chunk_size=patch_size, use_gpu=infer_config.USE_CUDA_FOR_DATA)
+                mask, _ = resize_volume(m, new_shape=new_shape, chunk_size=patch_size,
+                                        use_gpu=infer_config.USE_CUDA_FOR_DATA, mean_as_padding_value=False)
                 mask = torch.as_tensor(mask, dtype=vol.dtype)
                 if mask.shape != vol.shape:
                     raise ValueError(f"Resized mask shape {mask.shape} does not match volume shape {vol.shape}")
@@ -260,8 +263,7 @@ def _infer_one_tomo(tomoFname: str, output_fname: str, particle_ang_length: floa
         vol = vol.unsqueeze(0)
         subject = tio.Subject({"input_data": tio.ScalarImage(tensor=vol)})
 
-        grid_sampler = tio.GridSampler(subject, patch_size=patch_size, patch_overlap=patch_size // 4,
-                                       # TODO: the //4 needs to be moved to the config
+        grid_sampler = tio.GridSampler(subject, patch_size=patch_size, patch_overlap=patch_size // mainConfig.infer.patch_overlap_factor,
                                        padding_mode='reflect')
         patch_loader = DataLoader(grid_sampler, batch_size=batch_size)
         del vol
@@ -279,8 +281,8 @@ def _infer_one_tomo(tomoFname: str, output_fname: str, particle_ang_length: floa
         output_tensor = unpad(output_tensor, padding_values)
         output_tensor = output_tensor.cpu().numpy()
         # output_tensor = resize(output_tensor, output_shape=old_shape, mode='constant', cval=0)
-        output_tensor, sym_padding = resize_volume(output_tensor, new_shape=old_shape, calculate_mean=False,
-                                                   chunk_size=patch_size, use_gpu=gpu_id >= 0)
+        output_tensor, sym_padding = resize_volume(output_tensor, new_shape=old_shape, chunk_size=patch_size,
+                                                   use_gpu=gpu_id >= 0, mean_as_padding_value=False)
         if save_pred_mask:
             write_segmentation_mask(output_tensor, output_fname, angpix=voxel_size, overwrite=True)
         if plot:
@@ -305,7 +307,7 @@ def _infer_one_tomo(tomoFname: str, output_fname: str, particle_ang_length: floa
         else:
             centroids_and_scores = np.zeros((coords_array.shape[0], 4))
             for i, centroid_peak in enumerate(coords_array):
-                tomoFnameList.append(Path(tomoFname).stem)  # TODO: Are you sure that you want only the steam?
+                tomoFnameList.append(Path(tomoFname).stem)
                 centroids_and_scores[i, 0] = centroid_peak[0]
                 centroids_and_scores[i, 1] = centroid_peak[1]
                 centroids_and_scores[i, 2] = centroid_peak[2]

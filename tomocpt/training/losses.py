@@ -3,8 +3,7 @@ import torch.nn as nn
 from torch.nn.functional import softmax, one_hot
 import kornia
 
-#TODO: Try https://arxiv.org/pdf/1904.10030.pdf
-#TODO: https://arxiv.org/pdf/2006.14822.pdf
+#A list of losses can be found at https://arxiv.org/pdf/2006.14822.pdf
 
 def dice_loss(sigmoidOut, ytrue, eps=1e-7):
     """Computes the Sørensen–Dice loss.
