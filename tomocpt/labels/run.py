@@ -1,8 +1,3 @@
-from typing import Annotated
-
-import typer
-
-from tomocpt.defaultConfigs.prepdata_config import PrepareDataType
 from typer import Option
 import pandas as pd
 from omegaconf import DictConfig
@@ -10,12 +5,9 @@ from omegaconf import DictConfig
 from tomocpt.labels.star import Star
 from tomocpt.labels.mod import Mod
 from tomocpt.labels.helpers import *
+from tomocpt.defaultConfigs.prepdata_config import PrepareDataType
 
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    datefmt='%Y-%m-%d %H:%M:%S'
-)
+import logging
 
 
 def create_tracking_dataframe(vol_coord_pairs, tomo_path: Path, output_dir: Path,

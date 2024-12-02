@@ -17,7 +17,7 @@ class TrainingModes(str, Enum):
 
 @dataclass
 class OptimizerConfig:
-    _target_: str = "torch.optim.RAdam"
+    _target_: Annotated[str, typer.Option(help="Choose your optimiser e.g. torch.optim.Adam")] = "torch.optim.Adam"
     lr: Annotated[float, typer.Option(help="Learning rate")] = 4e-4
     weight_decay: Annotated[float, typer.Option(help="weight_decay")] = 1e-8
     betas: Annotated[Tuple[float, float], typer.Option(help="betas")] = (0.9, 0.999)

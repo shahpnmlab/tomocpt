@@ -13,8 +13,8 @@ from typing import Annotated
 from joblib import Parallel, delayed
 
 from tomocpt.infer.helpers import * #TODO: * imports are not a good practise
+import logging
 
-from tomocpt.logging import default_logger
 
 def infer(plot: Annotated[bool, typer.Option(help="#TODO")] = False, #TODO: should this be removed?
           config: DictConfig = None):
@@ -76,7 +76,7 @@ def infer(plot: Annotated[bool, typer.Option(help="#TODO")] = False, #TODO: shou
                                        version= 3.1) #TODO: put this into config
         else:
             raise NotImplementedError()
-        logger.info(f"Predicted coordinates are stored here: {mainConfig.infer.outCoordFname}") #TODO: print the absolute path instead
+        logging.info(f"Predicted coordinates are stored here: {mainConfig.infer.outCoordFname}") #TODO: print the absolute path instead
 
 
 MODEL = None

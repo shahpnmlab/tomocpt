@@ -1,4 +1,5 @@
 import importlib
+import logging
 
 import hydra
 import pytorch_lightning as pl
@@ -66,8 +67,7 @@ class BaseModel(pl.LightningModule):
 
     def configure_optimizers(self):
         train_config = self.hparams.config.train
-
-        print("optimizer", train_config.optimizer)
+        logging.info(f"optimizer:{train_config.optimizer}", )
         opt = hydra.utils.instantiate(train_config.optimizer, params=self.parameters()) #, decoupled_weight_decay=True
         # opt = torch.optim.RAdam(self.parameters(), lr=self.lr, betas=(0.9, 0.99), weight_decay=self.hparams.mainConfig.train.WEIGHT_DECAY) #, decoupled_weight_decay=True)
 
