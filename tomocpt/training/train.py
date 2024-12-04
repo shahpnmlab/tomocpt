@@ -115,7 +115,7 @@ def train(
     if trainer.is_global_zero:
         _copyCodeForReproducibility(trainer.log_dir)
 
-    if launch_tensorboard:
+    if launch_tensorboard and trainer.is_global_zero:
         subprocess.Popen(["tensorboard", "--logdir", f'{mainConfig.train.model_dir}/{mainConfig.train.experiment_name}'],
                          stdout=sys.stdout, stderr=sys.stderr)
         #logger.info("Use the url below to monitor training on tensorboard")

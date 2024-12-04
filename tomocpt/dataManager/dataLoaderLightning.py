@@ -56,23 +56,27 @@ class Data(pl.LightningDataModule):
         batch["target_data"] = batch["target_data"][tio.DATA].to(device)
         return batch
 
-    def train_dataloader(self) -> SubjectsLoader[Dict[str, tio.ScalarImage]]:
-        return SubjectsLoader(  # Changed to SubjectsLoader
+    def train_dataloader(self) -> SubjectsLoader:
+        return SubjectsLoader(
             self.dataset_training,
             batch_size=self.batch_size,
             num_workers=self.workers_for_data,
             shuffle=True,
+            pin_memory=True,
+            drop_last=True,
             persistent_workers=True if self.workers_for_data > 1 else False
         )
 
-    def val_dataloader(self) -> SubjectsLoader[Dict[str, tio.ScalarImage]]:
+    def val_dataloader(self) -> SubjectsLoader:
         return SubjectsLoader(
             self.dataset_val,
             batch_size=self.batch_size,
             num_workers=self.workers_for_data,
-            shuffle=True,
+            shuffle=False,  # Changed to False for validation
+            pin_memory=True,
             persistent_workers=True if self.workers_for_data > 1 else False
         )
+
 
     def test_dataloader(self):
         return NotImplemented
