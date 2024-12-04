@@ -3,7 +3,7 @@ import os
 import torchio as tio
 import torch
 import pytorch_lightning as pl
-from torch.utils.data import DataLoader
+from torchio.data import SubjectsLoader
 from tomocpt.mainConfig import mainConfig
 from tomocpt.dataManager.datasetIO import VolumeDatsetIO
 
@@ -56,26 +56,22 @@ class Data(pl.LightningDataModule):
         batch["target_data"] = batch["target_data"][tio.DATA].to(device)
         return batch
 
-    def train_dataloader(self) -> DataLoader[Dict[str, tio.ScalarImage]]:
-        return DataLoader(
+    def train_dataloader(self) -> SubjectsLoader[Dict[str, tio.ScalarImage]]:
+        return SubjectsLoader(  # Changed to SubjectsLoader
             self.dataset_training,
-            self.batch_size,
+            batch_size=self.batch_size,
             num_workers=self.workers_for_data,
             shuffle=True,
-            persistent_workers=True if (config.N_GPUS > 0 and
-                                        config.use_cuda > 0 and
-                                        self.workers_for_data > 0) else False
+            persistent_workers=True if self.workers_for_data > 1 else False
         )
 
-    def val_dataloader(self) -> DataLoader[Dict[str, tio.ScalarImage]]:
-        return DataLoader(
+    def val_dataloader(self) -> SubjectsLoader[Dict[str, tio.ScalarImage]]:
+        return SubjectsLoader(
             self.dataset_val,
             batch_size=self.batch_size,
             num_workers=self.workers_for_data,
-            shuffle=False,
-            persistent_workers=True if (config.N_GPUS > 0 and
-                                        config.use_cuda > 0 and
-                                        self.workers_for_data > 0) else False
+            shuffle=True,
+            persistent_workers=True if self.workers_for_data > 1 else False
         )
 
     def test_dataloader(self):

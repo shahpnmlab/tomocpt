@@ -22,15 +22,16 @@ class VolumeDatsetIO(tio.SubjectsDataset):
                     assert os.path.isfile(full_vol_name)
                     if return_labels:
                         assert os.path.isfile(full_label_name)
-                        subject = tio.Subject({
-                            "input_data": tio.ScalarImage(full_vol_name),
-                            "target_data": tio.ScalarImage(full_label_name)
-                        })
+                        subject = tio.Subject(
+                            input_data=tio.ScalarImage(full_vol_name),
+                            target_data=tio.LabelMap(full_label_name)
+                        )
+
                     else:
-                        subject = tio.Subject({
-                            "input_data": tio.ScalarImage(full_vol_name),
-                            "target_data": tio.ScalarImage(full_vol_name)
-                        })
+                        subject = tio.Subject(
+                            input_data=tio.ScalarImage(full_vol_name),
+                            target_data=tio.LabelMap(full_vol_name)
+                        )
 
                     lists_of_subjects.append(subject)
         return lists_of_subjects
@@ -41,28 +42,19 @@ class VolumeDatsetIO(tio.SubjectsDataset):
         if isTraining:
             spatial = tio.OneOf({
                 tio.RandomElasticDeformation(): 0.1,
-                tio.RandomBlur(std=1): 0.1,
-                tio.RandomElasticDeformation(
-                    num_control_points=(7, 7, 7),
-                    max_displacement=4,
-                    locked_borders=2): 0.3,
-                tio.RandomAffine(degrees=45,
-                                 default_pad_value="otsu"): 0.8,
+                tio.RandomBlur(std=1): 0.1
+                # RandomAnisotropy
+                # RandomFlip
             }, p=0.75)
 
-            noise = tio.OneOf({
-                tio.RandomGhosting(num_ghosts=2): 0.2,
-                tio.RandomBlur(std=(0.1, 1.5)): 0.3,
-                tio.RandomBiasField(): 0.2,
-            }, p=0.8)
-
-            intensity = tio.OneOf({
-                tio.RandomBlur(std=(0.1, 1.0)): 0.3
-            })
-
-            transform = tio.Compose([spatial, noise, intensity])
+            transform = tio.Compose([
+                tio.RandomAffine(degrees=45, default_pad_value="otsu", p=0.8),
+                spatial
+            ])
         else:
             transform = None
         listOfSubjects = VolumeDatsetIO._load(data_dir, return_labels=return_labels)
         assert listOfSubjects, f"Error, no valid listOfSubjects at data_dir {data_dir}"
         return VolumeDatsetIO(listOfSubjects, transform=transform, load_getitem=load_getitem)
+
+
