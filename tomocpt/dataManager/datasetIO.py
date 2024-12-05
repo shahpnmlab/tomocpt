@@ -1,16 +1,20 @@
 import os
 import torchio as tio
+from joblib import Parallel, delayed
 
 from tomocpt import constants
 from tomocpt.dataManager.dataUtils import get_labels_dirname
+from tomocpt.mainConfig import mainConfig
 
 
 class VolumeDatsetIO(tio.SubjectsDataset):
 
     @staticmethod
     def _load(data_dir: str, return_labels: bool = True):
-        lists_of_subjects = []
 
+        print("WORKERS_FOR_DATA", mainConfig.train.WORKERS_FOR_DATA)
+
+        names_list = []
         for root, dirs, files in os.walk(os.path.join(data_dir), topdown=False):
             for name in files:
                 if name.startswith(constants.VOLUMES_DIR_NAME_PREFIX) and name.endswith(constants.CUBES_EXTENSION):
@@ -22,17 +26,18 @@ class VolumeDatsetIO(tio.SubjectsDataset):
                     assert os.path.isfile(full_vol_name)
                     if return_labels:
                         assert os.path.isfile(full_label_name)
-                        subject = tio.Subject({
-                            "input_data": tio.ScalarImage(full_vol_name),
-                            "target_data": tio.ScalarImage(full_label_name)
-                        })
+                        names_list.append((full_vol_name, full_label_name))
                     else:
-                        subject = tio.Subject({
-                            "input_data": tio.ScalarImage(full_vol_name),
-                            "target_data": tio.ScalarImage(full_vol_name)
-                        })
+                        names_list.append((full_vol_name, full_vol_name))
 
-                    lists_of_subjects.append(subject)
+        def create_subject(x, y):
+            subject = tio.Subject({
+                "input_data": tio.ScalarImage(x),
+                "target_data": tio.LabelMap(y)
+            })
+            return subject
+
+        lists_of_subjects = Parallel(n_jobs=mainConfig.train.WORKERS_FOR_DATA)(delayed(create_subject)(x, y) for x,y in names_list)
         return lists_of_subjects
 
     @staticmethod

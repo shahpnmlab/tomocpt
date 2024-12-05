@@ -7,7 +7,6 @@ import mrcfile
 import numpy as np
 import pandas as pd
 
-from tomocpt.defaultConfigs.prepdata_config import PrepdataConfig
 logger = logging.getLogger(__name__)
 
 

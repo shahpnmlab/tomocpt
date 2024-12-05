@@ -4,10 +4,8 @@ import torchio as tio
 import torch
 import pytorch_lightning as pl
 from torch.utils.data import DataLoader
-from tomocpt.mainConfig import mainConfig
 from tomocpt.dataManager.datasetIO import VolumeDatsetIO
 
-config = mainConfig.train
 
 
 class Data(pl.LightningDataModule):
@@ -15,14 +13,18 @@ class Data(pl.LightningDataModule):
                          return_labels: bool | None,
                          batch_size: int | None,
                          workers_for_data: int | None):
-        self.base_data_dir = data_dir if data_dir is not None else config.chunks_dir
-        self.batch_size = batch_size if batch_size is not None else config.batch_size
-        self.workers_for_data = workers_for_data if workers_for_data is not None else config.WORKERS_FOR_DATA
+
+        self.base_data_dir = data_dir if data_dir is not None else self.config .chunks_dir
+        self.batch_size = batch_size if batch_size is not None else self.config .batch_size
+        self.workers_for_data = workers_for_data if workers_for_data is not None else self.config .WORKERS_FOR_DATA
         self.return_labels = return_labels if return_labels is not None else False
 
     def __init__(self, data_dir: str | None = None, return_labels: bool | None = None,
                  batch_size: int | None = None, workers_for_data: int | None = None):
         super().__init__()
+        from tomocpt.mainConfig import mainConfig
+        self.config = mainConfig.train
+
         self.set_default_args(data_dir=data_dir, return_labels=return_labels,
                               batch_size=batch_size, workers_for_data=workers_for_data)
         self.dataset_training = None
@@ -62,8 +64,8 @@ class Data(pl.LightningDataModule):
             self.batch_size,
             num_workers=self.workers_for_data,
             shuffle=True,
-            persistent_workers=True if (config.N_GPUS > 0 and
-                                        config.use_cuda > 0 and
+            persistent_workers=True if (self.config .N_GPUS > 0 and
+                                        self.config .use_cuda > 0 and
                                         self.workers_for_data > 0) else False
         )
 
@@ -73,8 +75,8 @@ class Data(pl.LightningDataModule):
             batch_size=self.batch_size,
             num_workers=self.workers_for_data,
             shuffle=False,
-            persistent_workers=True if (config.N_GPUS > 0 and
-                                        config.use_cuda > 0 and
+            persistent_workers=True if (self.config .N_GPUS > 0 and
+                                        self.config .use_cuda > 0 and
                                         self.workers_for_data > 0) else False
         )
 

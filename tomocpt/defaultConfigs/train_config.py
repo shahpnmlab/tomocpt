@@ -41,7 +41,7 @@ class TrainConfig:
     OVERFIT_N_BATCHES: Optional[int] = None
     WORKERS_FOR_DATA: Annotated[int, typer.Option(help="Number of CPU workers per GPU to pre-process data")] = 0
     N_GPUS: int = 1
-    N_CPUS_IF_NO_GPU: int = 1
+    N_CPUS_IF_NO_GPU: int = 2
     USE_CUDA_FOR_DATA: bool = False
 
     FACTOR_REDUCE_LR_PLATEAU_N_EPOCHS: float = 0.5  # TODO: Move to train_config
