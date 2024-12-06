@@ -1,9 +1,12 @@
-from typing import Optional, Dict, Any
+from typing import Optional, Any
 import os
 import torchio as tio
 import torch
 import pytorch_lightning as pl
-from torch.utils.data import DataLoader
+try:
+    from torchio.data import SubjectsLoader as DL
+except ImportError:
+    from torch.utils.data import DL
 from tomocpt.dataManager.datasetIO import VolumeDatsetIO
 
 
@@ -58,25 +61,26 @@ class Data(pl.LightningDataModule):
         batch["target_data"] = batch["target_data"][tio.DATA].to(device)
         return batch
 
-    def train_dataloader(self) -> DataLoader[Dict[str, tio.ScalarImage]]:
-        return DataLoader(
+    def train_dataloader(self) -> DL:
+        dl = DL(
             self.dataset_training,
-            self.batch_size,
+            batch_size=self.batch_size,
             num_workers=self.workers_for_data,
             shuffle=True,
             persistent_workers=True if (self.config .N_GPUS > 0 and
                                         self.config .use_cuda > 0 and
                                         self.workers_for_data > 0) else False
         )
+        return dl
 
-    def val_dataloader(self) -> DataLoader[Dict[str, tio.ScalarImage]]:
-        return DataLoader(
+    def val_dataloader(self) -> DL:
+        return DL(
             self.dataset_val,
             batch_size=self.batch_size,
             num_workers=self.workers_for_data,
             shuffle=False,
-            persistent_workers=True if (self.config .N_GPUS > 0 and
-                                        self.config .use_cuda > 0 and
+            persistent_workers=True if (self.config.N_GPUS > 0 and
+                                        self.config.use_cuda > 0 and
                                         self.workers_for_data > 0) else False
         )
 

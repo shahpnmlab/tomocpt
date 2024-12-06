@@ -8,7 +8,9 @@ from omegaconf import MISSING
 
 class OutputFormat(str, Enum):
     warp = "warp"
-    relion = "relion"
+    relion = "relion_31" # for backward compatibility
+    relion31 = "relion_31"
+    relion50 = "relion_50"
 
 @dataclass
 class InferConfig:
@@ -23,7 +25,7 @@ class InferConfig:
     nearest_neigs_angs: Annotated[Optional[float], typer.Option(help="Filter out particle closer than this distance in Angstroms")] = None
     deep_threshold: Annotated[float, typer.Option(help="Threshold to be applied to the predicted labels to select the centroids")] = 0.3
     outCoordFname: Annotated[str, typer.Option(help="The starfile name to be saved in the predsDir")] = "tomopicker_coords.star"
-    outCoordFormat:  Annotated[OutputFormat, typer.Option(help="The output coordinate format")] = OutputFormat.relion
+    outCoordFormat:  Annotated[OutputFormat, typer.Option(help="The output coordinate format")] = OutputFormat.relion31
     masksDir: Annotated[Optional[Path], typer.Option(help="The directory with masks.")] = None #TODO: Pranav, how does this work. Explain in help?
 
     patch_overlap_factor: int = 4

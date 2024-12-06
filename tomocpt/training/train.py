@@ -32,6 +32,8 @@ def train(
     from pytorch_lightning.callbacks import TQDMProgressBar, EarlyStopping, ModelCheckpoint, LearningRateMonitor, \
         StochasticWeightAveraging  # TODO: Importing from pytorch_lightning.callbacks is launching a jit warning. Why?. Could it be version related
 
+
+    #logger = logging.create_logger("info")
     kwargs = dict(lr=mainConfig.train.optimizer.lr)
 
     train__config = mainConfig.train
@@ -40,8 +42,6 @@ def train(
     assert mainConfig.train.chunks_dir
     assert os.path.isdir(mainConfig.train.chunks_dir), f"Error, mainConfig.train.chunks_dir: {mainConfig.train.chunks_dir} does not exist "
 
-    # print(mainConfig.train.learning_rate)
-    # breakpoint()
     if mainConfig.train.mode == TrainingModes.picking:
         Model = BasePickingModel
         checkpointer = ModelCheckpoint(monitor='val_loss', filename='weights', verbose=True)
@@ -93,16 +93,16 @@ def train(
                 workers_for_data=mainConfig.train.WORKERS_FOR_DATA)
     data.setup()
 
-    print(len(data.train_dataloader()))
+    print(f'Size of the training dataset {len(data.train_dataloader())}')
 
-    logger = TensorBoardLogger(save_dir=f'{mainConfig.train.model_dir}/{mainConfig.train.experiment_name}', name='', version='')
+    tb_logger = TensorBoardLogger(save_dir=f'{mainConfig.train.model_dir}/{mainConfig.train.experiment_name}', name='', version='')
 
     accel, dev_count = accelerator_selector(use_cuda=mainConfig.train.use_cuda, n_cpus=mainConfig.train.N_CPUS_IF_NO_GPU)
 
     trainer = pl.Trainer(default_root_dir=mainConfig.train.model_dir, devices=f'{dev_count}',
                          accelerator='auto' if mainConfig.train.use_cuda else accel,
                          max_epochs=mainConfig.train.n_epochs, callbacks=callbacks,
-                         logger=logger,
+                         logger=tb_logger,
                          overfit_batches=mainConfig.train.OVERFIT_N_BATCHES if mainConfig.train.OVERFIT_N_BATCHES else 0,
                          # limit_val_batches=constants.LIMIT_VALIDATION_BATCHES,
                          # val_check_interval=constants.VAL_CHECK_INTERVAL,
@@ -115,18 +115,14 @@ def train(
     if trainer.is_global_zero:
         _copyCodeForReproducibility(trainer.log_dir)
 
-    if launch_tensorboard:
+    if launch_tensorboard and trainer.is_global_zero:
         subprocess.Popen(["tensorboard", "--logdir", f'{mainConfig.train.model_dir}/{mainConfig.train.experiment_name}'],
-                         stdout=sys.stdout, stderr=open("/dev/null"))
-        print("Use the url below to monitor training on tensorboard")
-    print("Training starts")
+                         stdout=sys.stdout, stderr=sys.stderr)
+        #logger.info("Use the url below to monitor training on tensorboard")
+    #logger.info("Starting training run.")
 
     trainer.fit(pl_model, datamodule=data, ckpt_path=resume_from_checkpoint)
 
-    # if trainer.is_global_zero: #TODO: monai models can be scripted. We need to try if they can be exported using dynamo or other backend
-    #     model = torch.load(checkpointer.best_model_path, weights_only=False)
-    #     model_scripted = torch.jit.script(model)  # Export to TorchScript
-    #     model_scripted.save(checkpointer.best_model_path+".scripted.pt")
 
 
 def _copyCodeForReproducibility(logdir):
@@ -172,4 +168,4 @@ def _copyCodeForReproducibility(logdir):
     parent_command = " ".join(["'" + x + "'" if x.startswith('{"') else x for x in parent_process.cmdline()])
     fname = osp.join(logdir, "parent_command.txt")
     with open(fname, "w") as f:
-        f.write(parent_command)
+        f.write(f'{parent_command}\n')

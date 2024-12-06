@@ -1,4 +1,4 @@
-from dataclasses import dataclass, fields, field
+from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
 from typing import Optional, Annotated, Tuple
@@ -17,7 +17,7 @@ class TrainingModes(str, Enum):
 
 @dataclass
 class OptimizerConfig:
-    _target_: str = "torch.optim.RAdam"
+    _target_: Annotated[str, typer.Option(help="Choose your optimiser e.g. torch.optim.Adam")] = "torch.optim.Adam"
     lr: Annotated[float, typer.Option(help="Learning rate")] = 4e-4
     weight_decay: Annotated[float, typer.Option(help="weight_decay")] = 1e-8
     betas: Annotated[Tuple[float, float], typer.Option(help="betas")] = (0.9, 0.999)
@@ -29,8 +29,8 @@ class TrainConfig:
 
     network: Annotated[NetworkConfig, typer.Option(help="The network config")] = field(default_factory=NetworkConfig)
 
-    chunks_dir: Annotated[Optional[Path], typer.Option(help="The directory with chunks")] = MISSING #"/tmp/refactor/chunks/"
-    model_dir: Annotated[Optional[Path], typer.Option(help="The directory where the model will be saved chunks")] = MISSING #"/tmp/model"
+    chunks_dir: Annotated[Optional[Path], typer.Option(help="The directory with chunks")] = None #"/tmp/refactor/chunks/"
+    model_dir: Annotated[Path, typer.Option(help="The directory where the model will be saved chunks")] = MISSING #"/tmp/model"
     experiment_name: Annotated[Optional[str], typer.Option(help="The name of the experiment")] = "unnamed"
     n_epochs: Annotated[int, typer.Option(help="Number of epochs to train")] = 10
     mode: Annotated[TrainingModes, typer.Option(help="The training mode")] = TrainingModes.picking #"picking" #TrainingModes.picking does not work. Why?

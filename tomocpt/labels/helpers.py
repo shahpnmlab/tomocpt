@@ -1,4 +1,3 @@
-import logging
 from pathlib import Path
 from typing import Union, Dict
 from tqdm import tqdm
@@ -6,14 +5,11 @@ from tqdm import tqdm
 import mrcfile
 import numpy as np
 import pandas as pd
-
-logger = logging.getLogger(__name__)
+import logging
 
 
 def match_data_to_tomograms(particle_data: Union[pd.DataFrame, dict],
-                            tomogram_path: Union[str, Path],
-                            tomo_label: str = 'rlnMicrographName') -> Union[pd.DataFrame, dict]:
-    #TODO: tomo_label default to rlnMicrographName is potentially dangerous default.
+                            tomogram_path: Union[str, Path]) -> Union[pd.DataFrame, dict]:
     """
     Match particle data to tomograms in the specified folder.
 
@@ -25,6 +21,7 @@ def match_data_to_tomograms(particle_data: Union[pd.DataFrame, dict],
     Returns:
         Either a matched DataFrame or dict depending on input type
     """
+    COMMON_TOMO_COLUMNS = ['rlnMicrographName', 'rlnTomoName']
     folder_with_tomograms = Path(tomogram_path)
     tomograms_in_folder = list(folder_with_tomograms.glob('*.mrc'))
     tomogram_names_in_folder = sorted([tomogram.stem for tomogram in tomograms_in_folder])
@@ -46,21 +43,27 @@ def match_data_to_tomograms(particle_data: Union[pd.DataFrame, dict],
                             if name.startswith(x) and (name[len(x):len(x) + 1] in ['_', '-', ''] or name == x)]
 
         if len(possible_matches) == 1:
-            logger.info(f"Close match found for tomogram {x}: {possible_matches[0]}")
+            logging.info(f"Close match found for tomogram {x}: {possible_matches[0]}")
             name_mapping[x] = possible_matches[0]
             return possible_matches[0]
         elif len(possible_matches) > 1:
-            logger.info(f"Multiple possible matches found for tomogram {x}: {possible_matches}")
+            logging.info(f"Multiple possible matches found for tomogram {x}: {possible_matches}")
             name_mapping[x] = None
             return None
         else:
-            logger.info(f"No match found for tomogram {x} in the folder {folder_with_tomograms}.")
+            logging.info(f"No match found for tomogram {x} in the folder {folder_with_tomograms}.")
             name_mapping[x] = None
             return None
 
     if isinstance(particle_data, pd.DataFrame):
         # Handle DataFrame input
+        tomo_label = [col for col in COMMON_TOMO_COLUMNS if col in particle_data.columns]
         particle_data = particle_data.copy()
+        if tomo_label not in particle_data.columns:
+            logging.critical(
+                f"Column '{tomo_label}' not found in particle_data DataFrame. Available columns are: {list(particle_data.columns)}")
+            raise KeyError(f"Critical error: Column '{tomo_label}' not found in DataFrame")
+
         particle_data['matched_tomogram'] = particle_data[tomo_label].apply(match_tomogram_name)
         matched_data = particle_data[particle_data['matched_tomogram'].notna()].copy()
 

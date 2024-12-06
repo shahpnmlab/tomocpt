@@ -14,19 +14,22 @@ from skimage.morphology import cube
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
+from tomocpt.logger import get_logger
 from tomocpt.dataManager.dataUtils import load_mrc, write_segmentation_mask, resize_volume, plot_example
 from tomocpt.dataPreparation.helpers import _preprocess_data_mrc
+from tomocpt.defaultConfigs.infer_config import OutputFormat
 from tomocpt.mainConfig import mainConfig
 
 infer_config = mainConfig.infer
 
-logger = logging.getLogger(__name__)
+
+logger = get_logger()
 
 
 def write_relion_star_file(output_dir: str,
                            tomo_names: List[str],
                            predicted_centroids_with_scores: List[List[float]],
-                           voxel_size: float,
+                           voxel_size: Union[float, List[float]],
                            output_filename: str = "tomocpt_coords.star",
                            version: Union[float, int] = 3.1) -> Path:
     """
@@ -54,6 +57,8 @@ def write_relion_star_file(output_dir: str,
     else:
         raise ValueError(f"Unsupported Relion version: {version}. Supported versions are 3.1 and 5.0")
 
+    voxel_size = float(voxel_size[0] if isinstance(voxel_size, (list, np.ndarray)) else voxel_size)
+
     # Create optics table
     df_optics = pd.DataFrame({
         'rlnOpticsGroup': [1],
@@ -70,7 +75,8 @@ def write_relion_star_file(output_dir: str,
         "rlnCoordinateX": [],
         "rlnCoordinateY": [],
         "rlnCoordinateZ": [],
-        "rlnAutopickFigureOfMerit": []
+        "rlnAutopickFigureOfMerit": [],
+        "rlnClassNumber": []
     }
 
     # Process each coordinate
@@ -81,6 +87,7 @@ def write_relion_star_file(output_dir: str,
         all_tomo_centroids_and_scores["rlnCoordinateY"].append(predicted_centroid[1])
         all_tomo_centroids_and_scores["rlnCoordinateZ"].append(predicted_centroid[0])
         all_tomo_centroids_and_scores["rlnAutopickFigureOfMerit"].append(predicted_centroid[3])
+        all_tomo_centroids_and_scores["rlnClassNumber"].append(1)
 
     # Create particles table
     df_particles = pd.DataFrame(data=all_tomo_centroids_and_scores)
@@ -94,7 +101,7 @@ def write_relion_star_file(output_dir: str,
     # Write the star file
     output_path = Path(output_dir) / output_filename
     starfile.write(star_data, output_path, float_format="%0.2f", overwrite=True)
-    logger.info(f"Predicted coordinates are stored here: {output_path}")
+    logger.info(f"Predicted coordinates are stored here: {output_path.resolve()}")
 
     return output_path
 
@@ -131,7 +138,10 @@ def write_warp_star_file(output_dir: str,
     # Process each coordinate
     for tomoName, predicted_centroid in zip(tomo_names, predicted_centroids_with_scores):
         # Convert filename format
-        tomoName = re.sub(r'_\d+\.\d+Apx', '.tomostar', tomoName)
+        if re.search(r'_\d+\.\d+Apx', tomoName):
+            tomoName = re.sub(r'_\d+\.\d+Apx', '.tomostar', tomoName)
+        else:
+            tomoName = tomoName + '.tomostar'
 
         # Add data to the dictionary
         all_tomo_centroids_and_scores["rlnMicrographName"].append(tomoName)
@@ -151,7 +161,7 @@ def write_warp_star_file(output_dir: str,
     # Write the star file
     output_path = Path(output_dir) / output_filename
     starfile.write(star_data, output_path, float_format="%0.2f", overwrite=True)
-    logger.info(f"Predicted coordinates are stored here: {output_path}")
+    logger.info(f"Predicted coordinates are stored here: {output_path.resolve()}")
 
     return output_path
 
@@ -195,15 +205,17 @@ def unpad(inp_tensor: torch.Tensor, padding_values: Tuple):
 
 
 def extract_cube_at_predicted_centroid(predicted_segmentation_mask: np.array, centroid: np.array):
+    predicted_segmentation_mask = np.asarray(predicted_segmentation_mask)
     x_min, x_max = centroid[0] - 1, centroid[0] + 1
     y_min, y_max = centroid[1] - 1, centroid[1] + 1
     z_min, z_max = centroid[2] - 1, centroid[2] + 1
     subvol = predicted_segmentation_mask[x_min:x_max + 1, y_min:y_max + 1, z_min:z_max + 1]
-    return np.max(subvol)
+    return np.amax(subvol)
 
 
 def extract_centroids_from_pred(input_tensor: np.array, nn_ang_distance: Optional[float], particle_ang_length: float,
                                 threshold: float, angpix: float):
+    input_tensor = np.asarray(input_tensor, dtype=np.float32)
     if nn_ang_distance is None:
         min_dist = particle_ang_length / angpix
     else:
@@ -213,6 +225,58 @@ def extract_centroids_from_pred(input_tensor: np.array, nn_ang_distance: Optiona
                                     exclude_border=True)
     return centroid_peaks
 
+
+def process_extracted_coordinates(results, output_dir: str, output_format: OutputFormat, output_filename: str):
+    """Process and save coordinates from parallel inference results."""
+    tomoNames = []
+    predicted_centroids_with_scores = []
+    voxel_sizes = []
+
+    # Unpack the results from parallel processing
+    for res in results:
+        if not all(isinstance(x, list) for x in res[:2]):  # Basic validation
+            logging.warning(f"Skipping invalid result: {res}")
+            continue
+        tomoNames.extend(res[0])
+        predicted_centroids_with_scores.extend(res[1])
+        voxel_sizes.extend([res[2]] * len(res[0]))
+
+    if not tomoNames:
+        logging.warning("No valid coordinates were extracted.")
+        return
+
+    # Write coordinates based on format
+    if output_format == OutputFormat.relion31:
+
+        output_path = write_relion_star_file(
+            output_dir=output_dir,
+            tomo_names=tomoNames,
+            predicted_centroids_with_scores=predicted_centroids_with_scores,
+            voxel_size=voxel_sizes[0],  # Using first voxel size as reference
+            output_filename=output_filename,
+            version=3.1
+        )
+    elif output_format == OutputFormat.relion50:
+        output_path = write_relion_star_file(
+            output_dir=output_dir,
+            tomo_names=tomoNames,
+            predicted_centroids_with_scores=predicted_centroids_with_scores,
+            voxel_size=voxel_sizes[0],  # Using first voxel size as reference
+            output_filename=output_filename,
+            version=5.0
+        )
+
+    elif output_format == OutputFormat.warp:
+        output_path = write_warp_star_file(
+            output_dir=output_dir,
+            tomo_names=tomoNames,
+            predicted_centroids_with_scores=predicted_centroids_with_scores,
+            output_filename=output_filename
+        )
+    else:
+        raise NotImplementedError(f"Output format {output_format} not supported")
+
+    logging.info(f"Coordinates saved to: {output_path.resolve()}")
 
 def _infer_one_tomo(tomoFname: str, output_fname: str, particle_ang_length: float, model: torch.nn.Module, gpu_id: int,
                     patch_size: int, batch_size: int,
@@ -315,3 +379,5 @@ def _infer_one_tomo(tomoFname: str, output_fname: str, particle_ang_length: floa
             centroids_and_scores = centroids_and_scores.tolist()
         return tomoFnameList, centroids_and_scores, voxel_size
     return [], [], voxel_size
+
+
