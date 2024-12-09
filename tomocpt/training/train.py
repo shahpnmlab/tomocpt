@@ -56,7 +56,7 @@ def train(
                                        verbose=True)
         callbacks = [
             TQDMProgressBar(refresh_rate=10),
-            EarlyStopping(monitor='val_loss', patience=2 * train__config.COSINE_LR_SCHEDULE_N_EPOCHS, verbose=True),
+            EarlyStopping(monitor='val_loss', patience=6 * train__config.COSINE_LR_SCHEDULE_N_EPOCHS, verbose=True),
             checkpointer,
             LearningRateMonitor(logging_interval='epoch'),
         ]
