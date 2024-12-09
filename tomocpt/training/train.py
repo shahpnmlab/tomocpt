@@ -13,9 +13,6 @@ from typing import Annotated, Optional
 from pytorch_lightning.loggers import TensorBoardLogger
 import pytorch_lightning as pl
 
-
-
-
 def train(
         compile_model: Annotated[bool, typer.Option(help="Path to pre-existing checkpoint file for fine-tuning with new data")] = None,
         continue_training: Annotated[Optional[Path], typer.Option(help="Path to pre-existing checkpoint file for fine-tuning with new data")] = None,

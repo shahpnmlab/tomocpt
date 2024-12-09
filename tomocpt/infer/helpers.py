@@ -299,12 +299,13 @@ def _infer_one_tomo(tomoFname: str, output_fname: str, particle_ang_length: floa
     :return:
     """
 
+    particle_radius_angst = particle_ang_length / 2
     voxel_size = np.nan
     if not Path(output_fname).exists():
         (vol, new_shape, old_shape, voxel_size,
          padding_values, scalar) = _preprocess_data_mrc(tomoFname, normalization_function="robust_normalization",
                                                         new_particle_size=model.DESIRED_PARTICLE_PIXELS,
-                                                        particle_size_angst=particle_ang_length,
+                                                        particle_radius_angst=particle_radius_angst,
                                                         chunk_size=patch_size,
                                                         use_gpu=infer_config.USE_CUDA_FOR_DATA)
         if maskFname and Path(maskFname).exists():

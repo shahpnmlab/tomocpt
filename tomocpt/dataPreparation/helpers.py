@@ -5,7 +5,32 @@ from tomocpt.logger import get_logger
 
 logger = get_logger()
 
-def _preprocess_data_mrc(data_fname:str, particle_size_angst, normalization_function, new_particle_size, chunk_size, use_gpu):
+def _preprocess_data_mrc(data_fname:str, particle_radius_angst, normalization_function, new_particle_size, chunk_size, use_gpu):
+    """
+
+Preprocesses MRC (Medical Research Council) data by loading, normalizing, and resizing the volume.
+
+    Args:
+        data_fname (str): Path to the input MRC file.
+        particle_radius_angst (float): Half the particle length in Angstroms. Used for scaling even if particle isn't spherical.
+        normalization_function (str): Normalization method to use. Currently only supports "robust_normalization".
+        new_particle_size (int): Target size in pixels for half the particle length after resizing.
+        chunk_size (int): Size of chunks used during volume resizing to manage memory usage.
+        use_gpu (bool): Whether to use GPU acceleration for volume resizing.
+
+    Returns:
+        tuple: Contains:
+            - vol (torch.Tensor): Processed and resized volume data
+            - new_shape (List[int]): Dimensions of resized volume [Z,Y,X]
+            - old_shape (tuple): Original dimensions of input volume
+            - voxel_size (float): Size of each voxel in Angstroms
+            - padding_values (tuple, optional): Padding values used in resizing, None if no resize
+            - scalar (float): Scaling factor used in resize operation
+
+    Raises:
+        NotImplementedError: If normalization_function is not "robust_normalization"
+    """
+
     if normalization_function == "robust_normalization":
         from tomocpt.dataManager.dataUtils import robust_normalization
         normalization_function = robust_normalization
@@ -13,7 +38,7 @@ def _preprocess_data_mrc(data_fname:str, particle_size_angst, normalization_func
         raise NotImplementedError(f"We only have robust_normalization and you used {normalization_function}")
 
     vol, voxel_size = load_mrc(data_fname, normalize=normalization_function, return_boxSize=True)
-    particle_size_pix = particle_size_angst / voxel_size #TODO: pranav check if particle_size_angst is diameter or radius. This should be checked everywhere
+    particle_size_pix = particle_radius_angst / voxel_size
     old_shape = vol.shape
     vol = torch.tensor(vol)
     scalar, new_shape = get_shape_for_resizing(vol, particle_size_pix, new_size=new_particle_size)
