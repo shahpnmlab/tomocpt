@@ -26,7 +26,7 @@ class InferConfig:
     deep_threshold: Annotated[float, typer.Option(help="Threshold to be applied to the predicted labels to select the centroids")] = 0.3
     outCoordFname: Annotated[str, typer.Option(help="The starfile name to be saved in the predsDir")] = "tomopicker_coords.star"
     outCoordFormat:  Annotated[OutputFormat, typer.Option(help="The output coordinate format")] = OutputFormat.relion31
-    masksDir: Annotated[Optional[Path], typer.Option(help="The directory with masks.")] = None #TODO: Pranav, how does this work. Explain in help?
+    masksDir: Annotated[Optional[Path], typer.Option(help="The directory with masks.")] = None
 
     patch_overlap_factor: int = 4
 
