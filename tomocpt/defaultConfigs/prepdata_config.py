@@ -13,25 +13,36 @@ class PrepareDataType(str, Enum):
 @dataclass
 class PrepdataConfig:
     particle_length_ang: Annotated[
-        List[float], typer.Option(help="Particle longest dimension in angstroms, if spherical use diameter.")
-    ] = field(default_factory=lambda: [MISSING])
+        str, typer.Option(help="Comma-separated list of particle lengths in angstroms")
+    ] = MISSING
 
-    raw_data_dir: Annotated[Path, typer.Option(help="Path to where the tomograms are stored")] = field(default_factory=lambda: [MISSING])
+    raw_data_dir: Annotated[
+        str, typer.Option(help="Comma-separated paths to tomogram directories")
+    ] = MISSING
 
     prepared_data_dir: Annotated[
         Path, typer.Option(help="Path to where the volume label pairs should be stored")
     ] = Path("/tmp/inputs")
 
     coordinate_file_type: Annotated[
-        PrepareDataType, typer.Option(help="Path to where the volume label pairs should be stored")] = PrepareDataType.star
+        PrepareDataType, typer.Option(help="Coordinate file type")
+    ] = PrepareDataType.star
 
     desired_particle_pixel_size: Annotated[
-        int, typer.Option(help="Resize the volume to dimensions that yield particle size in pixels")] = 10
+        int, typer.Option(help="Resize the volume to dimensions that yield particle size in pixels")
+    ] = 10
 
-    input_file:Annotated[
-        List[Path], typer.Option(help="Path to the coordinate file. Only .star and .mod files are supported")
-    ] = field(default_factory=lambda: [MISSING])
+    input_file: Annotated[
+        str, typer.Option(help="Comma-separated paths to coordinate files")
+    ] = MISSING
 
     class_id: Annotated[
-        List[str | int], typer.Option(help="which class id do you want to make labels from?")] = field(default_factory=lambda: ["all"])
+        str, typer.Option(help="Comma-separated list of class IDs")
+    ] = "all"
 
+    def parse_lists(self):
+        """Convert comma-separated strings to lists"""
+        self.particle_length_ang = [float(x.strip()) for x in self.particle_length_ang.split(',')]
+        self.raw_data_dir = [Path(x.strip()) for x in self.raw_data_dir.split(',')]
+        self.input_file = [Path(x.strip()) for x in self.input_file.split(',')]
+        self.class_id = [x.strip() for x in self.class_id.split(',')]

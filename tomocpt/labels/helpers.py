@@ -4,10 +4,13 @@ from tqdm import tqdm
 import mrcfile
 import numpy as np
 import pandas as pd
-import logging
+
 
 from tomocpt.labels.mod import Mod
 from tomocpt.labels.star import Star
+from tomocpt.logger import get_logger
+
+logging = get_logger()
 
 def match_data_to_tomograms(particle_data: Union[pd.DataFrame, dict],
                             tomogram_path: Union[str, Path]) -> Union[pd.DataFrame, dict]:
@@ -57,8 +60,9 @@ def match_data_to_tomograms(particle_data: Union[pd.DataFrame, dict],
             return None
 
     if isinstance(particle_data, pd.DataFrame):
-        # Handle DataFrame input
-        tomo_label = [col for col in COMMON_TOMO_COLUMNS if col in particle_data.columns]
+        # Get the 0th element of the COMMON_TOMO_COULMNS list because the comparison in
+        # line 67 will break.
+        tomo_label = [col for col in COMMON_TOMO_COLUMNS if col in particle_data.columns][0]
         particle_data = particle_data.copy()
         if tomo_label not in particle_data.columns:
             logging.critical(
