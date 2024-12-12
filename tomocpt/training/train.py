@@ -84,7 +84,6 @@ def train(
         ]
     else:
         raise ValueError("Error, mode (%s) not valid" % mainConfig.train.mode)
-
     if continue_training:
         resume_from_checkpoint = continue_training if mainConfig.train.restore_full_state else None
 
@@ -101,6 +100,7 @@ def train(
     else:
         pl_model = Model(**kwargs)
         resume_from_checkpoint = None
+    print(pl_model.hparams.config.train.WORKERS_FOR_DATA)
     if compile_model:
         pl_model = torch.compile(pl_model)
     callbacks += [
