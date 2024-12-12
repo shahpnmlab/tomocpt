@@ -1,6 +1,4 @@
 import importlib
-
-import hydra
 import torch
 import torchvision
 from torch import nn

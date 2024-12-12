@@ -18,7 +18,7 @@ class MySwinUNETR(SwinUNETR):
         return logits, hidden_states_out[4]
 
 
-def test():
+def _test():
     n_voxels = 64
     model = SwinUNETR(img_size=(n_voxels, n_voxels, n_voxels),
                       in_channels=4,
@@ -34,6 +34,14 @@ def test():
     out = model(indata)
     print(out.shape)
 
+    model = MySwinUNETR(img_size=(n_voxels, n_voxels, n_voxels),
+                      in_channels=4,
+                      out_channels=3,
+                      feature_size=24,
+                      use_checkpoint=False)
+    out, hid = model(indata)
+    print(out.shape, hid.shape)
+
 
 if __name__ == "__main__":
-    test()
+    _test()

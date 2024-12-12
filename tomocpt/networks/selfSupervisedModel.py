@@ -32,7 +32,7 @@ class SelfSupervisedModel(BaseModel):
             self.model = model.model
 
 
-        exampleX = torch.rand(self.hparams.mainConfig.train.batch_size, 1, n_voxels, n_voxels, n_voxels)
+        exampleX = torch.rand(self.hparams.config.train.batch_size, 1, n_voxels, n_voxels, n_voxels)
         out, hid = self.model(exampleX)
         batchSize, nchan, s, _, _ = hid.shape
         assert batchSize > 1
@@ -45,15 +45,18 @@ class SelfSupervisedModel(BaseModel):
                 nn.Linear(nchan, outDims, bias=bias)
             )
 
-        contrastiveEmbSize = mainConfig.train.network.SELF_SUPERVISED_EMBEDING_SIZE
+        contrastiveEmbSize = self.hparams.config.train.network.SELF_SUPERVISED_EMBEDING_SIZE
         self.rotation_head = generateHead(4, bias=True)
         self.contrastive_head = generateHead(contrastiveEmbSize, bias=False)
 
         self.lr = lr
         self.loss_function = LossPretrain()
 
+    def build_model(self):
+        return super().build_model(require_labels=True)
+
     def resolve_batch(self, batch):
-        return batch["input_data"][tio.DATA]
+        return batch["input_data"] #[tio.DATA] Seems to be not needed in newer versions
 
     def forward(self, x):
         out, hid = self.model(x)
@@ -256,7 +259,8 @@ class LossPretrain(torch.nn.Module):
         super().__init__()
         self.rot_loss = torch.nn.CrossEntropyLoss()
         self.recon_loss = torch.nn.L1Loss()
-        self.contrast_loss = ContrastLoss()
+        self.contrast_loss = ContrastLoss(temperature=mainConfig.train.network.CONTRAST_LOSS_TEMPERATURE,
+                                          l1_embeddings_w=mainConfig.train.network.CONTRAST_LOSS_L1_EMB_REGULARIZATION)
         self.rotLossW = rotLossW
         self.contrasLossW = contrasLossW
         self.reconsLossW = reconsLossW

@@ -41,9 +41,9 @@ class BaseModel(pl.LightningModule):
         self.desired_particle_pixel_size = self.hparams.config.prepData.desired_particle_pixel_size
 
 
-    def build_model(self):
+    def build_model(self, **kwargs):
         network_config = self.hparams.config.train.network
-        model_name, model = network_config.build_model(img_size=self.patch_size)
+        model_name, model = network_config.build_model(img_size=self.patch_size, **kwargs)
         return model_name, model
 
     def forward_and_zero_edges(self, x):

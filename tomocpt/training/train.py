@@ -13,7 +13,7 @@ from typing import Annotated, Optional
 from pytorch_lightning.loggers import TensorBoardLogger
 import pytorch_lightning as pl
 
-from tomocpt.dataPreparation.prepareRawData import do_chunking
+from tomocpt.dataPreparation.prepareRawData import do_chunking, get_chunking_name_done
 from tomocpt.utils import read_particles_csvs
 
 
@@ -41,7 +41,11 @@ def train(
     network__config = mainConfig.train.network
     assert mainConfig.train.model_dir, "Error, you need to provide a model_dir"
     assert mainConfig.train.chunks_dir, "Error, you need to provide a chunks_dir" #TODO: Do you want to assert that, or fall back to a default?
-    if not Path(mainConfig.train.chunks_dir).is_dir() or not (Path(mainConfig.train.chunks_dir)/"done.txt").is_file():
+
+    chunks_dir = mainConfig.train.chunks_dir
+    require_labels = mainConfig.train.mode == TrainingModes.picking
+    chunking_name_done = get_chunking_name_done(chunks_dir, require_labels=require_labels)
+    if not Path(chunking_name_done).is_file():
         if mainConfig.train.prepared_data_dir is None:
             prepared_data_dir = mainConfig.prepData.prepared_data_dir #TODO, this is  a hack because we have duplicated prepare_data_dir
         else:
@@ -49,10 +53,9 @@ def train(
         if not Path(prepared_data_dir).is_dir():
             raise RuntimeError(f"Error, prepared_data_dir {prepared_data_dir} not found")
 
-
         tomosDf = read_particles_csvs(prepared_data_dir)
-        #TODO: require_labels=False for self supervised
-        do_chunking(tomosDf, chunkedDataDir=mainConfig.train.chunks_dir, n_cpus=train__config.WORKERS_FOR_DATA, require_labels=True,
+        do_chunking(tomosDf, chunkedDataDir=mainConfig.train.chunks_dir, n_cpus=train__config.WORKERS_FOR_DATA,
+                    require_labels=require_labels,
                     train_val_level="tomos") #TODO: train_val_level should be implementent. Move it to config as well
 
 

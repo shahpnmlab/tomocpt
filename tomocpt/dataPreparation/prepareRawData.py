@@ -84,7 +84,10 @@ def process_mrc(data_fname, target_fname, particle_diameter_angst,
         assert min(new_shape) >= chunk_size
         vol_target, _ = resize_volume(volume=vol_target, new_shape=new_shape, chunk_size=chunk_size, use_gpu=use_gpu)
 
+    labels_dirname = get_labels_dirname(not target_fname is None)
+
     n_cubes = 0
+    chunk_data_fnames = []
     for i, ((chunk_data, chunk_target), coords) in enumerate(
             get_vol_chunks(vol, vol_target, chunk_size, stride=stride)):
 
@@ -95,6 +98,7 @@ def process_mrc(data_fname, target_fname, particle_diameter_angst,
         chunk_data_fname = outputname_template % (constants.VOLUMES_DIR_NAME_PREFIX,
                                                   constants.VOLUMES_DIR_NAME_PREFIX,
                                                   i, *tuple(coords))
+        chunk_data_fnames.append(chunk_data_fname)
         # chunk_data = tio.ScalarImage(tensor=torch.unsqueeze(chunk_data, 0).cpu())
         chunk_data = tio.ScalarImage(tensor=torch.Tensor(chunk_data[None, ...]).cpu())
         chunk_data.save(chunk_data_fname, squeeze=False)
@@ -111,71 +115,20 @@ def process_mrc(data_fname, target_fname, particle_diameter_angst,
             chunk_target.save(chunk_target_fname, squeeze=False)
             del chunk_target
             gc.collect()
+        else:
+            fullparent, basename = os.path.split(chunk_data_fname)
+            basename = labels_dirname + basename.removeprefix(constants.VOLUMES_DIR_NAME_PREFIX)
+            dirname = os.path.join(os.path.split(fullparent)[0], labels_dirname)
+            chunk_target_fname = os.path.join(dirname, basename)
+            os.makedirs(dirname, exist_ok=True)
+            os.symlink(chunk_data_fname, chunk_target_fname)
         n_cubes += 1
-    return data_fname, n_cubes
+    return data_fname, n_cubes, chunk_data_fnames
 
 
-# def _prep_self_supervised(particle_size: float, source_path: Union[str, Path],
-#                           destination_path: str,
-#                           class_id: str = 'all'):
-#     """Creates a symbolic link from source path to destination path.
-#
-#     Args:
-#         particle_size: size of the target particle in Angstroms
-#         source_path: The path to the source file or directory.
-#         destination_path: The path to the destination symlink.
-#         class_id: which classes to run this training on.
-#     Returns:
-#       None.
-#     """
-#
-#     # Check if the source path exists.
-#     if not Path(source_path).exists():
-#         raise FileNotFoundError(f"The source path {source_path} does not exist.")
-#
-#     # Check if the destination path exists.
-#     if Path(destination_path).exists():
-#         shutil.rmtree(destination_path, ignore_errors=True)
-#
-#     # Check if the destination path exists.
-#     if not Path(f'{destination_path}/class_{class_id}/{constants.VOLUMES_DIR_NAME_PREFIX}').exists():
-#         Path(f'{destination_path}/class_{class_id}/{constants.VOLUMES_DIR_NAME_PREFIX}').mkdir(parents=True,
-#                                                                                                exist_ok=True)
-#     # Create the symlink.
-#     for file in Path(source_path).resolve().rglob("*.mrc"):
-#         Path(
-#             f'{destination_path}/class_{class_id}/{constants.VOLUMES_DIR_NAME_PREFIX}/{file.name}').resolve().symlink_to(
-#             file)
-#
-#     path_to_csv_md = f'{destination_path}/class_{class_id}'
-#     _, tomo_voxel = get_tomo_dims(source_path)
-#     particle_size_px = ang_to_pix(particle_size, tomo_voxel)
-#     write_md_csv(class_id='all', particle_size=particle_size_px, sampling_rate=tomo_voxel,
-#                  parent_dir=path_to_csv_md, selfSupervised=True)
-#
-#
-# def prepare_self_supervised_wrapper(tomoDirsPath: str = config.RAW_DATA_DIR,
-#                                     annotatedDir: str = config.PREPARED_DATA_DIR):
-#     """
-#     :param tomoDirsPath:The path to the directory containing the datasets.
-#     :param annotatedDir: The path to where the inputs for selfSupervised learning should be stored.
-#     :return:
-#     """
-#     tomoDirsPath = os.path.expanduser(tomoDirsPath)
-#     annotatedDir = os.path.expanduser(annotatedDir)
-#
-#     tomoDirs = sorted(list(Path(tomoDirsPath).glob("*")))
-#     for tomoDir in tomoDirs:
-#         if tomoDir.is_dir():
-#             destination_path = f'{annotatedDir}/{tomoDir.name}'
-#             particle_size_angst_path = f'{tomoDir}/{constants.PYCO_MD_FILE_NAME}'
-#             if not Path(particle_size_angst_path).exists():
-#                 warnings.warn(f"{particle_size_angst_path} does not exist. Skipping dir.")
-#             else:
-#                 particle_radius_angst, _, _ = read_md_csv(particle_size_angst_path)
-#                 _prep_self_supervised(particle_size=particle_radius_angst, source_path=tomoDir,
-#                                       destination_path=destination_path)
 
+def get_chunking_name_done(chunkedDataDir, require_labels):
+    return f'{chunkedDataDir}/done_labels_{require_labels}.txt'
 
 def do_chunking(tomosDf: str, chunkedDataDir,
                  n_cpus: int,
@@ -190,7 +143,8 @@ def do_chunking(tomosDf: str, chunkedDataDir,
     :return:
     """
 
-    if train_val_level == "tomos":
+
+    if train_val_level == "tomos": #TODO: Implement cross-validation at chunk level
         df_train, df_val = train_test_split(tomosDf, test_size=constants.PERCENT_TO_VALIDATE)
     else:
         raise NotImplementedError()
@@ -222,17 +176,19 @@ def do_chunking(tomosDf: str, chunkedDataDir,
         else:
             target_fname = None
         particle_diameter_angst = info_row["particle_diameter_angst"]
-        data_fname, n_cubes = process_mrc(data_fname=info_row["tomogram_path"], target_fname=target_fname,
-                                          particle_diameter_angst=particle_diameter_angst,
-                                          outputname_template=bn_fname, require_labels=require_labels)
+        data_fname, n_cubes, chunk_data_fnames = process_mrc(data_fname=info_row["tomogram_path"], target_fname=target_fname,
+                                                              particle_diameter_angst=particle_diameter_angst,
+                                                              outputname_template=bn_fname, require_labels=require_labels)
 
         print(f"{data_fname}: {n_cubes} cubes written")
-
+        return data_fname
 
 
     Parallel(n_cpus)(delayed(dispatcher)(i, trainObj, train_outDir) for i, trainObj in df_train.iterrows())
     Parallel(n_cpus)(delayed(dispatcher)(i, valObj, val_outDir) for i, valObj in df_val.iterrows())
+
+
     print(f"Prepared data saved at: \n{train_outDir}\n{val_outDir}")
-    with open(f'{chunkedDataDir}/done.txt', "w") as f:
+    with open(get_chunking_name_done(chunkedDataDir, require_labels), "w") as f:
         f.write("done")
 

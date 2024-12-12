@@ -9,14 +9,14 @@ from tomocpt.defaultConfigs.models.unet_config import UnetConfig
 
 
 class ModelType(str, Enum):
-    UNET = "UNET"
+    UNET = "Unet"
     SwinUNETR = "SwinUNETR"
 
     @property
-    def target(self) -> str:
+    def module_path(self) -> str:
         targets = {
-            ModelType.UNET: "tomocpt.networks.unet.Unet",
-            ModelType.SwinUNETR: "tomocpt.networks.swinunetr.SwinUNETR"
+            ModelType.UNET: "tomocpt.networks.unet",
+            ModelType.SwinUNETR: "tomocpt.networks.swinunetr"
         }
         return targets[self]
 
@@ -42,15 +42,17 @@ class NetworkConfig:
 
     SELF_SUPERVISED_EMBEDING_SIZE: int = 256
 
-    def build_model(self, **kwargs):
+    def build_model(self, require_labels=False, **kwargs):
         import importlib
         model_type = self.model_type
         model_name = str(model_type.value)
+        if require_labels and model_name.startswith("SwinUNETR"):
+            model_name = "MySwinUNETR"
+
         config_kwargs = asdict(getattr(self, model_type.value))
-        target_path = model_type.target
-        module_path, class_name = target_path.rsplit(".", 1)
+        module_path = model_type.module_path
         module = importlib.import_module(module_path)
-        target_cls = getattr(module, class_name)
+        target_cls = getattr(module, model_name)
         config_kwargs.update(kwargs)
         print("model config", config_kwargs)
         return model_name, target_cls(**config_kwargs)
