@@ -13,6 +13,10 @@ from typing import Annotated, Optional
 from pytorch_lightning.loggers import TensorBoardLogger
 import pytorch_lightning as pl
 
+from tomocpt.logger import get_logger
+
+logging = get_logger()
+
 def train(
         compile_model: Annotated[bool, typer.Option(help="Path to pre-existing checkpoint file for fine-tuning with new data")] = None,
         continue_training: Annotated[Optional[Path], typer.Option(help="Path to pre-existing checkpoint file for fine-tuning with new data")] = None,
@@ -27,7 +31,7 @@ def train(
     from tomocpt.networks.selfSupervisedModel import SelfSupervisedModel
     from tomocpt.utils import accelerator_selector
     from pytorch_lightning.callbacks import TQDMProgressBar, EarlyStopping, ModelCheckpoint, LearningRateMonitor, \
-        StochasticWeightAveraging  # TODO: Importing from pytorch_lightning.callbacks is launching a jit warning. Why?. Could it be version related
+        StochasticWeightAveraging
 
 
     #logger = logging.create_logger("info")
@@ -35,8 +39,13 @@ def train(
 
     train__config = mainConfig.train
     network__config = mainConfig.train.network
-    assert mainConfig.train.model_dir
-    assert mainConfig.train.chunks_dir
+    if not Path(mainConfig.train.model_dir).exists():
+        logging.error(f"Train model dir not found at {mainConfig.train.model_dir}")
+        raise ValueError
+    if not Path(mainConfig.train.chunks_dir/"done.txt").exists():
+        #TODO: implement volume chunking
+        raise NotImplementedError
+
     assert os.path.isdir(mainConfig.train.chunks_dir), f"Error, mainConfig.train.chunks_dir: {mainConfig.train.chunks_dir} does not exist "
 
     if mainConfig.train.mode == TrainingModes.picking:

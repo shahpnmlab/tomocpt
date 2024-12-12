@@ -382,3 +382,37 @@ def _infer_one_tomo(tomoFname: str, output_fname: str, particle_ang_length: floa
     return [], [], voxel_size
 
 
+MODEL = None
+def infer_tomos(tomoFnames: List[Path], predsDir: str, modelFname: str, gpu_id: int, particleLengthAng: float,
+                batch_size: int,
+                plot: bool, save_pred_mask: bool, extract_coords: bool,
+                nearest_neigs_angs: Optional[float], threshold: float, masksDir: Optional[str]):
+
+    from tomocpt.networks.pickingModel import BasePickingModel
+
+    global MODEL
+    kwargs = {"map_location": f"cuda:{gpu_id}"}
+    if MODEL is None:
+        MODEL = BasePickingModel.load_from_checkpoint(modelFname, **kwargs)
+
+    model = MODEL.eval().cuda(gpu_id)
+    patch_size = model.patch_size
+
+    tomo_names, one_tomo_centroids_and_scores, voxel_sizes = [], [], []
+    for data_fname in tomoFnames:
+        output_fname = str(Path(predsDir) / data_fname.name)
+        mask_fname = Path(masksDir) / data_fname.name if masksDir else None
+        _tomo_names, _one_tomo_centroids_and_scores, vx = _infer_one_tomo(tomoFname=str(data_fname),
+                                                                          output_fname=output_fname,
+                                                                          particle_ang_length=particleLengthAng,
+                                                                          model=model, gpu_id=gpu_id,
+                                                                          patch_size=patch_size, batch_size=batch_size,
+                                                                          plot=plot, save_pred_mask=save_pred_mask,
+                                                                          extract_coords=extract_coords,
+                                                                          nearest_neigs_angs=nearest_neigs_angs,
+                                                                          threshold=threshold,
+                                                                          maskFname=str(mask_fname) if mask_fname else None)
+        tomo_names.extend(_tomo_names)
+        one_tomo_centroids_and_scores.extend(_one_tomo_centroids_and_scores)
+        voxel_sizes.append(vx)
+    return tomo_names, one_tomo_centroids_and_scores, voxel_sizes
