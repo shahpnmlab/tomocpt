@@ -12,9 +12,8 @@ from tomocpt.training.losses import gradient3d_loss
 class BasePickingModel(BaseModel):
 
     def __init__(self, lr: float | None = None,
-                 num_levels: int | None = None,
                  model=None, *args, **kwargs):
-        super(BasePickingModel, self).__init__(lr, num_levels, *args, **kwargs)
+        super(BasePickingModel, self).__init__(lr, *args, **kwargs)
 
 
         if model is None:

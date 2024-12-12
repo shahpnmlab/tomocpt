@@ -41,7 +41,7 @@ class VolumeDatsetIO(tio.SubjectsDataset):
                 "target_data": LabelMap(y)
             })
             return subject
-        print("mainConfig.train.WORKERS_FOR_DATA",mainConfig.train.WORKERS_FOR_DATA, flush=True)
+        # print("mainConfig.train.WORKERS_FOR_DATA",mainConfig.train.WORKERS_FOR_DATA, flush=True)
         n_jobs = mainConfig.train.WORKERS_FOR_DATA
         if n_jobs == 0:
             n_jobs = 1

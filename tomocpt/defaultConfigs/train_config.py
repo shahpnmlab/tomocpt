@@ -28,8 +28,10 @@ class TrainConfig:
     optimizer: Annotated[OptimizerConfig, typer.Option(help="The optimizer")] = field(default_factory=OptimizerConfig) #TODO: Please try if you can actually change the optimizer in the config and/or command line
 
     network: Annotated[NetworkConfig, typer.Option(help="The network config")] = field(default_factory=NetworkConfig)
+    prepared_data_dir: Annotated[
+        Path, typer.Option(help="Path to where the volume label pairs are stored")] = None
 
-    chunks_dir: Annotated[Optional[Path], typer.Option(help="The directory with chunks")] = None #"/tmp/refactor/chunks/"
+    chunks_dir: Annotated[Optional[Path], typer.Option(help="The directory with chunks")] = None #"/tmp/refactor/chunks/" #TODO: We probably want to set it to MISSING, or automatically use /tmp/ within train. Up to pran
     model_dir: Annotated[Path, typer.Option(help="The directory where the model will be saved chunks")] = MISSING #"/tmp/model"
     experiment_name: Annotated[Optional[str], typer.Option(help="The name of the experiment")] = "unnamed"
     n_epochs: Annotated[int, typer.Option(help="Number of epochs to train")] = 10

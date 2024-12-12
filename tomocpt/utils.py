@@ -1,6 +1,8 @@
+import glob
 import os
 from pathlib import Path
 
+import pandas as pd
 import torch
 
 
@@ -22,3 +24,8 @@ def accelerator_selector(use_cuda=None, n_cpus=None):
         accel = 'gpu'
         dev_count = torch.cuda.device_count()
     return accel, dev_count
+
+def read_particles_csvs(dirname):
+    fnames = glob.glob(os.path.join(dirname, "*", "*.csv"))
+    df = pd.concat([pd.read_csv(f) for f in fnames])
+    return df

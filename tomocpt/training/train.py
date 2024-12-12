@@ -13,6 +13,10 @@ from typing import Annotated, Optional
 from pytorch_lightning.loggers import TensorBoardLogger
 import pytorch_lightning as pl
 
+from tomocpt.dataPreparation.prepareRawData import do_chunking
+from tomocpt.utils import read_particles_csvs
+
+
 def train(
         compile_model: Annotated[bool, typer.Option(help="Path to pre-existing checkpoint file for fine-tuning with new data")] = None,
         continue_training: Annotated[Optional[Path], typer.Option(help="Path to pre-existing checkpoint file for fine-tuning with new data")] = None,
@@ -35,8 +39,23 @@ def train(
 
     train__config = mainConfig.train
     network__config = mainConfig.train.network
-    assert mainConfig.train.model_dir
-    assert mainConfig.train.chunks_dir
+    assert mainConfig.train.model_dir, "Error, you need to provide a model_dir"
+    assert mainConfig.train.chunks_dir, "Error, you need to provide a chunks_dir" #TODO: Do you want to assert that, or fall back to a default?
+    if not Path(mainConfig.train.chunks_dir).is_dir() or not (Path(mainConfig.train.chunks_dir)/"done.txt").is_file():
+        if mainConfig.train.prepared_data_dir is None:
+            prepared_data_dir = mainConfig.prepData.prepared_data_dir #TODO, this is  a hack because we have duplicated prepare_data_dir
+        else:
+            prepared_data_dir = mainConfig.train.prepared_data_dir
+        if not Path(prepared_data_dir).is_dir():
+            raise RuntimeError(f"Error, prepared_data_dir {prepared_data_dir} not found")
+
+
+        tomosDf = read_particles_csvs(prepared_data_dir)
+        #TODO: require_labels=False for self supervised
+        do_chunking(tomosDf, chunkedDataDir=mainConfig.train.chunks_dir, n_cpus=train__config.WORKERS_FOR_DATA, require_labels=True,
+                    train_val_level="tomos") #TODO: train_val_level should be implementent. Move it to config as well
+
+
     assert os.path.isdir(mainConfig.train.chunks_dir), f"Error, mainConfig.train.chunks_dir: {mainConfig.train.chunks_dir} does not exist "
 
     if mainConfig.train.mode == TrainingModes.picking:

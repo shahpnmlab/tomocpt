@@ -11,13 +11,11 @@ from tomocpt.mainConfig import mainConfig
 
 class BaseModel(pl.LightningModule):
 
-    def set_default_args(self, lr: float | None, num_levels: int | None):
+    def set_default_args(self, lr: float | None):
         self.lr = lr if lr is not None else self.hparams.config.train.optimizer.lr
-        # self.num_levels = num_levels if num_levels is not None else self.hparams.config.train.network.NUM_LEVELS
 
 
     def __init__(self, lr: float | None = None,
-                 num_levels: int | None = None,
                  config=None,
                  constants_dict=None):
         super(BaseModel, self).__init__()
@@ -37,10 +35,10 @@ class BaseModel(pl.LightningModule):
                  config=config
                  )
         )
-        self.set_default_args(lr=lr, num_levels=num_levels)
+        self.set_default_args(lr=lr)
 
         self.patch_size = self.hparams.config.train.CHUNK_SIZE
-        self.DESIRED_PARTICLE_PIXELS = self.hparams.config.prepData.desired_particle_pixel_size
+        self.desired_particle_pixel_size = self.hparams.config.prepData.desired_particle_pixel_size
 
 
     def build_model(self):

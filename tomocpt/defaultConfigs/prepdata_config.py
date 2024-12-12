@@ -40,6 +40,9 @@ class PrepdataConfig:
         str, typer.Option(help="Comma-separated list of class IDs")
     ] = "all"
 
+    USE_CUDA_FOR_DATA: bool = True
+    ALPHA_FOR_DROPPING_EMPTY_CUBES: float = 1
+
     def parse_lists(self):
         """Convert comma-separated strings to lists"""
         self.particle_length_ang = [float(x.strip()) for x in self.particle_length_ang.split(',')]

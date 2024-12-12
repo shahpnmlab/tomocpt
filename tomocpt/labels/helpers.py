@@ -1,5 +1,7 @@
 from pathlib import Path
 from typing import Union, Dict
+
+from tomocpt.constants import RAW_LABEL_FNAME_TEMPLATE
 from tqdm import tqdm
 import mrcfile
 import numpy as np
@@ -205,7 +207,7 @@ def prepare_picking_imod(input_file: Path ,
     matched_data = match_data_to_tomograms(vol_coord_pairs, tomo_path)
 
     # Create tracking DataFrame
-    tracking_df = create_tracking_dataframe(matched_data, tomo_path, output_dir, particle_diameter_angst)
+    tracking_df = create_tracking_dataframe(matched_data, tomo_path, output_dir, particle_diameter_angst, class_id)
 
     # Save tracking information
     tracking_csv = output_dir / "imod_picking_tracking.csv"
@@ -244,7 +246,7 @@ def prepare_picking_star(input_file: Path,
     vol_coord_pairs = star.get_shifted_scaled_coordinates(matched_data, tomogram_pixel_size=star.pixel_size)
 
     # Create tracking DataFrame
-    tracking_df = create_tracking_dataframe(vol_coord_pairs, tomo_path, output_dir, particle_diameter_angst)
+    tracking_df = create_tracking_dataframe(vol_coord_pairs, tomo_path, output_dir, particle_diameter_angst, class_id)
 
     # Save tracking information
     tracking_csv = output_dir / f"star_picking_tracking_{class_id}.csv"
@@ -261,7 +263,7 @@ def prepare_picking_star(input_file: Path,
     )
 
 def create_tracking_dataframe(vol_coord_pairs, tomo_path: Path, output_dir: Path,
-                              particle_diameter_angst: float) -> pd.DataFrame:
+                              particle_diameter_angst: float, class_id:str) -> pd.DataFrame:
     """
     Create a DataFrame tracking tomograms, labels, and particle information.
 
@@ -270,7 +272,7 @@ def create_tracking_dataframe(vol_coord_pairs, tomo_path: Path, output_dir: Path
         tomo_path: Path to tomogram directory
         output_dir: Path to output directory
         particle_diameter_angst: Particle diameter in Angstroms
-
+        class_id: the class id of the particle
     Returns:
         pd.DataFrame: DataFrame containing tracking information
     """
@@ -278,7 +280,7 @@ def create_tracking_dataframe(vol_coord_pairs, tomo_path: Path, output_dir: Path
 
     for tomo_name, coordinates in vol_coord_pairs.items():
         tomo_file = next(tomo_path.glob(f"*{tomo_name}*"))
-        label_file = output_dir / f"{tomo_name}_labels.mrc"
+        label_file = output_dir / f"class_{class_id}" / "labels" / Path(RAW_LABEL_FNAME_TEMPLATE%str(tomo_name))
 
         tracking_data.append({
             'tomogram_path': str(tomo_file),
