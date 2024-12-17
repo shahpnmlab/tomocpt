@@ -2,8 +2,8 @@ from tomocpt.configManager.configManager import create_app
 from tomocpt.mainConfig import mainConfig
 from tomocpt.configManager.initializer import init
 from tomocpt.labels.run import prepare_labels
-from tomocpt.training.train import train
-from tomocpt.infer.infer import infer
+from tomocpt.training.run import train
+from tomocpt.infer.run import infer
 
 
 app = create_app()

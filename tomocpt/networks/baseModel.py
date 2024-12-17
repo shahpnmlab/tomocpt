@@ -6,8 +6,9 @@ import pytorch_lightning as pl
 import torch
 
 from tomocpt import constants
-from tomocpt.configManager.configManager import update_config
-from tomocpt.mainConfig import mainConfig
+from tomocpt.configManager.configManager import update_config, compare_dataclasses, update_config_with_changed_values
+from tomocpt.mainConfig import mainConfig, _mainConfigNoChanges
+
 
 class BaseModel(pl.LightningModule):
 
@@ -23,7 +24,11 @@ class BaseModel(pl.LightningModule):
         if config is None:
             config = mainConfig
         else:
-            update_config(mainConfig.train, source=config.train) #We update all the training details acording to the checkpoint
+            #We first take the config in the checkpoint, and overwrite changes that come from the CLI
+            updated_checkpoint_config = update_config_with_changed_values(target=config, originaConfig=_mainConfigNoChanges, configAfterCli=mainConfig)
+            #Then, inject the updated checkpoint config into the whole config system at train level
+            update_config(mainConfig.train, source=updated_checkpoint_config.train) #We update all the training details acording to the checkpoint
+            config = updated_checkpoint_config
         if constants_dict is None:
             constants_dict = {k: getattr(constants, k) for k in dir(constants) if not k.startswith("__")}
         else:

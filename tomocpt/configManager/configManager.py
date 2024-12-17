@@ -523,5 +523,104 @@ def update_config(target: Any, source: Any):
             setattr(target, field_name, source_value)
 
 
+def compare_dataclasses(obj1: Any, obj2: Any, path: str = "") -> List[Tuple[str, Any, Any]]:
+    """
+    Compare two dataclass instances and return a list of differences with their full path names.
+
+    Args:
+        obj1: First dataclass instance
+        obj2: Second dataclass instance
+        path: Current path in the nested structure (used recursively)
+
+    Returns:
+        List of tuples containing (full_path, value1, value2) for all different values
+    """
+    if not is_dataclass(obj1) or not is_dataclass(obj2):
+        raise ValueError("Both objects must be instances of dataclasses")
+
+    if obj1.__class__ != obj2.__class__:
+        raise ValueError("Objects must be instances of the same dataclass")
+
+    differences = []
+
+    for field in fields(obj1):
+        field_name = field.name
+        value1 = getattr(obj1, field_name)
+        value2 = getattr(obj2, field_name)
+
+        current_path = f"{path}.{field_name}" if path else field_name
+
+        # If the field is itself a dataclass, recurse
+        if is_dataclass(value1) and is_dataclass(value2):
+            nested_diffs = compare_dataclasses(value1, value2, current_path)
+            differences.extend(nested_diffs)
+        # If the field is a list or tuple, compare elements
+        elif isinstance(value1, (list, tuple)) and isinstance(value2, (list, tuple)):
+            if len(value1) != len(value2):
+                differences.append((current_path, value1, value2))
+            else:
+                for i, (item1, item2) in enumerate(zip(value1, value2)):
+                    if is_dataclass(item1) and is_dataclass(item2):
+                        nested_diffs = compare_dataclasses(item1, item2, f"{current_path}[{i}]")
+                        differences.extend(nested_diffs)
+                    elif item1 != item2:
+                        differences.append((f"{current_path}[{i}]", item1, item2))
+        # For basic types, direct comparison
+        elif value1 != value2:
+            differences.append((current_path, value1, value2))
+
+    return differences
+
+
+def update_config_with_changed_values(target: Any, originaConfig:Any, configAfterCli:Any) -> Any:
+    """
+    Apply the differences found between two dataclasses to a target dataclass instance.
+
+    Args:
+        target: The dataclass instance to update
+        differences: List of differences from compare_dataclasses
+
+    Returns:
+        Updated copy of the target instance
+    """
+
+    differences = compare_dataclasses(originaConfig, configAfterCli)
+
+    # Create a deep copy to avoid modifying the original
+    result = copy.deepcopy(target)
+
+    for path, _, new_value in differences:
+        # Split the path into parts
+        parts = path.split('.')
+
+        # Handle array indices
+        current_obj = result
+        for i, part in enumerate(parts[:-1]):  # All parts except the last one
+            # Check if this part contains an array index
+            if '[' in part:
+                # Split into name and index
+                name, idx = part.split('[')
+                idx = int(idx.rstrip(']'))
+
+                # Get the array/list
+                if name:  # If there's a name before the index
+                    current_obj = getattr(current_obj, name)
+                current_obj = current_obj[idx]
+            else:
+                current_obj = getattr(current_obj, part)
+
+        # Handle the final part
+        last_part = parts[-1]
+        if '[' in last_part:
+            name, idx = last_part.split('[')
+            idx = int(idx.rstrip(']'))
+            if name:
+                current_obj = getattr(current_obj, name)
+            current_obj[idx] = new_value
+        else:
+            setattr(current_obj, last_part, new_value)
+
+    return result
+
 def create_app() -> ConfigurableApp:
     return ConfigurableApp()
