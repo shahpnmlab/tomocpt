@@ -63,7 +63,6 @@ def process_mrc(data_fname, target_fname, particle_diameter_angst,
                                                                                               use_gpu)
     accel, _ = accelerator_selector(use_cuda=use_gpu)
 
-    # drop_probablity = constants.PROBABILITY_OF_EMPTY_TO_DROP #TODO: change this parameter in config for alpha, defined below
     alpha =  mainConfig.prepData.ALPHA_FOR_DROPPING_EMPTY_CUBES
 
     drop_probablity = 0.
