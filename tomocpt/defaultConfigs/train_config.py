@@ -23,6 +23,10 @@ class OptimizerConfig:
     betas: Annotated[Tuple[float, float], typer.Option(help="betas")] = (0.9, 0.999)
     #decoupled_weight_decay=True
 
+class CrossValidationLevelSplit(str, Enum):
+    tomos = "tomos"
+    cubes = "cubes"
+
 @dataclass
 class TrainConfig:
     optimizer: Annotated[OptimizerConfig, typer.Option(help="The optimizer")] = field(default_factory=OptimizerConfig) #TODO: Please try if you can actually change the optimizer in the config and/or command line
@@ -54,3 +58,5 @@ class TrainConfig:
     CHUNK_STRIDE: int = 32
     RANDOM_FRACTION_TO_SAMPLE_TRAIN: float = -1.  # Train on all the chunks
     SEED_FOR_TRAIN_VAL_SPLIT: int = 113
+
+    crossValidationLevelSplit: Annotated[CrossValidationLevelSplit, typer.Option(help="CrossValidationLevelSplit")] = CrossValidationLevelSplit.tomos

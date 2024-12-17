@@ -10,6 +10,10 @@ class PrepareDataType(str, Enum):
     star = "star"
     imod = "imod"
 
+
+
+
+
 @dataclass
 class PrepdataConfig:
     particle_length_ang: Annotated[
@@ -39,6 +43,7 @@ class PrepdataConfig:
     class_id: Annotated[
         str, typer.Option(help="Comma-separated list of class IDs")
     ] = "all"
+
 
     USE_CUDA_FOR_DATA: bool = True
     ALPHA_FOR_DROPPING_EMPTY_CUBES: float = 1

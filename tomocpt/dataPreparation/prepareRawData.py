@@ -6,6 +6,7 @@ import warnings
 from pathlib import Path
 from typing import Literal, Optional, Union
 
+import pandas as pd
 import torch
 import torchio as tio
 from joblib import Parallel, delayed
@@ -14,6 +15,7 @@ from sklearn.model_selection import train_test_split
 from tomocpt import constants
 from tomocpt.dataManager.dataUtils import load_mrc, resize_volume
 from tomocpt.dataPreparation.helpers import _preprocess_data_mrc, get_labels_dirname, get_vol_chunks
+from tomocpt.defaultConfigs.train_config import CrossValidationLevelSplit
 from tomocpt.mainConfig import mainConfig
 from tomocpt.utils import accelerator_selector, makedir
 
@@ -129,24 +131,29 @@ def process_mrc(data_fname, target_fname, particle_diameter_angst,
 def get_chunking_name_done(chunkedDataDir, require_labels):
     return f'{chunkedDataDir}/done_labels_{require_labels}.txt'
 
-def do_chunking(tomosDf: str, chunkedDataDir,
+def do_chunking(tomosDf: pd.DataFrame, chunkedDataDir,
                  n_cpus: int,
                  require_labels: bool = True,
-                 train_val_level="tomos"):
+                 train_val_level=None):
     """
 
-    :param tomosDf: This is the source of mrc files and potential labels
+    :param tomosDf: A table with volume-lable filenames pairs
     :param chunkedDataDir: This is where chunked cubes will be stored
     :param n_cpus: The number of cpus to use
     :param require_labels: Whether the data is for supervised training and thus requires labels
     :return:
     """
 
+    if train_val_level is None:
+        train_val_level = mainConfig.train.crossValidationLevelSplit
 
-    if train_val_level == "tomos": #TODO: Implement cross-validation at chunk level
+    if train_val_level == CrossValidationLevelSplit.tomos:
         df_train, df_val = train_test_split(tomosDf, test_size=constants.PERCENT_TO_VALIDATE)
+    elif train_val_level == CrossValidationLevelSplit.cubes:
+        df_train = tomosDf
+        df_val = None
     else:
-        raise NotImplementedError()
+        raise ValueError()
 
     n_cpus = 1 if n_cpus == 0 else n_cpus
     train_outDir = f'{chunkedDataDir}/{constants.TRAIN_DIR_NAME}'  # path/to/training/
@@ -183,8 +190,16 @@ def do_chunking(tomosDf: str, chunkedDataDir,
         return data_fname
 
 
-    Parallel(n_cpus)(delayed(dispatcher)(i, trainObj, train_outDir) for i, trainObj in df_train.iterrows())
-    Parallel(n_cpus)(delayed(dispatcher)(i, valObj, val_outDir) for i, valObj in df_val.iterrows())
+    train_fnames = Parallel(n_cpus)(delayed(dispatcher)(i, trainObj, train_outDir) for i, trainObj in df_train.iterrows())
+
+    if df_val is not None:
+        Parallel(n_cpus)(delayed(dispatcher)(i, valObj, val_outDir) for i, valObj in df_val.iterrows())
+    else:
+        #Split by cubes
+        train_fnames = train_test_split(train_fnames, test_size=constants.PERCENT_TO_VALIDATE)
+        for fname in train_fnames:
+            os.rename(fname, Path(val_outDir) / Path(fname).name)
+
 
 
     print(f"Prepared data saved at: \n{train_outDir}\n{val_outDir}")

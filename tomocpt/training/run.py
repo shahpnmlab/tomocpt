@@ -59,8 +59,7 @@ def train(
 
         tomosDf = read_particles_csvs(prepared_data_dir)
         do_chunking(tomosDf, chunkedDataDir=mainConfig.train.chunks_dir, n_cpus=train__config.WORKERS_FOR_DATA,
-                    require_labels=require_labels,
-                    train_val_level="tomos") #TODO: train_val_level should be implementent. Move it to config as well
+                    require_labels=require_labels)
 
 
     assert os.path.isdir(mainConfig.train.chunks_dir), f"Error, mainConfig.train.chunks_dir: {mainConfig.train.chunks_dir} does not exist "

@@ -11,14 +11,14 @@ from tomocpt.infer.run import infer
 app = create_app()
 
 ##This is the proven way of doing it
-# config_for_train = mainConfig.train
-# config_for_inference = mainConfig.infer
-# config_for_label_vol_preparation = mainConfig.prepData
+config_for_train = mainConfig.train
+config_for_inference = mainConfig.infer
+config_for_label_vol_preparation = mainConfig.prepData
 
-#This is the experimental way of doing it
-config_for_train = create_linked_config(mainConfig.train, mainConfig.shared)
-config_for_inference = create_linked_config(mainConfig.infer, mainConfig.shared)
-config_for_label_vol_preparation = create_linked_config(mainConfig.prepData, mainConfig.shared)
+#This is the experimental way of doing it #TODO: It does not work when there are ???
+# config_for_train = create_linked_config(mainConfig.train, mainConfig.shared)
+# config_for_inference = create_linked_config(mainConfig.infer, mainConfig.shared)
+# config_for_label_vol_preparation = create_linked_config(mainConfig.prepData, mainConfig.shared)
 
 
 app.register_command(init, None) #TODO: init_config needs to be modified to generate a config file for train, another for inference and so one
