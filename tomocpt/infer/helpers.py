@@ -20,7 +20,7 @@ from tomocpt.dataPreparation.helpers import _preprocess_data_mrc
 from tomocpt.defaultConfigs.infer_config import OutputFormat
 from tomocpt.mainConfig import mainConfig
 
-infer_config = mainConfig.infer
+infer_config = mainConfig.predict
 
 
 logger = get_logger()
@@ -125,7 +125,7 @@ def write_warp_star_file(output_dir: str,
     """
     # Initialize the data dictionary for particle coordinatesç
     if output_filename is None:
-        output_filename = mainConfig.infer.outCoordFname
+        output_filename = mainConfig.predict.outCoordFname
 
     all_tomo_centroids_and_scores = {
         "rlnMicrographName": [],
@@ -301,10 +301,11 @@ def _infer_one_tomo(tomoFname: str, output_fname: str, particle_ang_length: floa
 
     particle_radius_angst = particle_ang_length / 2
     voxel_size = np.nan
+    desired_particle_size_in_pixels = model.hparams.config.prepData.desired_particle_pixel_size
     if not Path(output_fname).exists():
         (vol, new_shape, old_shape, voxel_size,
          padding_values, scalar) = _preprocess_data_mrc(tomoFname, normalization_function="robust_normalization",
-                                                        new_particle_size=model.DESIRED_PARTICLE_PIXELS,
+                                                        new_particle_size=desired_particle_size_in_pixels,
                                                         particle_radius_angst=particle_radius_angst,
                                                         chunk_size=patch_size,
                                                         use_gpu=infer_config.USE_CUDA_FOR_DATA)
@@ -328,7 +329,7 @@ def _infer_one_tomo(tomoFname: str, output_fname: str, particle_ang_length: floa
         vol = vol.unsqueeze(0)
         subject = tio.Subject({"input_data": tio.ScalarImage(tensor=vol)})
 
-        grid_sampler = tio.GridSampler(subject, patch_size=patch_size, patch_overlap=patch_size // mainConfig.infer.patch_overlap_factor,
+        grid_sampler = tio.GridSampler(subject, patch_size=patch_size, patch_overlap=patch_size // mainConfig.predict.patch_overlap_factor,
                                        padding_mode='reflect')
         patch_loader = DataLoader(grid_sampler, batch_size=batch_size)
         del vol

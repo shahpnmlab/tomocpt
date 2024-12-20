@@ -11,16 +11,9 @@ class PrepareDataType(str, Enum):
     imod = "imod"
 
 
-
-
-
 @dataclass
 class PrepdataConfig:
-    particle_length_ang: Annotated[
-        str, typer.Option(help="Comma-separated list of particle lengths in angstroms")
-    ] = MISSING
-
-    raw_data_dir: Annotated[
+    tomograms_dir: Annotated[
         str, typer.Option(help="Comma-separated paths to tomogram directories")
     ] = MISSING
 
@@ -28,22 +21,25 @@ class PrepdataConfig:
         Path, typer.Option(help="Path to where the volume label pairs should be stored")
     ] = Path("/tmp/inputs")
 
-    coordinate_file_type: Annotated[
-        PrepareDataType, typer.Option(help="Coordinate file type")
-    ] = PrepareDataType.star
+    particle_length_ang: Annotated[
+        str, typer.Option(help="Comma-separated list of particle lengths in angstroms")
+    ] = MISSING
 
-    desired_particle_pixel_size: Annotated[
-        int, typer.Option(help="Resize the volume to dimensions that yield particle size in pixels")
-    ] = 10
-
-    input_file: Annotated[
+    coordinate_files: Annotated[
         str, typer.Option(help="Comma-separated paths to coordinate files")
     ] = MISSING
+
+    coordinate_file_type: Annotated[
+        PrepareDataType, typer.Option(help="Coordinate file type (star or imod)?")
+    ] = PrepareDataType.star
 
     class_id: Annotated[
         str, typer.Option(help="Comma-separated list of class IDs")
     ] = "all"
 
+    desired_particle_pixel_size: Annotated[
+        int, typer.Option(help="Resize the volume to dimensions that yield particle radius in pixels")
+    ] = 10
 
     USE_CUDA_FOR_DATA: bool = True
     ALPHA_FOR_DROPPING_EMPTY_CUBES: float = 1

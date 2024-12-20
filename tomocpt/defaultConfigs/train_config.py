@@ -17,7 +17,7 @@ class TrainingModes(str, Enum):
 
 @dataclass
 class OptimizerConfig:
-    _target_: Annotated[str, typer.Option(help="Choose your optimiser e.g. torch.optim.Adam")] = "torch.optim.Adam"
+    _target_: Annotated[str, typer.Option(help="Choose your optimiser e.g. torch.optim.AdamW")] = "torch.optim.RAdam"
     lr: Annotated[float, typer.Option(help="Learning rate")] = 4e-4
     weight_decay: Annotated[float, typer.Option(help="weight_decay")] = 1e-8
     betas: Annotated[Tuple[float, float], typer.Option(help="betas")] = (0.9, 0.999)
@@ -25,38 +25,36 @@ class OptimizerConfig:
 
 class CrossValidationLevelSplit(str, Enum):
     tomos = "tomos"
-    cubes = "cubes"
+    cubes = "chunks"
 
 @dataclass
 class TrainConfig:
-    optimizer: Annotated[OptimizerConfig, typer.Option(help="The optimizer")] = field(default_factory=OptimizerConfig) #TODO: Please try if you can actually change the optimizer in the config and/or command line
-
-    network: Annotated[NetworkConfig, typer.Option(help="The network config")] = field(default_factory=NetworkConfig)
-    prepared_data_dir: Annotated[
+    training_data_dir: Annotated[
         Path, typer.Option(help="Path to where the volume label pairs are stored")] = None
-
-    chunks_dir: Annotated[Optional[Path], typer.Option(help="The directory with chunks")] = MISSING #"/tmp/refactor/chunks/" #TODO: We probably want to set it to MISSING, or automatically use /tmp/ within train. Up to pran
-    model_dir: Annotated[Path, typer.Option(help="The directory where the model will be saved chunks")] = MISSING #"/tmp/model"
-    experiment_name: Annotated[Optional[str], typer.Option(help="The name of the experiment")] = "unnamed"
+    chunks_dir: Annotated[Optional[Path], typer.Option(help="Path to directory containing chunked data")] = MISSING
+    model_dir: Annotated[Path, typer.Option(help="The directory where the training weights will be saved")] = MISSING
     n_epochs: Annotated[int, typer.Option(help="Number of epochs to train")] = 10
-    mode: Annotated[TrainingModes, typer.Option(help="The training mode")] = TrainingModes.picking #"picking" #TrainingModes.picking does not work. Why?
-    restore_full_state: Annotated[bool, typer.Option(help="If true, load the optimizier and other info on top of the weights")] = True
     batch_size: Annotated[int, typer.Option(help="batch size")] = 2
-    use_cuda: Annotated[bool, typer.Option(help="use cuda for training")] = True
+    use_gpus: Annotated[bool, typer.Option(help="use cuda for training")] = True
+    n_cpus_for_train: Annotated[int, typer.Option(help="Number of CPU workers per GPU to pre-process data")] = 2
+    experiment_name: Annotated[Optional[str], typer.Option(help="The name of the experiment")] = "tomocpt"
+    mode: Annotated[TrainingModes, typer.Option(help="The training mode")] = TrainingModes.picking #"picking" #TrainingModes.picking does not work. Why?
+    train_on: Annotated[CrossValidationLevelSplit, typer.Option(help="Whether to split train-val on chunks or tomograms")] = CrossValidationLevelSplit.tomos
+    restore_full_state: Annotated[bool, typer.Option(help="If true, load the optimizer and other info on top of the weights")] = True
+    optimizer: Annotated[OptimizerConfig, typer.Option(help="The optimizer")] = field(default_factory=OptimizerConfig)
+    network: Annotated[NetworkConfig, typer.Option(help="The network config")] = field(default_factory=NetworkConfig)
+    launch_tensorboard: Annotated[bool, typer.Option(help="Launch tensorboard for evaluating training")] = True
 
     OVERFIT_N_BATCHES: Optional[int] = None
-    WORKERS_FOR_DATA: Annotated[int, typer.Option(help="Number of CPU workers per GPU to pre-process data")] = 0
     N_GPUS: int = 1
     N_CPUS_IF_NO_GPU: int = 2
     USE_CUDA_FOR_DATA: bool = False
 
-    FACTOR_REDUCE_LR_PLATEAU_N_EPOCHS: float = 0.5  # TODO: Move to train_config
-    COSINE_LR_SCHEDULE_N_EPOCHS: int = 6  # TODO: Move to train_config
-    PATIENT_REDUCE_LR_PLATEAU_N_EPOCHS: int = 6  # TODO: Move to train_config
+    FACTOR_REDUCE_LR_PLATEAU_N_EPOCHS: float = 0.5
+    COSINE_LR_SCHEDULE_N_EPOCHS: int = 6
+    PATIENT_REDUCE_LR_PLATEAU_N_EPOCHS: int = 6
 
-    CHUNK_SIZE: Annotated[int, typer.Option(help="The patch size of the cubes")] = 64
+    CHUNK_SIZE: int = 64
     CHUNK_STRIDE: int = 32
     RANDOM_FRACTION_TO_SAMPLE_TRAIN: float = -1.  # Train on all the chunks
-    SEED_FOR_TRAIN_VAL_SPLIT: int = 113
-
-    crossValidationLevelSplit: Annotated[CrossValidationLevelSplit, typer.Option(help="CrossValidationLevelSplit")] = CrossValidationLevelSplit.tomos
+    SEED_FOR_TRAIN_VAL_SPLIT: int = 42

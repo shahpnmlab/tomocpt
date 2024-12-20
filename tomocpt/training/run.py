@@ -23,8 +23,8 @@ logging = get_logger()
 
 def train(
         compile_model: Annotated[bool, typer.Option(help="Path to pre-existing checkpoint file for fine-tuning with new data")] = None,
-        continue_training: Annotated[Optional[Path], typer.Option(help="Path to pre-existing checkpoint file for fine-tuning with new data")] = None,
-        launch_tensorboard: Annotated[bool, typer.Option(help="Launch tensorboard for evaluating training")] = True,
+        train_continue: Annotated[Optional[Path], typer.Option(help="Path to pre-existing checkpoint file for fine-tuning with new data")] = None,
+
         config: DictConfig = None):
 
     from tomocpt.mainConfig import mainConfig
@@ -50,15 +50,15 @@ def train(
     require_labels = mainConfig.train.mode == TrainingModes.picking
     chunking_name_done = get_chunking_name_done(chunks_dir, require_labels=require_labels)
     if not Path(chunking_name_done).is_file():
-        if mainConfig.train.prepared_data_dir is None:
-            prepared_data_dir = mainConfig.prepData.prepared_data_dir #TODO, this is  a hack because we have duplicated prepare_data_dir
+        if mainConfig.train.training_data_dir is None:
+            training_data_dir = mainConfig.prepData.training_data_dir #TODO, this is  a hack because we have duplicated prepare_data_dir
         else:
-            prepared_data_dir = mainConfig.train.prepared_data_dir
-        if not Path(prepared_data_dir).is_dir():
-            raise RuntimeError(f"Error, prepared_data_dir {prepared_data_dir} not found")
+            training_data_dir = mainConfig.train.training_data_dir
+        if not Path(training_data_dir).is_dir():
+            raise RuntimeError(f"Error, prepared_data_dir {training_data_dir} not found")
 
-        tomosDf = read_particles_csvs(prepared_data_dir)
-        do_chunking(tomosDf, chunkedDataDir=mainConfig.train.chunks_dir, n_cpus=train__config.WORKERS_FOR_DATA,
+        tomosDf = read_particles_csvs(training_data_dir)
+        do_chunking(tomosDf, chunkedDataDir=mainConfig.train.chunks_dir, n_cpus=train__config.n_cpus_for_train,
                     require_labels=require_labels)
 
 
@@ -69,7 +69,7 @@ def train(
         checkpointer = ModelCheckpoint(monitor='val_loss', filename='weights', verbose=True)
         callbacks = [
             TQDMProgressBar(refresh_rate=10),
-            EarlyStopping(monitor='val_loss', patience=2 * train__config.COSINE_LR_SCHEDULE_N_EPOCHS, verbose=True),
+            EarlyStopping(monitor='val_loss', patience=6 * train__config.COSINE_LR_SCHEDULE_N_EPOCHS, verbose=True),
             checkpointer,
             LearningRateMonitor(logging_interval='epoch'),
         ]
@@ -88,19 +88,19 @@ def train(
     else:
         raise ValueError("Error, mode (%s) not valid" % mainConfig.train.mode)
 
-    if continue_training:
-        resume_from_checkpoint = continue_training if mainConfig.train.restore_full_state else None
+    if train_continue:
+        resume_from_checkpoint = train_continue if mainConfig.train.restore_full_state else None
 
         if mainConfig.train.mode == TrainingModes.picking:
             try:
-                pl_model = BasePickingModel.load_from_checkpoint(continue_training, **kwargs)
+                pl_model = BasePickingModel.load_from_checkpoint(train_continue, **kwargs)
             except RuntimeError:
-                pretrained_model = SelfSupervisedModel.load_from_checkpoint(continue_training)
+                pretrained_model = SelfSupervisedModel.load_from_checkpoint(train_continue)
                 pl_model = BasePickingModel(**kwargs, model=pretrained_model)  # map_location="cuda:0"
                 del pretrained_model
                 resume_from_checkpoint = None
         else:
-            pl_model = Model.load_from_checkpoint(continue_training, **kwargs)
+            pl_model = Model.load_from_checkpoint(train_continue, **kwargs)
     else:
         pl_model = Model(**kwargs)
         resume_from_checkpoint = None
@@ -113,10 +113,10 @@ def train(
 
     data = Data(data_dir=mainConfig.train.chunks_dir, return_labels=(mainConfig.train.mode == TrainingModes.picking),
                 batch_size=mainConfig.train.batch_size,
-                workers_for_data=mainConfig.train.WORKERS_FOR_DATA)
-    data.setup()
+                workers_for_data=mainConfig.train.n_cpus_for_train)
 
-    print(f'Size of the training dataset {len(data.train_dataloader())}')
+    data.setup()
+    logging.info(f'Size of the training dataset {len(data.train_dataloader())}')
 
     tb_logger = TensorBoardLogger(save_dir=f'{mainConfig.train.model_dir}/{mainConfig.train.experiment_name}', name='', version='')
 

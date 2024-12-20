@@ -30,7 +30,7 @@ def validate_config_lists(config: DictConfig) -> None:
             f"Configuration lists must have matching lengths. Mismatched lengths: {mismatched}. Expected: {reference_length}")
 
 
-def prepare_labels(config: DictConfig = None) -> None:
+def prepare_vol_label_pairs(config: DictConfig = None) -> None:
     """Process multiple datasets based on configuration"""
 
     from tomocpt.labels.helpers import prepare_picking_star, prepare_picking_imod
@@ -85,4 +85,4 @@ def prepare_labels(config: DictConfig = None) -> None:
 
 
 if __name__ == '__main__':
-    prepare_labels()
+    prepare_vol_label_pairs()

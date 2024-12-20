@@ -12,43 +12,48 @@ from tomocpt.infer.helpers import  process_extracted_coordinates, infer_tomos
 
 
 
-def infer(plot: Annotated[bool, typer.Option(help="Plot the cubes")] = False,
+def predict(plot: Annotated[bool, typer.Option(help="Plot the cubes")] = False,
           config: DictConfig = None):
     from tomocpt.mainConfig import mainConfig
     from tomocpt.utils import accelerator_selector
-    infer_config = mainConfig.infer
+    infer_config = mainConfig.predict
 
-    tomosDirPath = Path(infer_config.tomosDir).resolve()
-    Path(infer_config.predsDir).mkdir(parents=True, exist_ok=True)
+    tomosDirPath = Path(infer_config.tomogram_dir).resolve()
+    Path(infer_config.predictions_dir).mkdir(parents=True, exist_ok=True)
 
-    data_fnames = sorted(list(tomosDirPath.glob('*.mrc')))
+    data_fnames = []
+    patterns = ('*.mrc', '*.rec')
+    for pattern in patterns:
+        data_fnames.extend(tomosDirPath.glob(pattern))
+    data_fnames = sorted(data_fnames)
+
     accel, n_gpus = accelerator_selector(use_cuda=infer_config.use_cuda, n_cpus=infer_config.N_CPUS_IF_NO_GPU)
 
     # Run parallel inference
-    results = Parallel(n_jobs=infer_config.oversubscribeFactor * n_gpus, batch_size=1)(
+    results = Parallel(n_jobs=infer_config.oversubscribe_factor * n_gpus, batch_size=1)(
         delayed(infer_tomos)(
             batch_fnames,
-            infer_config.predsDir,
-            infer_config.modelFname,
-            particleLengthAng=infer_config.particleLengthAng,
-            gpu_id=(i % infer_config.oversubscribeFactor) % n_gpus,
+            infer_config.predictions_dir,
+            infer_config.weights,
+            particleLengthAng=infer_config.prediction_particle_length_ang,
+            gpu_id=(i % infer_config.oversubscribe_factor) % n_gpus,
             batch_size=infer_config.batch_size,
             plot=plot,
-            save_pred_mask=infer_config.savePredMasks,
-            extract_coords=infer_config.extractCoords,
-            nearest_neigs_angs=infer_config.nearest_neigs_angs,
-            threshold=infer_config.deep_threshold,
-            masksDir=infer_config.masksDir
+            save_pred_mask=infer_config.save_prediction_confidence_map,
+            extract_coords=infer_config.save_predicted_coords,
+            nearest_neigs_angs=infer_config.nearest_neighbour_dist_angs,
+            threshold=infer_config.confidence_threshold,
+            masksDir=infer_config.masks_dir
         )
-        for i, batch_fnames in enumerate(batched(data_fnames, n=infer_config.oversubscribeFactor * n_gpus))
+        for i, batch_fnames in enumerate(batched(data_fnames, n=infer_config.oversubscribe_factor * n_gpus))
     )
 
     if infer_config.extractCoords:
         process_extracted_coordinates(
             results=results,
-            output_dir=mainConfig.infer.predsDir,
-            output_format=mainConfig.infer.outCoordFormat,
-            output_filename=mainConfig.infer.outCoordFname
+            output_dir=mainConfig.predict.predictions_dir,
+            output_format=mainConfig.predict.predictions_coord_format,
+            output_filename=mainConfig.predict.predictions_coord_filename
         )
 
 

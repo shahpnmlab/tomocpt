@@ -7,6 +7,7 @@ import pandas as pd
 import torch
 import mrcfile
 import numpy as np
+import matplotlib.pyplot as plt
 
 from typing import Callable, Union, Tuple, List, Optional
 from tomocpt.constants import LABELS_DIR_NAME_PREFIX
@@ -213,7 +214,6 @@ def get_labels_dirname(require_labels: bool):
         return LABELS_DIR_NAME_PREFIX % "_selfSup"
 
 def plot_example(x, label):
-    from matplotlib import pyplot as plt
     if type(x) != np.ndarray:
         x = x.cpu().detach().numpy()
     if type(label) != np.ndarray:

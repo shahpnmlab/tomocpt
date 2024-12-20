@@ -56,7 +56,7 @@ def convert_config_to_dict(config_obj: Any) -> dict:
     return config_dict
 
 
-def init(output_path: Path = Path.cwd() / "config.yaml") -> None:
+def initialize_config(output_path: Path = Path.cwd() / "config.yaml") -> None:
     """
     Function to create a template config file for running tomoCPT,
     only including annotated fields
@@ -99,4 +99,4 @@ def init(output_path: Path = Path.cwd() / "config.yaml") -> None:
 
 
 if __name__ == '__main__':
-    init(Path("/tmp/config.yaml"))
+    initialize_config(Path("/tmp/config.yaml"))

@@ -2,32 +2,34 @@ from dataclasses import make_dataclass
 
 from tomocpt.configManager.configManager import create_app
 from tomocpt.mainConfig import mainConfig, create_linked_config
-from tomocpt.configManager.initializer import init
-from tomocpt.labels.run import prepare_labels
+from tomocpt.configManager.initializer import initialize_config
+from tomocpt.labels.run import prepare_vol_label_pairs
 from tomocpt.training.run import train
-from tomocpt.infer.run import infer
+from tomocpt.infer.run import predict
 
 
-app = create_app()
+def main():
+    tomocpt_app = create_app()
 
-##This is the proven way of doing it
-config_for_train = mainConfig.train
-config_for_inference = mainConfig.infer
-config_for_label_vol_preparation = mainConfig.prepData
+    ##This is the proven way of doing it
+    config_for_label_vol_preparation = mainConfig.prepData
+    config_for_train = mainConfig.train
+    config_for_prediction = mainConfig.predict
 
-#This is the experimental way of doing it #TODO: It does not work when there are ???
-# config_for_train = create_linked_config(mainConfig.train, mainConfig.shared)
-# config_for_inference = create_linked_config(mainConfig.infer, mainConfig.shared)
-# config_for_label_vol_preparation = create_linked_config(mainConfig.prepData, mainConfig.shared)
+    #This is the experimental way of doing it #TODO: It does not work when there are ???
+    # config_for_train = create_linked_config(mainConfig.train, mainConfig.shared)
+    # config_for_inference = create_linked_config(mainConfig.infer, mainConfig.shared)
+    # config_for_label_vol_preparation = create_linked_config(mainConfig.prepData, mainConfig.shared)
 
 
-app.register_command(init, None) #TODO: init_config needs to be modified to generate a config file for train, another for inference and so one
-app.register_command(prepare_labels, config_for_label_vol_preparation)
-app.register_command(train, config_for_train)
-app.register_command(infer, config_for_inference)
+    tomocpt_app.register_command(initialize_config, None) #TODO: init_config needs to be modified to generate a config file for train, another for inference and so one
+    tomocpt_app.register_command(prepare_vol_label_pairs, config_for_label_vol_preparation)
+    tomocpt_app.register_command(train, config_for_train)
+    tomocpt_app.register_command(predict, config_for_prediction)
+    tomocpt_app.run()
 
 if __name__ == "__main__":
-    app.run()
+    main()
     """
 
 python -m tomocpt.main train --network.model_type unet --chunks_dir data/refactor/chunks/ --model_dir /tmp/unet --n_epochs 2 OVERFIT_N_BATCHES=10
