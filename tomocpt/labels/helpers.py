@@ -3,6 +3,7 @@ from typing import Union, Dict
 
 from tomocpt.constants import RAW_LABEL_FNAME_TEMPLATE
 from tqdm import tqdm
+import functools
 import mrcfile
 import numpy as np
 import pandas as pd
@@ -95,11 +96,52 @@ def match_data_to_tomograms(particle_data: Union[pd.DataFrame, dict],
         raise TypeError("particle_data must be either a pandas DataFrame or a dictionary")
 
 
+@functools.cache
+def generate_gaussian_sphere(radius: float, grid_size: int,
+                             #0.33 and 0.66 for small and large gives the same results as the old code when sigma_radius_equivalance=2 and fraction_of_small_vs_large=0.5
+                             fraction_of_radius_small_gaussian: float = 0.33,
+                             fraction_of_radius_large_gaussian: float = 0.66,
+                             fraction_of_small_vs_large: float = 0.5,
+                             sigma_radius_equivalance:float = 2, #2 sigma ~ 1 radius (95% of weight)
+                             ) -> np.ndarray:
+    #TODO: generalise the gaussian generation form and move default values to config
+    """
+    Generate a sphere with Gaussian falloff.
+
+    Args:
+        radius (float): Radius of the particle in pixels
+        grid_size (int): Size of the grid
+        fraction_of_radius_small_gaussian (float): which is the fraction of the radius to use as width for the small gaussian
+        fraction_of_radius_large_gaussian (float): which is the fraction of the radius to use as width for the large gaussian
+        fraction_of_small_vs_large (float): The proportion of small gaussian in the final label. large gaussian proportion is 1-small_prop
+        sigma_radius_equivalance (float): How much sigma do we convey is equivalent to the radius. This is an arbitrary decsion, but since 95% of the mass is within mean +/- 2*sigma, 2 makes sense
+
+    Returns:
+        np.ndarray: Generated sphere
+    """
+
+    x = np.linspace(-radius, radius, grid_size)
+    y = np.linspace(-radius, radius, grid_size)
+    z = np.linspace(-radius, radius, grid_size)
+    X, Y, Z = np.meshgrid(x, y, z)
+
+    distance_from_center = np.sqrt(X ** 2 + Y ** 2 + Z ** 2)
+    sigma_large = fraction_of_radius_large_gaussian * radius / sigma_radius_equivalance
+    sigma_small = fraction_of_radius_small_gaussian * radius / sigma_radius_equivalance
+    gaussian_small = np.exp(-(distance_from_center ** 2) / (2 * sigma_small ** 2))
+    gaussian_large = np.exp(-(distance_from_center ** 2) / (2 * sigma_large ** 2))
+
+    combined_gaussian = fraction_of_small_vs_large * gaussian_small + (1 - fraction_of_small_vs_large) * gaussian_large
+    normed_gaussian = combined_gaussian / combined_gaussian.max()
+    normed_gaussian[distance_from_center > radius] = 0
+    return normed_gaussian
+
+"""
 def generate_gaussian_sphere(radius: float, grid_size: int,
                              falloff_ratio: float = 1, accent_ratio: float = 0.5,
                              falloff_value: float = 0.01, accent_value: float = 0.01) -> np.ndarray:
     #TODO: generalise the gaussian generation form and move default values to config
-    """
+
     Generate a sphere with Gaussian falloff.
 
     Args:
@@ -112,7 +154,7 @@ def generate_gaussian_sphere(radius: float, grid_size: int,
 
     Returns:
         np.ndarray: Generated sphere
-    """
+
     sigma_falloff = (falloff_ratio * radius) / np.sqrt(-2 * np.log(falloff_value))
     sigma_accent = (accent_ratio * radius) / np.sqrt(-2 * np.log(accent_value))
 
@@ -131,7 +173,7 @@ def generate_gaussian_sphere(radius: float, grid_size: int,
     normed_gaussian[distance_from_center > radius] = 0
 
     return normed_gaussian
-
+"""
 def create_particle_masks(vol_coord_pairs: Dict[str, np.ndarray],
                           radius_ang: float, tomogram_path: Union[str, Path],
                           output_path: Union[str, Path], class_id: str):

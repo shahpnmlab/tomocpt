@@ -18,7 +18,7 @@ def validate_config_lists(config: DictConfig) -> None:
         'particle_length_ang': len(config.particle_length_ang) if isinstance(config.particle_length_ang,
                                                                              (list, tuple)) else 1,
         'raw_data_dir': len(config.raw_data_dir) if isinstance(config.raw_data_dir, (list, tuple)) else 1,
-        'input_file': len(config.input_file) if isinstance(config.input_file, (list, tuple)) else 1,
+        'coordinate_files': len(config.coordinate_files) if isinstance(config.coordinate_files, (list, tuple)) else 1,
         'class_id': len(config.class_id) if isinstance(config.class_id, (list, tuple)) else 1
     }
 
@@ -46,12 +46,12 @@ def prepare_vol_label_pairs(config: DictConfig = None) -> None:
     dataset_params = zip(
         config.particle_length_ang,
         config.raw_data_dir,
-        config.input_file,
+        config.coordinate_files,
         config.class_id
     )
 
     # Process each dataset
-    for idx, (particle_length, raw_data_dir, input_file, class_id) in enumerate(dataset_params, 1):
+    for idx, (particle_length, raw_data_dir, coordinate_files, class_id) in enumerate(dataset_params, 1):
         logging.info(f"Processing dataset:{idx} and classID: {class_id}")
 
         # Create dataset-specific output directory
@@ -61,7 +61,7 @@ def prepare_vol_label_pairs(config: DictConfig = None) -> None:
         try:
             if config.coordinate_file_type == PrepareDataType.star:
                 prepare_picking_star(
-                    input_file=input_file,
+                    input_file=coordinate_files,
                     tomo_path=raw_data_dir,
                     output_dir=dataset_output_dir,
                     class_id=class_id,
@@ -69,7 +69,7 @@ def prepare_vol_label_pairs(config: DictConfig = None) -> None:
                 )
             elif config.coordinate_file_type == PrepareDataType.imod:
                 prepare_picking_imod(
-                    input_file=input_file,
+                    input_file=coordinate_files,
                     tomo_path=raw_data_dir,
                     output_dir=dataset_output_dir,
                     particle_diameter_angst=particle_length

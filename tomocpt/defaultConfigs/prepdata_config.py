@@ -13,7 +13,7 @@ class PrepareDataType(str, Enum):
 
 @dataclass
 class PrepdataConfig:
-    tomograms_dir: Annotated[
+    raw_data_dir: Annotated[
         str, typer.Option(help="Comma-separated paths to tomogram directories")
     ] = MISSING
 
@@ -48,5 +48,5 @@ class PrepdataConfig:
         """Convert comma-separated strings to lists"""
         self.particle_length_ang = [float(x.strip()) for x in self.particle_length_ang.split(',')]
         self.raw_data_dir = [Path(x.strip()) for x in self.raw_data_dir.split(',')]
-        self.input_file = [Path(x.strip()) for x in self.input_file.split(',')]
+        self.coordinate_files = [Path(x.strip()) for x in self.coordinate_files.split(',')]
         self.class_id = [x.strip() for x in self.class_id.split(',')]
