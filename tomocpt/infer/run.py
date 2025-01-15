@@ -16,7 +16,7 @@ def predict(plot: Annotated[bool, typer.Option(help="Plot the cubes")] = False,
           config: DictConfig = None):
     from tomocpt.mainConfig import mainConfig
     from tomocpt.utils import accelerator_selector
-    infer_config = mainConfig.predict
+    infer_config = mainConfig.infer
 
     tomosDirPath = Path(infer_config.tomogram_dir).resolve()
     Path(infer_config.predictions_dir).mkdir(parents=True, exist_ok=True)

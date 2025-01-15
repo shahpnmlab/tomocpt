@@ -14,7 +14,7 @@ def main():
     ##This is the proven way of doing it
     config_for_label_vol_preparation = mainConfig.prepData
     config_for_train = mainConfig.train
-    config_for_prediction = mainConfig.predict
+    config_for_prediction = mainConfig.infer
 
     #This is the experimental way of doing it #TODO: It does not work when there are ???
     # config_for_train = create_linked_config(mainConfig.train, mainConfig.shared)

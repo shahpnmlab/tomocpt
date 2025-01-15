@@ -20,7 +20,7 @@ from tomocpt.dataPreparation.helpers import _preprocess_data_mrc
 from tomocpt.defaultConfigs.infer_config import OutputFormat
 from tomocpt.mainConfig import mainConfig
 
-infer_config = mainConfig.predict
+infer_config = mainConfig.infer
 
 
 logger = get_logger()
