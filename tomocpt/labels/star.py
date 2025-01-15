@@ -5,6 +5,9 @@ import numpy as np
 import pandas as pd
 import starfile
 
+from tomocpt.logger import get_logger
+
+logging = get_logger()
 
 class Star:
     def __init__(self, star_file_path: Union[str, Path]):
@@ -83,10 +86,18 @@ class Star:
             shift_headings = [f'rlnOrigin{axis}Angst' for axis in "XYZ"]
 
         coords = particle_data[xyz_headings].to_numpy()
-        shifts = particle_data[shift_headings].to_numpy()
 
-        if self.version in ['rln31', 'rln50']:
-            shifts = shifts / self.pixel_size.values[0]
+        # Check if shift headings exist in the dataframe
+        missing_shifts = [h for h in shift_headings if h not in particle_data.columns]
+        if missing_shifts:
+            logging.warn(f"Missing shift headings in particle data: {missing_shifts}. Setting shifts to 0.")
+            shifts = np.zeros_like(coords)
+        else:
+            shifts = particle_data[shift_headings].to_numpy()
+            if self.version in ['rln31', 'rln50']:
+                # NOTE: This makes it such that one cannot work with a star file with tomograms of different pixel sizes
+                # defined a single star file.
+                shifts = shifts / self.pixel_size.values[0]
 
         shifted_coords = coords - shifts
 
