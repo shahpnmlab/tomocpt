@@ -1,5 +1,5 @@
 from dataclasses import dataclass, field
-from typing import Annotated, List
+from typing import Annotated, List, Optional
 from omegaconf import MISSING
 from pathlib import Path
 import typer
@@ -19,7 +19,7 @@ class PrepdataConfig:
 
     prepared_data_dir: Annotated[
         Path, typer.Option(help="Path to where the volume label pairs should be stored")
-    ] = Path("/tmp/inputs")
+    ] = Path("/tmp/inputs") #TODO: Is this the same as
 
     particle_length_ang: Annotated[
         str, typer.Option(help="Comma-separated list of particle lengths in angstroms")

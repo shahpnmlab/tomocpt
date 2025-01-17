@@ -24,6 +24,10 @@ class ModelType(str, Enum):
         return asdict(getattr(parent_config, self.value))
 
 
+class PrecisionType(str, Enum):
+    bf16 = "bf16"
+    float = "32"
+    half = "16"
 @dataclass
 class NetworkConfig:
 
@@ -38,7 +42,7 @@ class NetworkConfig:
     CONTRAST_LOSS_TEMPERATURE: float = 1e-1
 
     TORCH_MATMUL_PRECISION: str = "medium"  # "medium" "high" "highest"
-    TORCH_FLOAT_PRECISION: str = 'bf16'  # '32' # '16' 'bf16'
+    TORCH_FLOAT_PRECISION: Annotated[PrecisionType, typer.Option(help="The precision for gpu computing", case_sensitive=False)] = PrecisionType.bf16
 
     SELF_SUPERVISED_EMBEDING_SIZE: int = 256
 

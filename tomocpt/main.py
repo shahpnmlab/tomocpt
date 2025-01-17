@@ -1,7 +1,5 @@
-from dataclasses import make_dataclass
-
 from tomocpt.configManager.configManager import create_app
-from tomocpt.mainConfig import mainConfig, create_linked_config
+from tomocpt.mainConfig import mainConfig
 from tomocpt.configManager.initializer import initialize_config
 from tomocpt.labels.run import prepare_vol_label_pairs
 from tomocpt.training.run import train
@@ -15,12 +13,6 @@ def main():
     config_for_label_vol_preparation = mainConfig.prepData
     config_for_train = mainConfig.train
     config_for_prediction = mainConfig.infer
-
-    #This is the experimental way of doing it #TODO: It does not work when there are ???
-    # config_for_train = create_linked_config(mainConfig.train, mainConfig.shared)
-    # config_for_inference = create_linked_config(mainConfig.infer, mainConfig.shared)
-    # config_for_label_vol_preparation = create_linked_config(mainConfig.prepData, mainConfig.shared)
-
 
     tomocpt_app.register_command(initialize_config, None) #TODO: init_config needs to be modified to generate a config file for train, another for inference and so one
     tomocpt_app.register_command(prepare_vol_label_pairs, config_for_label_vol_preparation)

@@ -24,7 +24,6 @@ logging = get_logger()
 def train(
         compile_model: Annotated[bool, typer.Option(help="Path to pre-existing checkpoint file for fine-tuning with new data")] = None,
         train_continue: Annotated[Optional[Path], typer.Option(help="Path to pre-existing checkpoint file for fine-tuning with new data")] = None,
-
         config: DictConfig = None):
 
     from tomocpt.mainConfig import mainConfig
@@ -47,11 +46,12 @@ def train(
     assert mainConfig.train.chunks_dir, "Error, you need to provide a chunks_dir" #TODO: Do you want to assert that, or fall back to a default?
 
     chunks_dir = mainConfig.train.chunks_dir
+
     require_labels = mainConfig.train.mode == TrainingModes.picking
     chunking_name_done = get_chunking_name_done(chunks_dir, require_labels=require_labels)
     if not Path(chunking_name_done).is_file():
         if mainConfig.train.training_data_dir is None:
-            training_data_dir = mainConfig.prepData.training_data_dir #TODO, this is  a hack because we have duplicated prepare_data_dir
+            training_data_dir = mainConfig.prepData.prepared_data_dir #TODO: Is prepared_data_dir the same as train.training_data_dir
         else:
             training_data_dir = mainConfig.train.training_data_dir
         if not Path(training_data_dir).is_dir():
@@ -131,7 +131,7 @@ def train(
                          # limit_val_batches=constants.LIMIT_VALIDATION_BATCHES,
                          # val_check_interval=constants.VAL_CHECK_INTERVAL,
                          strategy="ddp_find_unused_parameters_false" if accel == "gpu" else "auto",
-                         precision=network__config.TORCH_FLOAT_PRECISION,
+                         precision=network__config.TORCH_FLOAT_PRECISION.value,
                          gradient_clip_val=1.0,
                          gradient_clip_algorithm='norm',
                          enable_model_summary = False,

@@ -147,13 +147,15 @@ def resize_volume(volume: np.array, new_shape: Union[Tuple[int], List[int]], chu
 
     shape = np.array(new_shape)
     ndim = len(volume.shape)
+    device = 'cuda' if use_gpu else 'cpu'
+
     if ndim > 3:
         resized = torch.nn.functional.interpolate(
-            torch.as_tensor(volume, device='cuda' if use_gpu else 'cpu').unsqueeze(0),
+            torch.as_tensor(volume, device=device).unsqueeze(0),
             size=new_shape, mode='trilinear', antialias=False).squeeze().cpu()
     else:
         resized = torch.nn.functional.interpolate(
-            torch.as_tensor(volume, device='cuda' if use_gpu else 'cpu').unsqueeze(0).unsqueeze(0),
+            torch.as_tensor(volume, device=device).unsqueeze(0).unsqueeze(0),
             size=new_shape, mode='trilinear', antialias=False).squeeze().squeeze().cpu()
     del volume
     gc.collect()

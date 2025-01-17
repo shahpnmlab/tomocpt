@@ -27,16 +27,19 @@ def predict(plot: Annotated[bool, typer.Option(help="Plot the cubes")] = False,
         data_fnames.extend(tomosDirPath.glob(pattern))
     data_fnames = sorted(data_fnames)
 
-    accel, n_gpus = accelerator_selector(use_cuda=infer_config.use_cuda, n_cpus=infer_config.N_CPUS_IF_NO_GPU)
-
+    accel, dev_count = accelerator_selector(use_cuda=infer_config.use_cuda, n_cpus=infer_config.N_CPUS_IF_NO_GPU)
+    if accel.startswith("cpu"):
+        n_gpus = None
+    else:
+        n_gpus = dev_count
     # Run parallel inference
-    results = Parallel(n_jobs=infer_config.oversubscribe_factor * n_gpus, batch_size=1)(
+    results = Parallel(n_jobs=infer_config.oversubscribe_factor * dev_count, batch_size=1)(
         delayed(infer_tomos)(
             batch_fnames,
             infer_config.predictions_dir,
             infer_config.weights,
             particleLengthAng=infer_config.prediction_particle_length_ang,
-            gpu_id=(i % infer_config.oversubscribe_factor) % n_gpus,
+            gpu_id=(i % infer_config.oversubscribe_factor) % n_gpus if n_gpus is not None else None,
             batch_size=infer_config.predictions_batch_size,
             plot=plot,
             save_pred_mask=infer_config.save_prediction_confidence_map,
@@ -45,7 +48,7 @@ def predict(plot: Annotated[bool, typer.Option(help="Plot the cubes")] = False,
             threshold=infer_config.confidence_threshold,
             masksDir=infer_config.masks_dir
         )
-        for i, batch_fnames in enumerate(batched(data_fnames, n=infer_config.oversubscribe_factor * n_gpus))
+        for i, batch_fnames in enumerate(batched(data_fnames, n=infer_config.oversubscribe_factor * dev_count))
     )
 
     if infer_config.save_predicted_coords:

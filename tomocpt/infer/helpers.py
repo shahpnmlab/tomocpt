@@ -308,7 +308,7 @@ def _infer_one_tomo(tomoFname: str, output_fname: str, particle_ang_length: floa
                                                         new_particle_size=desired_particle_size_in_pixels,
                                                         particle_radius_angst=particle_radius_angst,
                                                         chunk_size=patch_size,
-                                                        use_gpu=infer_config.USE_CUDA_FOR_DATA)
+                                                        use_gpu=infer_config.USE_CUDA_FOR_DATA if gpu_id is not None else False)
         if maskFname and Path(maskFname).exists():
             logger.info("Loading mask")
             try:
@@ -337,7 +337,9 @@ def _infer_one_tomo(tomoFname: str, output_fname: str, particle_ang_length: floa
 
         with torch.inference_mode():
             for idx, patches_batch in enumerate(tqdm(patch_loader)):
-                input_tensor = patches_batch['input_data'][tio.DATA].cuda(device=gpu_id)
+                input_tensor = patches_batch['input_data'][tio.DATA]
+                if gpu_id is not None:
+                    input_tensor = input_tensor.cuda(device=gpu_id)
                 locations = patches_batch[tio.LOCATION]
                 outputs = model.predict_step(input_tensor, idx)
                 aggregator.add_batch(outputs, locations)
@@ -392,11 +394,16 @@ def infer_tomos(tomoFnames: List[Path], predsDir: str, modelFname: str, gpu_id: 
     from tomocpt.networks.pickingModel import BasePickingModel
 
     global MODEL
-    kwargs = {"map_location": f"cuda:{gpu_id}"}
+    if gpu_id is not None:
+        kwargs = {"map_location": f"cuda:{gpu_id}"}
+    else:
+        kwargs = {"map_location": "cpu"}
     if MODEL is None:
         MODEL = BasePickingModel.load_from_checkpoint(modelFname, **kwargs)
 
-    model = MODEL.eval().cuda(gpu_id)
+    model = MODEL.eval()
+    if gpu_id is not None:
+        model = model.cuda(gpu_id)
     patch_size = model.patch_size
 
     tomo_names, one_tomo_centroids_and_scores, voxel_sizes = [], [], []
