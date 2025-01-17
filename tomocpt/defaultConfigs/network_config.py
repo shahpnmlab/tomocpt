@@ -54,8 +54,8 @@ class NetworkConfig:
         if model_name.startswith("SwinUNETR"):
             if require_labels:
                 model_name = "MySwinUNETR"
-            if version.parse(monai.__version__) > version.parse("1.3"):
-                kwargs.pop("img_size")
+            # if version.parse(monai.__version__) > version.parse("1.3"):
+            #     kwargs.pop("img_size")
 
         config_kwargs = asdict(getattr(self, model_type.value))
         module_path = model_type.module_path
