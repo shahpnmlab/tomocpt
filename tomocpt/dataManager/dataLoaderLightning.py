@@ -67,8 +67,8 @@ class Data(pl.LightningDataModule):
             batch_size=self.batch_size,
             num_workers=self.workers_for_data,
             shuffle=True,
-            persistent_workers=True if (self.config .N_GPUS > 0 and
-                                        self.config .use_cuda > 0 and
+            persistent_workers=True if (self.config.N_GPUS > 0 and
+                                        self.config.use_gpus > 0 and
                                         self.workers_for_data > 0) else False
         )
         return dl
@@ -80,7 +80,7 @@ class Data(pl.LightningDataModule):
             num_workers=self.workers_for_data,
             shuffle=False,
             persistent_workers=True if (self.config.N_GPUS > 0 and
-                                        self.config.use_cuda > 0 and
+                                        self.config.use_gpus > 0 and
                                         self.workers_for_data > 0) else False
         )
 

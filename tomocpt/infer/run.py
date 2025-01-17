@@ -37,7 +37,7 @@ def predict(plot: Annotated[bool, typer.Option(help="Plot the cubes")] = False,
             infer_config.weights,
             particleLengthAng=infer_config.prediction_particle_length_ang,
             gpu_id=(i % infer_config.oversubscribe_factor) % n_gpus,
-            batch_size=infer_config.batch_size,
+            batch_size=infer_config.predictions_batch_size,
             plot=plot,
             save_pred_mask=infer_config.save_prediction_confidence_map,
             extract_coords=infer_config.save_predicted_coords,
@@ -48,12 +48,12 @@ def predict(plot: Annotated[bool, typer.Option(help="Plot the cubes")] = False,
         for i, batch_fnames in enumerate(batched(data_fnames, n=infer_config.oversubscribe_factor * n_gpus))
     )
 
-    if infer_config.extractCoords:
+    if infer_config.save_predicted_coords:
         process_extracted_coordinates(
             results=results,
-            output_dir=mainConfig.predict.predictions_dir,
-            output_format=mainConfig.predict.predictions_coord_format,
-            output_filename=mainConfig.predict.predictions_coord_filename
+            output_dir=mainConfig.infer.predictions_dir,
+            output_format=mainConfig.infer.predictions_coord_format,
+            output_filename=mainConfig.infer.predictions_coord_filename
         )
 
 

@@ -329,7 +329,7 @@ def _infer_one_tomo(tomoFname: str, output_fname: str, particle_ang_length: floa
         vol = vol.unsqueeze(0)
         subject = tio.Subject({"input_data": tio.ScalarImage(tensor=vol)})
 
-        grid_sampler = tio.GridSampler(subject, patch_size=patch_size, patch_overlap=patch_size // mainConfig.predict.patch_overlap_factor,
+        grid_sampler = tio.GridSampler(subject, patch_size=patch_size, patch_overlap=patch_size // mainConfig.infer.PATCH_OVERLAP_FACTOR,
                                        padding_mode='reflect')
         patch_loader = DataLoader(grid_sampler, batch_size=batch_size)
         del vol

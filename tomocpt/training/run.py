@@ -117,13 +117,14 @@ def train(
 
     data.setup()
     logging.info(f'Size of the training dataset {len(data.train_dataloader())}')
+    
 
     tb_logger = TensorBoardLogger(save_dir=f'{mainConfig.train.model_dir}/{mainConfig.train.experiment_name}', name='', version='')
 
-    accel, dev_count = accelerator_selector(use_cuda=mainConfig.train.use_cuda, n_cpus=mainConfig.train.N_CPUS_IF_NO_GPU)
+    accel, dev_count = accelerator_selector(use_cuda=mainConfig.train.use_gpus, n_cpus=mainConfig.train.N_CPUS_IF_NO_GPU)
 
     trainer = pl.Trainer(default_root_dir=mainConfig.train.model_dir, devices=f'{dev_count}',
-                         accelerator='auto' if mainConfig.train.use_cuda else accel,
+                         accelerator='auto' if mainConfig.train.use_gpus else accel,
                          max_epochs=mainConfig.train.n_epochs, callbacks=callbacks,
                          logger=tb_logger,
                          overfit_batches=mainConfig.train.OVERFIT_N_BATCHES if mainConfig.train.OVERFIT_N_BATCHES else 0,
@@ -133,16 +134,17 @@ def train(
                          precision=network__config.TORCH_FLOAT_PRECISION,
                          gradient_clip_val=1.0,
                          gradient_clip_algorithm='norm',
+                         enable_model_summary = False,
                          )
 
     if trainer.is_global_zero:
         _copyCodeForReproducibility(trainer.log_dir)
 
-    if launch_tensorboard and trainer.is_global_zero:
+    if mainConfig.train.launch_tensorboard and trainer.is_global_zero:
         subprocess.Popen(["tensorboard", "--logdir", f'{mainConfig.train.model_dir}/{mainConfig.train.experiment_name}'],
                          stdout=sys.stdout, stderr=sys.stderr)
         #logger.info("Use the url below to monitor training on tensorboard")
-    #logger.info("Starting training run.")
+        logging.info(f"tensorboard --logdir {mainConfig.train.model_dir}/{mainConfig.train.experiment_name}")
 
     trainer.fit(pl_model, datamodule=data, ckpt_path=resume_from_checkpoint)
 

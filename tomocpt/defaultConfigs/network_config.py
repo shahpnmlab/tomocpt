@@ -38,7 +38,7 @@ class NetworkConfig:
     CONTRAST_LOSS_TEMPERATURE: float = 1e-1
 
     TORCH_MATMUL_PRECISION: str = "medium"  # "medium" "high" "highest"
-    TORCH_FLOAT_PRECISION: str = '32'  # '32' # '16' 'bf16'
+    TORCH_FLOAT_PRECISION: str = 'bf16'  # '32' # '16' 'bf16'
 
     SELF_SUPERVISED_EMBEDING_SIZE: int = 256
 
@@ -54,7 +54,6 @@ class NetworkConfig:
         module = importlib.import_module(module_path)
         target_cls = getattr(module, model_name)
         config_kwargs.update(kwargs)
-        print("model config", config_kwargs)
         return model_name, target_cls(**config_kwargs)
 
 

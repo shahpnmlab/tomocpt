@@ -39,7 +39,7 @@ class PrepdataConfig:
 
     desired_particle_pixel_size: Annotated[
         int, typer.Option(help="Resize the volume to dimensions that yield particle radius in pixels")
-    ] = 10
+    ] = 20
 
     USE_CUDA_FOR_DATA: bool = True
     ALPHA_FOR_DROPPING_EMPTY_CUBES: float = 1

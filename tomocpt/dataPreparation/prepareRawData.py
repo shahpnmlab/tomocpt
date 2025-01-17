@@ -145,7 +145,7 @@ def do_chunking(tomosDf: pd.DataFrame, chunkedDataDir,
     """
 
     if train_val_level is None:
-        train_val_level = mainConfig.train.crossValidationLevelSplit
+        train_val_level = mainConfig.train.train_on
 
     if train_val_level == CrossValidationLevelSplit.tomos:
         df_train, df_val = train_test_split(tomosDf, test_size=constants.PERCENT_TO_VALIDATE)

@@ -42,7 +42,7 @@ class VolumeDatsetIO(tio.SubjectsDataset):
             })
             return subject
         # print("mainConfig.train.WORKERS_FOR_DATA",mainConfig.train.WORKERS_FOR_DATA, flush=True)
-        n_jobs = mainConfig.train.WORKERS_FOR_DATA
+        n_jobs = mainConfig.train.n_cpus_for_train
         if n_jobs == 0:
             n_jobs = 1
         lists_of_subjects = Parallel(n_jobs=n_jobs)(delayed(create_subject)(x, y) for x,y in names_list)
