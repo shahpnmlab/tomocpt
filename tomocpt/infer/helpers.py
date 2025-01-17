@@ -302,6 +302,7 @@ def _infer_one_tomo(tomoFname: str, output_fname: str, particle_ang_length: floa
     particle_radius_angst = particle_ang_length / 2
     voxel_size = np.nan
     desired_particle_size_in_pixels = model.hparams.config.prepData.desired_particle_pixel_size
+    print(desired_particle_size_in_pixels)
     if not Path(output_fname).exists():
         (vol, new_shape, old_shape, voxel_size,
          padding_values, scalar) = _preprocess_data_mrc(tomoFname, normalization_function="robust_normalization",
@@ -350,7 +351,8 @@ def _infer_one_tomo(tomoFname: str, output_fname: str, particle_ang_length: floa
         output_tensor = output_tensor.cpu().numpy()
         # output_tensor = resize(output_tensor, output_shape=old_shape, mode='constant', cval=0)
         output_tensor, sym_padding = resize_volume(output_tensor, new_shape=old_shape, chunk_size=patch_size,
-                                                   use_gpu=gpu_id >= 0, mean_as_padding_value=False)
+                                                   use_gpu=gpu_id is not None and gpu_id >= 0,
+                                                   mean_as_padding_value=False)
         if save_pred_mask:
             write_segmentation_mask(output_tensor, output_fname, angpix=voxel_size, overwrite=True)
         if plot:

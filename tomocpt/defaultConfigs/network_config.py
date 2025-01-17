@@ -2,11 +2,12 @@ from dataclasses import dataclass, asdict, field
 from enum import Enum
 from typing import Annotated, Dict, Any, Type
 
+import monai
 import typer
 
 from tomocpt.defaultConfigs.models.swinunetr_config import SwinUnetrConfig
 from tomocpt.defaultConfigs.models.unet_config import UnetConfig
-
+from packaging import version
 
 class ModelType(str, Enum):
     UNET = "Unet"
@@ -50,8 +51,11 @@ class NetworkConfig:
         import importlib
         model_type = self.model_type
         model_name = str(model_type.value)
-        if require_labels and model_name.startswith("SwinUNETR"):
-            model_name = "MySwinUNETR"
+        if model_name.startswith("SwinUNETR"):
+            if require_labels:
+                model_name = "MySwinUNETR"
+            if version.parse(monai.__version__) > version.parse("1.3"):
+                kwargs.pop("img_size")
 
         config_kwargs = asdict(getattr(self, model_type.value))
         module_path = model_type.module_path
