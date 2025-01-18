@@ -20,7 +20,6 @@ class BaseModel(pl.LightningModule):
                  config=None,
                  constants_dict=None):
         super(BaseModel, self).__init__()
-
         if config is None:
             config = mainConfig
         else:

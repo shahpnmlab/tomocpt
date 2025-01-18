@@ -36,7 +36,6 @@ def train(
     from pytorch_lightning.callbacks import TQDMProgressBar, EarlyStopping, ModelCheckpoint, LearningRateMonitor, \
         StochasticWeightAveraging  # TODO: Importing from pytorch_lightning.callbacks is launching a jit warning. Why?. Could it be version related
 
-
     #logger = logging.create_logger("info")
     kwargs = dict(lr=mainConfig.train.optimizer.lr)
 
@@ -58,7 +57,12 @@ def train(
             raise RuntimeError(f"Error, prepared_data_dir {training_data_dir} not found")
 
         tomosDf = read_particles_csvs(training_data_dir)
-        do_chunking(tomosDf, chunkedDataDir=mainConfig.train.chunks_dir, n_cpus=train__config.n_cpus_for_train,
+
+        new_size = mainConfig.prepData.desired_particle_pixel_size
+        # prep_data_config = OmegaConf.load("config.yaml")
+        do_chunking(tomosDf, chunkedDataDir=mainConfig.train.chunks_dir,
+                    desired_particle_pixel_size=mainConfig.prepData.desired_particle_pixel_size,
+                    n_cpus=train__config.n_cpus_for_train,
                     require_labels=require_labels)
 
 
@@ -104,7 +108,6 @@ def train(
     else:
         pl_model = Model(**kwargs)
         resume_from_checkpoint = None
-
     if compile_model:
         pl_model = torch.compile(pl_model)
     callbacks += [

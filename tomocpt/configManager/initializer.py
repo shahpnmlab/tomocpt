@@ -2,7 +2,7 @@ from dataclasses import is_dataclass, fields
 from enum import Enum
 from pathlib import Path
 from typing import Any, Dict
-from omegaconf import MISSING
+from omegaconf import MISSING, DictConfig
 from typing_extensions import get_type_hints
 
 
@@ -56,7 +56,7 @@ def convert_config_to_dict(config_obj: Any) -> dict:
     return config_dict
 
 
-def initialize_config(output_path: Path = Path.cwd() / "config.yaml") -> None:
+def initialize_config(output_path: Path = Path.cwd() / "config.yaml", config: DictConfig = None) -> None:
     """
     Function to create a template config file for running tomoCPT,
     only including annotated fields

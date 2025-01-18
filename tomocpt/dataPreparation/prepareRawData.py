@@ -22,9 +22,10 @@ from tomocpt.utils import accelerator_selector, makedir
 
 def process_mrc(data_fname, target_fname, particle_diameter_angst,
                 outputname_template: Optional[str],
+                new_size: int,
                 chunk_size: Optional[int]=None, stride: Optional[int]=None,
                 normalization_function: str = "robust_normalization",
-                new_size: Optional[int]=None, require_labels: bool = True):
+                require_labels: bool = True, use_gpu: bool =False):
     '''
     F0 = Compute number of zeros in vol => (torch.isclose(target,0).sum()
     F1 = Compute number of non-zeros in vol => target.numel() - F0
@@ -53,10 +54,6 @@ def process_mrc(data_fname, target_fname, particle_diameter_angst,
     if stride is None:
         stride = mainConfig.train.CHUNK_STRIDE
 
-    if new_size is None:
-        new_size = mainConfig.prepData.desired_particle_pixel_size
-
-    use_gpu = mainConfig.prepData.USE_CUDA_FOR_DATA
     vol, new_shape, old_shape, voxel_size, padding_values, scalar = _preprocess_data_mrc(data_fname,
                                                                                               particle_radius_angst,
                                                                                               normalization_function,
@@ -132,6 +129,7 @@ def get_chunking_name_done(chunkedDataDir, require_labels):
     return f'{chunkedDataDir}/done_labels_{require_labels}.txt'
 
 def do_chunking(tomosDf: pd.DataFrame, chunkedDataDir,
+                 desired_particle_pixel_size:int,
                  n_cpus: int,
                  require_labels: bool = True,
                  train_val_level=None):
@@ -166,7 +164,11 @@ def do_chunking(tomosDf: pd.DataFrame, chunkedDataDir,
 
     outputname_template = constants.CUBES_FNAMES_TEMPLATES
 
+    acc, dev_count = accelerator_selector(mainConfig.prepData.USE_CUDA_FOR_DATA)
+
+
     def dispatcher(i, info_row, outpath):
+        print(f"Working with {i}") #TODO: make sure that we use all gpus. To do so, replace use_gpu by gpu_id.
         bn = Path(info_row["tomogram_path"]).stem
         bn_fname = f'{outpath}/{bn}/{outputname_template}'
         makedir(f'{outpath}/{bn}/{constants.VOLUMES_DIR_NAME_PREFIX}')
@@ -183,17 +185,20 @@ def do_chunking(tomosDf: pd.DataFrame, chunkedDataDir,
             target_fname = None
         particle_diameter_angst = info_row["particle_diameter_angst"]
         data_fname, n_cubes, chunk_data_fnames = process_mrc(data_fname=info_row["tomogram_path"], target_fname=target_fname,
-                                                              particle_diameter_angst=particle_diameter_angst,
-                                                              outputname_template=bn_fname, require_labels=require_labels)
+                                                             particle_diameter_angst=particle_diameter_angst,
+                                                             outputname_template=bn_fname,
+                                                             new_size=desired_particle_pixel_size,
+                                                             require_labels=require_labels,
+                                                             use_gpu=acc.startswith("cuda"))
 
         print(f"{data_fname}: {n_cubes} cubes written")
         return data_fname
 
 
-    train_fnames = Parallel(n_cpus)(delayed(dispatcher)(i, trainObj, train_outDir) for i, trainObj in df_train.iterrows())
+    train_fnames = Parallel(n_cpus, batch_size=1)(delayed(dispatcher)(i, trainObj, train_outDir) for i, trainObj in df_train.iterrows())
 
     if df_val is not None:
-        Parallel(n_cpus)(delayed(dispatcher)(i, valObj, val_outDir) for i, valObj in df_val.iterrows())
+        Parallel(n_cpus, batch_size=1)(delayed(dispatcher)(i, valObj, val_outDir) for i, valObj in df_val.iterrows())
     else:
         #Split by cubes
         train_fnames = train_test_split(train_fnames, test_size=constants.PERCENT_TO_VALIDATE)

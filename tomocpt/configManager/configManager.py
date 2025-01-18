@@ -6,7 +6,7 @@ from typing_extensions import Annotated
 from pathlib import Path
 import inspect
 import typer
-from omegaconf import OmegaConf, DictConfig, MISSING
+from omegaconf import OmegaConf, DictConfig, MISSING, MissingMandatoryValue
 from enum import Enum
 from functools import wraps
 
@@ -176,9 +176,9 @@ class ConfigurableApp:
         except ValueError:
             raise ConfigurationError(f"Could not convert value '{value}' to type {field_type} for parameter '{key}'")
 
-    def command(self, *typer_args, config: Any = None, **typer_kwargs):
+    def command(self, *typer_args, mainConfig: Any = None, config_key: str, create_cli_args=True, **typer_kwargs):
         def decorator(func: Callable):
-            # Get config file value if present
+            # Get mainConfig file value if present
             config_file_path = None
             for i, arg in enumerate(sys.argv):
                 if arg == '--config_file':
@@ -187,26 +187,32 @@ class ConfigurableApp:
                 elif arg.startswith('--config_file='):
                     config_file_path = arg.split('=', 1)[1]
 
-            # Load config file if present
+            # Load mainConfig file if present
             yaml_config = None
-            yaml_updated_config = None
+            config_updated_with_yaml = None
             if config_file_path:
                 yaml_config = OmegaConf.load(config_file_path)
+                if mainConfig is not None:
+                    config_updated_with_yaml, unmatched_yaml = merge_config(yaml_config, mainConfig)
 
-                if config is not None:
-                    yaml_updated_config = copy.deepcopy(config)
-                    merge_config(yaml_config, yaml_updated_config) #This hides the required parameters from help if they are defined in the yaml
-
+            #Select only the configuration that is relevant for the command
+            if config_key is not None:
+                config = getattr(mainConfig, config_key)
+            else:
+                config = mainConfig
             original_sig = inspect.signature(func)
             func_params = [p for p in original_sig.parameters.values() if p.name != 'config']
-            cli_params, paths = self.config_manager.create_cli_parameters(config)
+            if create_cli_args:
+                cli_params, paths = self.config_manager.create_cli_parameters(config)
+            else:
+                cli_params , paths = [],[]
+
             # Create parameter mappings
             config_param_map = {param.name: param for param in cli_params}
             config_param_types = {
                 param.name: param.annotation.__args__[0] if str(param.annotation).startswith("typing.Annotated")
                 else param.annotation for param in cli_params
             }
-
             # Validate function parameters
             for func_param in func_params:
                 if func_param.name in config_param_map:
@@ -258,7 +264,7 @@ class ConfigurableApp:
                 updated_cli_params = []
                 for param in cli_params:
                     param_path = _normalize_path(param.name).split('.')
-                    curr_config = yaml_updated_config
+                    curr_config = config_updated_with_yaml
                     found_value = True
 
                     # Navigate the yaml config structure
@@ -387,85 +393,88 @@ class ConfigurableApp:
 
         return decorator
 
-    def _update_from_yaml(self, config_obj: Any, yaml_config: DictConfig,
-                          merge_preference: Optional[MergePreference]) -> None:
-        """Update config object from YAML config"""
-
-        # Track updates to detect conflicts
-        yaml_updates = {}
-
-        def _update_value(obj: Any, key: str, value: Any, path: str = ''):
-            if hasattr(obj, key):
-                current_value = getattr(obj, key)
-                full_path = f"{path}.{key}" if path else key
-
-                # If the attribute exists and is either a simple type or None
-                if isinstance(current_value, (int, float, str, bool)) or current_value is None:
-                    # Check if value would be changed
-                    try:
-                        typed_value = type(current_value)(value) if current_value is not None else value
-                        if current_value is not None and current_value != typed_value:
-                            if merge_preference is None:
-                                raise ConfigurationError(
-                                    f"Conflict detected for parameter '{full_path}': "
-                                    f"Current value: {current_value}, YAML value: {value}. "
-                                    "Please specify merge_preference to resolve conflicts."
-                                )
-                            if merge_preference == MergePreference.CONFIG_FILE:
-                                yaml_updates[full_path] = (current_value, typed_value)
-                                setattr(obj, key, typed_value)
-                                print(f"Updated {full_path}: {current_value} -> {typed_value}")
-                            else:  # MergePreference.COMMAND
-                                print(f"Keeping current value for {full_path}: {current_value} (YAML value: {value})")
-                    except (ValueError, TypeError):
-                        print(f"Warning: Could not convert {value} to {type(current_value)} for {full_path}")
-                elif is_dataclass(type(current_value)):
-                    if hasattr(value, 'items'):  # Handles both dict and DictConfig
-                        for k, v in value.items():
-                            _update_value(current_value, k, v, full_path)
-
-        # Handle flat config structure in YAML
-        for section, values in yaml_config.items():
-            if hasattr(values, 'items'):  # Handles both dict and DictConfig
-                # Try to find matching section in config
-                if hasattr(config_obj, section):
-                    section_obj = getattr(config_obj, section)
-                    if is_dataclass(type(section_obj)):
-                        for key, value in values.items():
-                            _update_value(section_obj, key, value, section)
-                else:
-                    # Try to match flattened keys
-                    for key, value in values.items():
-                        # Handle nested keys like 'n_epochs' in 'train' section
-                        if hasattr(config_obj, 'train') and hasattr(getattr(config_obj, 'train'), key):
-                            _update_value(getattr(config_obj, 'train'), key, value, 'train')
-            else:
-                # Handle top-level values
-                _update_value(config_obj, section, values)
-
-        # Report all updates if any occurred
-        if yaml_updates and merge_preference == MergePreference.CONFIG_FILE:
-            print("\nSummary of updates from YAML:")
-            for path, (old_val, new_val) in yaml_updates.items():
-                print(f"  {path}: {old_val} -> {new_val}")
+    # def _update_from_yaml(self, config_obj: Any, yaml_config: DictConfig,
+    #                       merge_preference: Optional[MergePreference]) -> None:
+    #     """Update config object from YAML config"""
+    #
+    #     # Track updates to detect conflicts
+    #     yaml_updates = {}
+    #
+    #     def _update_value(obj: Any, key: str, value: Any, path: str = ''):
+    #         if hasattr(obj, key):
+    #             current_value = getattr(obj, key)
+    #             full_path = f"{path}.{key}" if path else key
+    #
+    #             # If the attribute exists and is either a simple type or None
+    #             if isinstance(current_value, (int, float, str, bool)) or current_value is None:
+    #                 # Check if value would be changed
+    #                 try:
+    #                     typed_value = type(current_value)(value) if current_value is not None else value
+    #                     if current_value is not None and current_value != typed_value:
+    #                         if merge_preference is None:
+    #                             raise ConfigurationError(
+    #                                 f"Conflict detected for parameter '{full_path}': "
+    #                                 f"Current value: {current_value}, YAML value: {value}. "
+    #                                 "Please specify merge_preference to resolve conflicts."
+    #                             )
+    #                         if merge_preference == MergePreference.CONFIG_FILE:
+    #                             yaml_updates[full_path] = (current_value, typed_value)
+    #                             setattr(obj, key, typed_value)
+    #                             print(f"Updated {full_path}: {current_value} -> {typed_value}")
+    #                         else:  # MergePreference.COMMAND
+    #                             print(f"Keeping current value for {full_path}: {current_value} (YAML value: {value})")
+    #                 except (ValueError, TypeError):
+    #                     print(f"Warning: Could not convert {value} to {type(current_value)} for {full_path}")
+    #             elif is_dataclass(type(current_value)):
+    #                 if hasattr(value, 'items'):  # Handles both dict and DictConfig
+    #                     for k, v in value.items():
+    #                         _update_value(current_value, k, v, full_path)
+    #
+    #     # Handle flat config structure in YAML
+    #     for section, values in yaml_config.items():
+    #         if hasattr(values, 'items'):  # Handles both dict and DictConfig
+    #             # Try to find matching section in config
+    #             if hasattr(config_obj, section):
+    #                 section_obj = getattr(config_obj, section)
+    #                 if is_dataclass(type(section_obj)):
+    #                     for key, value in values.items():
+    #                         _update_value(section_obj, key, value, section)
+    #             else:
+    #                 # Try to match flattened keys
+    #                 for key, value in values.items():
+    #                     # Handle nested keys like 'n_epochs' in 'train' section
+    #                     if hasattr(config_obj, 'train') and hasattr(getattr(config_obj, 'train'), key):
+    #                         _update_value(getattr(config_obj, 'train'), key, value, 'train')
+    #         else:
+    #             # Handle top-level values
+    #             _update_value(config_obj, section, values)
+    #
+    #     # Report all updates if any occurred
+    #     if yaml_updates and merge_preference == MergePreference.CONFIG_FILE:
+    #         print("\nSummary of updates from YAML:")
+    #         for path, (old_val, new_val) in yaml_updates.items():
+    #             print(f"  {path}: {old_val} -> {new_val}")
 
     def run(self):
         self.app()
 
-    def register_command(self, func, config):  # TODO: can we have this as a class method in app?
-        @self.command(config=config)
+    def register_command(self, func, mainConfig, config_key, create_cli_args=True):  # TODO: can we have this as a class method in app?
+        @self.command(mainConfig=mainConfig, config_key=config_key, create_cli_args=create_cli_args)
         @wraps(func)
         def wrapper(*args, **kwargs):
             return func(*args, **kwargs)
         return wrapper
 
 
-def merge_config(yaml_config: DictConfig, config: Any) -> Any:
+def merge_config(yaml_config: DictConfig, config: Any) -> Tuple[Any, Dict]:
     """
-    Merge YAML config into a dataclass config object.
+    Merge YAML config into a dataclass config object and return unmatched sections.
     """
     if not is_dataclass(config):
-        return config
+        return config, {}
+
+    # Track used keys to identify unmatched sections
+    used_keys = set()
 
     # For each field in the dataclass
     for field in fields(config):
@@ -474,23 +483,81 @@ def merge_config(yaml_config: DictConfig, config: Any) -> Any:
 
         # Find the field in yaml_config, checking both top level and nested
         yaml_value = None
-        if field_name in yaml_config:
-            yaml_value = yaml_config[field_name]
-        else:
-            # Search in all top-level dictionaries
-            for section in yaml_config.values():
-                if isinstance(section, DictConfig) and field_name in section:
-                    yaml_value = section[field_name]
-                    break
+        yaml_key = None
 
-        if yaml_value is not None:
-            if is_dataclass(current_value) and isinstance(yaml_value, DictConfig):
-                # Recursively merge nested dataclass
-                setattr(config, field_name, merge_config(yaml_value, current_value))
+        try:
+            if field_name in yaml_config:
+                yaml_value = yaml_config[field_name]
+                yaml_key = field_name
             else:
-                # Direct update for non-dataclass fields
-                setattr(config, field_name, yaml_value)
-    return config
+                # Search in all top-level dictionaries
+                for key, section in yaml_config.items():
+                    if isinstance(section, dict) and field_name in section:  # Changed DictConfig to dict
+                        yaml_value = section[field_name]
+                        yaml_key = key
+                        break
+
+            if yaml_value is not None:
+                used_keys.add(yaml_key)
+                if is_dataclass(current_value) and isinstance(yaml_value,
+                                                              (dict, DictConfig)):  # Accept both dict and DictConfig
+                    # Convert yaml_value to regular dict if it's a DictConfig
+                    if isinstance(yaml_value, DictConfig):
+                        yaml_value = OmegaConf.to_container(yaml_value, resolve=True)
+                    # Recursively merge nested dataclass
+                    merged_value, unmatched_nested = merge_config(yaml_value, current_value)
+                    setattr(config, field_name, merged_value)
+                    # If there are unmatched nested sections, add them to used_keys
+                    if unmatched_nested:
+                        used_keys.add(yaml_key)
+                else:
+                    # Direct update for non-dataclass fields
+                    setattr(config, field_name, yaml_value)
+        except MissingMandatoryValue:
+            # Skip fields with missing mandatory values
+            continue
+
+    # Collect unmatched sections
+    unmatched = {}
+    for key, value in yaml_config.items():
+        if key not in used_keys:
+            if isinstance(value, DictConfig):
+                value = OmegaConf.to_container(value, resolve=True)
+            unmatched[key] = value
+
+    return config, unmatched
+
+# def merge_config(yaml_config: DictConfig, config: Any) -> Any:
+#     """
+#     Merge YAML config into a dataclass config object.
+#     """
+#     if not is_dataclass(config):
+#         return config
+#
+#     # For each field in the dataclass
+#     for field in fields(config):
+#         field_name = field.name
+#         current_value = getattr(config, field_name)
+#
+#         # Find the field in yaml_config, checking both top level and nested
+#         yaml_value = None
+#         if field_name in yaml_config:
+#             yaml_value = yaml_config[field_name]
+#         else:
+#             # Search in all top-level dictionaries
+#             for section in yaml_config.values():
+#                 if isinstance(section, DictConfig) and field_name in section:
+#                     yaml_value = section[field_name]
+#                     break
+#
+#         if yaml_value is not None:
+#             if is_dataclass(current_value) and isinstance(yaml_value, DictConfig):
+#                 # Recursively merge nested dataclass
+#                 setattr(config, field_name, merge_config(yaml_value, current_value))
+#             else:
+#                 # Direct update for non-dataclass fields
+#                 setattr(config, field_name, yaml_value)
+#     return config
 
 
 

@@ -25,7 +25,7 @@ class Config:
 # Create the app
 app = create_configurable_app(Config)
 
-@app.command()
+@app.command(config_key=)
 def train(
     model_name: Annotated[str, typer.Option(help="Model name")],
     data_path: Annotated[Path, typer.Option(help="Data path")],
@@ -36,7 +36,7 @@ def train(
     print(f"data_path {data_path}")
     print(f"Configuration: {OmegaConf.to_yaml(config)}")
 
-@app.command()
+@app.command(config_key=)
 def evaluate(
     model_path: Annotated[Path, typer.Option(help="Model path")],
     config: DictConfig = None

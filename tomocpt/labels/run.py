@@ -1,5 +1,6 @@
+import os
 from pathlib import Path
-from omegaconf import DictConfig
+from omegaconf import DictConfig, OmegaConf
 
 from tomocpt.logger import get_logger
 from tomocpt.defaultConfigs.prepdata_config import PrepareDataType
@@ -35,7 +36,7 @@ def prepare_vol_label_pairs(config: DictConfig = None) -> None:
 
     from tomocpt.labels.helpers import prepare_picking_star, prepare_picking_imod
     # Parse comma-separated strings into lists
-    config.parse_lists()
+    particle_length_ang, raw_data_dir, coordinate_files, class_id = config.parse_lists()
 
     # Rest of your existing prepare_labels code...
     validate_config_lists(config)
@@ -44,10 +45,10 @@ def prepare_vol_label_pairs(config: DictConfig = None) -> None:
     base_output_dir.mkdir(parents=True, exist_ok=True)
 
     dataset_params = zip(
-        config.particle_length_ang,
-        config.raw_data_dir,
-        config.coordinate_files,
-        config.class_id
+        particle_length_ang,
+        raw_data_dir,
+        coordinate_files,
+        class_id
     )
 
     # Process each dataset
@@ -82,6 +83,7 @@ def prepare_vol_label_pairs(config: DictConfig = None) -> None:
             continue
 
     logging.info("Completed processing all datasets")
+    OmegaConf.save(config, os.path.join(base_output_dir, "prep_config.yaml"))
 
 
 if __name__ == '__main__':

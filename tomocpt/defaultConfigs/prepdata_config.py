@@ -19,7 +19,7 @@ class PrepdataConfig:
 
     prepared_data_dir: Annotated[
         Path, typer.Option(help="Path to where the volume label pairs should be stored")
-    ] = Path("/tmp/inputs") #TODO: Is this the same as
+    ] = MISSING
 
     particle_length_ang: Annotated[
         str, typer.Option(help="Comma-separated list of particle lengths in angstroms")
@@ -46,7 +46,9 @@ class PrepdataConfig:
 
     def parse_lists(self):
         """Convert comma-separated strings to lists"""
-        self.particle_length_ang = [float(x.strip()) for x in self.particle_length_ang.split(',')]
-        self.raw_data_dir = [Path(x.strip()) for x in self.raw_data_dir.split(',')]
-        self.coordinate_files = [Path(x.strip()) for x in self.coordinate_files.split(',')]
-        self.class_id = [x.strip() for x in self.class_id.split(',')]
+        particle_length_ang = [float(x.strip()) for x in self.particle_length_ang.split(',')]
+        raw_data_dir = [Path(x.strip()) for x in self.raw_data_dir.split(',')]
+        coordinate_files = [Path(x.strip()) for x in self.coordinate_files.split(',')]
+        class_id = [x.strip() for x in self.class_id.split(',')]
+
+        return particle_length_ang, raw_data_dir, coordinate_files, class_id
