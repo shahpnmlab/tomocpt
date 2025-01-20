@@ -46,9 +46,9 @@ class TrainConfig:
     launch_tensorboard: Annotated[bool, typer.Option(help="Launch tensorboard for evaluating training")] = True
 
     OVERFIT_N_BATCHES: Optional[int] = None
-    N_GPUS: int = 1
-    N_CPUS_IF_NO_GPU: int = 2
-    USE_CUDA_FOR_DATA: bool = False
+    N_GPUS: int = 2
+    N_CPUS_IF_NO_GPU: int = 8
+    USE_CUDA_FOR_DATA: bool = True
 
     FACTOR_REDUCE_LR_PLATEAU_N_EPOCHS: float = 0.5
     COSINE_LR_SCHEDULE_N_EPOCHS: int = 6
