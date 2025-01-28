@@ -49,10 +49,10 @@ def create_linked_config(primary_config, shared_config):
 
 @dataclass
 class MainConfig:
+    prepData: PrepdataConfig = field(default_factory=PrepdataConfig)
     train: TrainConfig = field(default_factory=TrainConfig)
     infer: InferConfig = field(default_factory=InferConfig)
-    prepData: PrepdataConfig = field(default_factory=PrepdataConfig)
-    shared: GlobalPropertyConfig = field(default_factory=GlobalPropertyConfig)
+    #shared: GlobalPropertyConfig = field(default_factory=GlobalPropertyConfig)
 
 _mainConfigNoChanges = MainConfig()
 mainConfig = MainConfig()

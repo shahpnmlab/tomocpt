@@ -45,6 +45,7 @@ def process_mrc(data_fname, target_fname, particle_diameter_angst,
     class.
     '''
     particle_radius_angst = particle_diameter_angst * .5
+
     if outputname_template is None:
         outputname_template = constants.CUBES_FNAMES_TEMPLATES
 

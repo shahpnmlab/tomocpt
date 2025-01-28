@@ -207,7 +207,7 @@ def create_particle_masks(vol_coord_pairs: Dict[str, np.ndarray],
         segmentation_vol = np.zeros(tomo_dim, dtype=precision)
 
         for point in points:
-            z, y, x = point
+            x, y, z = point
             zmin, zmax = int(z - radius_px), int(z + radius_px) + 1
             ymin, ymax = int(y - radius_px), int(y + radius_px) + 1
             xmin, xmax = int(x - radius_px), int(x + radius_px) + 1

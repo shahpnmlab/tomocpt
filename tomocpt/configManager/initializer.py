@@ -82,7 +82,7 @@ def initialize_config(output_path: Path = Path.cwd() / "config.yaml", config: Di
 
     # Prepare the config dictionary with only annotated fields
     config_dict = {
-        "prep": convert_config_to_dict(prepare_conf),
+        "prepData": convert_config_to_dict(prepare_conf),
         "train": convert_config_to_dict(train_conf),
         "network": convert_config_to_dict(network_conf),
         "infer": convert_config_to_dict(infer_conf)
