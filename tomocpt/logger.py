@@ -27,7 +27,7 @@ class CustomLogger:
 
         # Configure the logger
         self.logger = logging.getLogger('application_logger')
-        self.logger.setLevel(logging.DEBUG)
+        self.logger.setLevel(logging.INFO)
 
         # Prevent adding handlers multiple times
         if not self.logger.handlers:

@@ -22,3 +22,4 @@ torchmetrics==1.6.0
 torchvision==0.20.1
 tqdm==4.67.1
 typer==0.13.1
+einops==0.8.0
