@@ -35,7 +35,11 @@ You should see the following output
 ```
 
 # Usage
+### Outline of tomocpt workflow
 <img src="assets/workflow.png">
+
+tomoCPT is a command line driven tool to for the purposes of training and using a swuinUNETR based network for 3D particle
+picking. 
 
 # Changelog
 # Development

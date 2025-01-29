@@ -10,9 +10,15 @@ from tomocpt.training.losses import gradient3d_loss
 class BasePickingModel(BaseModel):
 
     def __init__(self, lr: float | None = None,
-                 model=None, *args, **kwargs):
+                 model=None, config_dict=None, *args, **kwargs):
+        # Remove config_dict from kwargs before passing to parent
+        if 'config_dict' in kwargs:
+            config_dict = kwargs.pop('config_dict')
+
         super(BasePickingModel, self).__init__(lr, *args, **kwargs)
 
+        # Store config if needed
+        self.config = config_dict
 
         if model is None:
             self.model_name, self.model = self.build_model()
