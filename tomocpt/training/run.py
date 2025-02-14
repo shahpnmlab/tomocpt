@@ -25,6 +25,52 @@ def train(
         compile_model: Annotated[bool, typer.Option(help="Path to pre-existing checkpoint file for fine-tuning with new data")] = None,
         train_continue: Annotated[Optional[Path], typer.Option(help="Path to pre-existing checkpoint file for fine-tuning with new data")] = None,
         config: DictConfig = None):
+    """
+        Trains a deep learning model for particle picking or self-supervised learning using PyTorch Lightning.
+
+        This function handles the complete training pipeline including data preparation, model initialization,
+        and training execution. It supports both fresh training and continuing from checkpoints, with options
+        for model compilation and various training configurations.
+
+        Parameters
+        ----------
+        compile_model : bool, optional
+            Whether to compile the model using torch.compile() for potential performance improvements.
+            Defaults to None.
+        train_continue : Path, optional
+            Path to a checkpoint file for resuming training or fine-tuning. If provided for picking mode,
+            can load from either a picking or self-supervised checkpoint. Defaults to None.
+        config : DictConfig, optional
+            Configuration object containing training parameters. If not provided, uses default configuration
+            from mainConfig. Defaults to None.
+
+        Requirements
+        -----------
+        - Valid chunks_dir and model_dir must be specified in the configuration
+        - For picking mode, labeled data is required in the chunks directory
+        - Training data must be properly prepared and chunked before training starts
+
+        Notes
+        -----
+        - Supports two training modes: picking (supervised) and selfSupervised
+        - Uses TensorBoard for training monitoring and visualization
+        - Implements early stopping, learning rate monitoring, and stochastic weight averaging
+        - Supports both GPU and CPU training with automatic device selection
+        - Handles distributed training using DDP strategy when multiple GPUs are available
+        - Copies code for reproducibility when training starts
+        - Automatically launches TensorBoard if configured
+
+        Examples
+        --------
+        Basic training:
+        >>> train(compile_model=False)
+
+        Resume training from checkpoint:
+        >>> train(train_continue='path/to/checkpoint.ckpt')
+
+        Training with model compilation:
+        >>> train(compile_model=True)
+        """
 
     from tomocpt.mainConfig import mainConfig
     torch.set_float32_matmul_precision(mainConfig.train.network.TORCH_MATMUL_PRECISION)

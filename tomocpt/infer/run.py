@@ -14,6 +14,60 @@ from tomocpt.infer.helpers import  process_extracted_coordinates, infer_tomos
 
 def predict(plot: Annotated[bool, typer.Option(help="Plot the cubes")] = False,
           config: DictConfig = None):
+    """
+        Performs parallel inference on tomogram data for particle detection and coordinate extraction.
+
+        This function processes multiple tomogram files (.mrc or .rec) in parallel, applying a trained model
+        to detect particles and optionally extract their coordinates. It supports both CPU and GPU inference
+        with automatic device selection and load balancing.
+
+        Parameters
+        ----------
+        plot : bool, optional
+            Whether to generate visualization plots of the detected particles. Default is False.
+        config : DictConfig, optional
+            Configuration object containing inference parameters. If not provided, uses default
+            configuration from mainConfig.infer. Default is None.
+
+        Requirements
+        -----------
+        - Valid tomogram_dir containing .mrc or .rec files
+        - Trained model weights specified in infer_config.weights
+        - Sufficient disk space in predictions_dir for outputs
+
+        Outputs
+        -------
+        The function generates several possible outputs in the predictions_dir:
+        - Prediction confidence maps (if save_prediction_confidence_map=True)
+        - Particle coordinates (if save_predicted_coords=True)
+        - Visualization plots (if plot=True)
+
+        Configuration Options
+        -------------------
+        Key inference parameters from infer_config:
+        - predictions_batch_size: Number of samples to process in each batch
+        - confidence_threshold: Threshold for particle detection
+        - prediction_particle_length_ang: Particle size in Angstroms
+        - oversubscribe_factor: Factor for GPU oversubscription
+        - nearest_neighbour_dist_angs: Minimum distance between detected particles
+
+        Notes
+        -----
+        - Supports parallel processing across multiple GPUs or CPU cores
+        - Automatically handles device selection and load balancing
+        - Can process multiple tomogram files in batches
+        - Supports coordinate extraction in different output formats
+        - Uses Joblib's Parallel for efficient parallel processing
+
+        Examples
+        --------
+        Basic prediction:
+        >>> predict()
+
+        Prediction with visualization:
+        >>> predict(plot=True)
+        """
+
     from tomocpt.mainConfig import mainConfig
     from tomocpt.utils import accelerator_selector
     infer_config = mainConfig.infer

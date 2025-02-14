@@ -1,5 +1,4 @@
 import gc
-import logging
 import re
 from pathlib import Path
 from typing import Union, List, Tuple, Optional
@@ -81,6 +80,9 @@ def write_relion_star_file(output_dir: str,
 
     # Process each coordinate
     for tomoName, predicted_centroid in zip(tomo_names, predicted_centroids_with_scores):
+        # Convert filename format
+        if re.search(r'_\d+\.\d+Apx', tomoName):
+            tomoName = re.sub(r'_\d+\.\d+Apx', '', tomoName)
         # Add data to the dictionary
         all_tomo_centroids_and_scores[tomo_label].append(tomoName)
         all_tomo_centroids_and_scores["rlnCoordinateX"].append(predicted_centroid[2])
@@ -165,6 +167,17 @@ def write_warp_star_file(output_dir: str,
 
     return output_path
 
+def write_imod_file(output_dir: str,
+                    tomo_names: List[str],
+                    predicted_centroids_with_scores: List[List[float]],
+                    output_filename: str | None = None) -> Path:
+    for tomoName in tomo_names:
+        if re.search(r'_\d+\.\d+Apx', tomoName):
+            tomoName = re.sub(r'_\d+\.\d+Apx', '.tomostar', tomoName)
+
+        output_path = Path(f"{output_dir}/{tomoName}.txt")
+        np.savetxt(output_path, predicted_centroids_with_scores, fmt='%.1f', delimiter="\t")
+        raise NotImplementedError("This is still work in progress!")
 
 def write_sg_motive_list(output_dir: str,
                          tomo_names: List[str],
@@ -235,14 +248,14 @@ def process_extracted_coordinates(results, output_dir: str, output_format: Outpu
     # Unpack the results from parallel processing
     for res in results:
         if not all(isinstance(x, list) for x in res[:2]):  # Basic validation
-            logging.warning(f"Skipping invalid result: {res}")
+            logger.warning(f"Skipping invalid result: {res}")
             continue
         tomoNames.extend(res[0])
         predicted_centroids_with_scores.extend(res[1])
         voxel_sizes.extend([res[2]] * len(res[0]))
 
     if not tomoNames:
-        logging.warning("No valid coordinates were extracted.")
+        logger.warning("No valid coordinates were extracted.")
         return
 
     # Write coordinates based on format
@@ -276,7 +289,7 @@ def process_extracted_coordinates(results, output_dir: str, output_format: Outpu
     else:
         raise NotImplementedError(f"Output format {output_format} not supported")
 
-    logging.info(f"Coordinates saved to: {output_path.resolve()}")
+    logger.info(f"Coordinates saved to: {output_path.resolve()}")
 
 def _infer_one_tomo(tomoFname: str, output_fname: str, particle_ang_length: float, model: torch.nn.Module, gpu_id: int,
                     patch_size: int, batch_size: int,

@@ -31,8 +31,68 @@ def validate_config_lists(config: DictConfig) -> None:
             f"Configuration lists must have matching lengths. Mismatched lengths: {mismatched}. Expected: {reference_length}")
 
 
-def prepare_vol_label_pairs(config: DictConfig = None) -> None:
-    """Process multiple datasets based on configuration"""
+def prepare_data(config: DictConfig = None) -> None:
+    """
+        Prepares particle picking datasets by processing multiple tomograms and their corresponding coordinate files.
+
+        Takes raw tomogram data and coordinate files (in either STAR or IMOD format) and processes them into
+        a standardized format for model training. Handles multiple datasets in parallel, with support for
+        different particle classes and sizes.
+
+        Parameters
+        ----------
+        config : DictConfig, optional
+            Configuration object containing data preparation parameters including:
+            - particle_length_ang: List of particle lengths in Angstroms
+            - raw_data_dir: List of directories containing raw tomogram data
+            - coordinate_files: List of paths to coordinate files
+            - class_id: List of class identifiers for each dataset
+            - coordinate_file_type: Type of coordinate files (STAR or IMOD)
+            - prepared_data_dir: Output directory for processed data
+
+        Outputs
+        -------
+        Creates a directory structure containing:
+        - Processed coordinate files in standardized format
+        - Dataset-specific subdirectories
+        - Saved configuration file (prep_config.yaml)
+
+        Directory Structure
+        ------------------
+        prepared_data_dir/
+        ├── dataset_1_class_{id}/
+        ├── dataset_2_class_{id}/
+        └── prep_config.yaml
+
+        Notes
+        -----
+        - Supports both STAR and IMOD coordinate file formats
+        - Creates separate directories for each dataset/class combination
+        - Handles multiple particle sizes and classes
+        - Validates input configuration before processing
+        - Continues processing remaining datasets if one fails
+        - Logs progress and errors for each dataset
+
+        Examples
+        --------
+        >>> from omegaconf import DictConfig
+        >>> config = DictConfig({
+        ...     'particle_length_ang': '100,150',
+        ...     'raw_data_dir': '/path/to/data1,/path/to/data2',
+        ...     'coordinate_files': '/path/to/coords1.star,/path/to/coords2.star',
+        ...     'class_id': '1,2',
+        ...     'coordinate_file_type': 'star',
+        ...     'prepared_data_dir': '/output/path'
+        ... })
+        >>> prepare_data(config)
+
+        Raises
+        ------
+        ValueError
+            If configuration lists have mismatched lengths or invalid values
+        FileNotFoundError
+            If input directories or files don't exist
+        """
 
     from tomocpt.labels.helpers import prepare_picking_star, prepare_picking_imod
     # Parse comma-separated strings into lists
@@ -87,4 +147,4 @@ def prepare_vol_label_pairs(config: DictConfig = None) -> None:
 
 
 if __name__ == '__main__':
-    prepare_vol_label_pairs()
+    prepare_data()

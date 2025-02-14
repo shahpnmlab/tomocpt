@@ -1,15 +1,14 @@
 from tomocpt.configManager.configManager import create_app
 from tomocpt.mainConfig import mainConfig
-from tomocpt.configManager.initializer import initialize_config
-from tomocpt.labels.run import prepare_vol_label_pairs
+from tomocpt.configManager.initializer import init
+from tomocpt.labels.run import prepare_data
 from tomocpt.training.run import train
 from tomocpt.infer.run import predict
 
 def main():
     tomocpt_app = create_app()
-
-    tomocpt_app.register_command(initialize_config, mainConfig, None, False)
-    tomocpt_app.register_command(prepare_vol_label_pairs, mainConfig, "prepData")
+    tomocpt_app.register_command(init, mainConfig, None, False)
+    tomocpt_app.register_command(prepare_data, mainConfig, "prepData")
     tomocpt_app.register_command(train, mainConfig, "train")
     tomocpt_app.register_command(predict, mainConfig, "infer")
     tomocpt_app.run()
