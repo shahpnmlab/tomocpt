@@ -21,17 +21,17 @@ tomocpt --help
 ```
 You should see the following output
 ```
- Usage: tomocpt [OPTIONS] COMMAND [ARGS]...                                                                                                                                                
-                                                                                                                                                                                           
-╭─ Options ───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
-│ --help          Show this message and exit.                                                                                                                                             │
-╰─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
-╭─ Commands ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
-│ initialize_config         Function to create a template config file for running tomoCPT, only including annotated fields                                                                │
-│ prepare_vol_label_pairs   Process multiple datasets based on configuration                                                                                                              │
-│ train                                                                                                                                                                                   │
-│ predict                                                                                                                                                                                 │
-╰─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+  Usage: tomocpt [OPTIONS] COMMAND [ARGS]...                                                                                                                                                                                                                                                                                                                      
+                                                                                                                                                                                                                                                                                                                                                                 
+╭─ Options ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+│ --help          Show this message and exit.                                                                               │
+╰───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+╭─ Commands ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+│ init           Function to create a template config file for running tomoCPT, only including annotated fields               │
+│ prepare_data   Prepares particle picking datasets by processing multiple tomograms and their corresponding coordinate files.│
+│ train          Trains a deep learning model for particle picking or self-supervised learning using PyTorch Lightning.       │
+│ predict        Performs parallel inference on tomogram data for particle detection and coordinate extraction.               │
+╰─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
 ```
 
 # Usage
