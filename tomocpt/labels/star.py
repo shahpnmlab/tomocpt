@@ -48,6 +48,11 @@ class Star:
         Returns:
             Tuple[pd.DataFrame, str]: Subset of particle data and processed class_id
         """
+        # Check if rlnClassNumber exists in the dataframe
+        if 'rlnClassNumber' not in self.particle_data.columns:
+            logging.warn("rlnClassNumber column not found in particle data. Setting class_id to 'all'.")
+            return self.particle_data, 'all'
+
         if 'all' in class_id:
             subset_data = self.particle_data
             processed_class_id = ''.join(class_id)
