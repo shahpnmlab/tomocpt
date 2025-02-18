@@ -1,76 +1,87 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from typing import Optional, Dict, List
+from typing import Optional, Dict, List, Union, Sequence
 import copy
-from tomocpt.networks.swinunetr import MySwinUNETR
+from monai.networks.nets import SwinUNETR
+from monai.networks.blocks import UnetrBasicBlock, UnetrUpBlock, UnetOutBlock
 
 
-def get_conv_channels(model, module_name):
-    """Helper function to find the number of channels in a module's Conv3d layers"""
-    conv_layers = []
-    for name, module in model.named_modules():
-        if isinstance(module, torch.nn.Conv3d) and module_name in name:
-            conv_layers.append(module)
-    if not conv_layers:
-        return None
-    return conv_layers[-1].out_channels
+class IntegratedContinualSwinUNETR(SwinUNETR):
+    """
+    Integrated version of ContinualSwinUNETR that maintains compatibility with MONAI
+    while adding continual learning capabilities.
+    """
 
+    def __init__(
+            self,
+            img_size: Union[Sequence[int], int],
+            in_channels: int,
+            out_channels: int,
+            feature_size: int = 48,
+            use_checkpoint: bool = False,
+            spatial_dims: int = 3,
+            temperature: float = 2.0,
+            **kwargs
+    ):
+        super().__init__(
+            img_size=img_size,
+            in_channels=in_channels,
+            out_channels=out_channels,
+            feature_size=feature_size,
+            use_checkpoint=use_checkpoint,
+            spatial_dims=spatial_dims,
+            **kwargs
+        )
 
-class ContinualSwinUNETR(MySwinUNETR):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
         self.previous_model = None
-        self.temperature = 2.0
+        self.temperature = temperature
 
-        # Get channel information from conv layers
+        # Initialize feature adaptors
+        self.feature_adaptors = nn.ModuleDict()
+        self._initialize_feature_adaptors()
+
+    def _initialize_feature_adaptors(self):
+        """Initialize feature adaptation layers for continual learning"""
+
         def get_channels(module):
             for m in module.modules():
-                if isinstance(m, torch.nn.Conv3d):
+                if isinstance(m, nn.Conv3d):
                     return m.out_channels
             return None
 
-        # Initialize feature adaptors after getting channel info
-        self.feature_adaptors = nn.ModuleDict(
-            {
-                "enc1": nn.Sequential(
-                    nn.Conv3d(
-                        get_channels(self.encoder1), get_channels(self.encoder1), 1
-                    ),
-                    nn.BatchNorm3d(get_channels(self.encoder1)),
+        # Create adaptors for encoder outputs
+        adaptor_configs = [
+            ('enc1', self.encoder1),
+            ('enc2', self.encoder2),
+            ('enc3', self.encoder3)
+        ]
+
+        for name, module in adaptor_configs:
+            channels = get_channels(module)
+            if channels:
+                self.feature_adaptors[name] = nn.Sequential(
+                    nn.Conv3d(channels, channels, 1),
+                    nn.BatchNorm3d(channels),
                     nn.ReLU(),
-                    nn.Dropout3d(p=0.1),
-                ),
-                "enc2": nn.Sequential(
-                    nn.Conv3d(
-                        get_channels(self.encoder2), get_channels(self.encoder2), 1
-                    ),
-                    nn.BatchNorm3d(get_channels(self.encoder2)),
-                    nn.ReLU(),
-                    nn.Dropout3d(p=0.1),
-                ),
-                "enc3": nn.Sequential(
-                    nn.Conv3d(
-                        get_channels(self.encoder3), get_channels(self.encoder3), 1
-                    ),
-                    nn.BatchNorm3d(get_channels(self.encoder3)),
-                    nn.ReLU(),
-                    nn.Dropout3d(p=0.1),
-                ),
-            }
-        )
+                    nn.Dropout3d(p=0.1)
+                )
 
     def load_previous_weights(self, weights_path: str):
         """Load weights from previous model and initialize as teacher"""
         # Load state dict
         state_dict = torch.load(weights_path, map_location="cpu")
+        if "state_dict" in state_dict:
+            state_dict = state_dict["state_dict"]
 
         # Create a copy of current model as previous model
         self.previous_model = copy.deepcopy(self)
-        self.previous_model.load_state_dict(state_dict)
-        self.previous_model.eval()
+        missing_keys = self.previous_model.load_state_dict(state_dict, strict=False)
+        if missing_keys.missing_keys:
+            print(f"Warning: Missing keys in previous model: {missing_keys.missing_keys}")
 
         # Freeze previous model
+        self.previous_model.eval()
         for param in self.previous_model.parameters():
             param.requires_grad = False
 
@@ -93,48 +104,55 @@ class ContinualSwinUNETR(MySwinUNETR):
 
         # Add encoder groups with progressive multipliers
         encoders = [
-            self.encoder1,
-            self.encoder2,
-            self.encoder3,
-            self.encoder4,
-            self.encoder10,
+            self.encoder1, self.encoder2, self.encoder3,
+            self.encoder4, self.encoder10
         ]
         for i, encoder in enumerate(encoders):
-            groups.append(
-                {"params": encoder.parameters(), "lr_mult": float(encoder_mults[i])}
-            )
+            groups.append({
+                "params": encoder.parameters(),
+                "lr_mult": float(encoder_mults[i])
+            })
 
         # Add decoder groups with progressive multipliers
         decoders = [
-            self.decoder5,
-            self.decoder4,
-            self.decoder3,
-            self.decoder2,
-            self.decoder1,
+            self.decoder5, self.decoder4, self.decoder3,
+            self.decoder2, self.decoder1
         ]
         for i, decoder in enumerate(decoders):
-            groups.append(
-                {"params": decoder.parameters(), "lr_mult": float(decoder_mults[i])}
-            )
+            groups.append({
+                "params": decoder.parameters(),
+                "lr_mult": float(decoder_mults[i])
+            })
 
-        # Add feature adaptor groups if present
-        if self.feature_adaptors is not None:
-            for adaptor in self.feature_adaptors.values():
-                groups.append(
-                    {
-                        "params": adaptor.parameters(),
-                        "lr_mult": 1.0,  # Allow adaptors to learn quickly
-                    }
-                )
+        # Add feature adaptor groups
+        for adaptor in self.feature_adaptors.values():
+            groups.append({
+                "params": adaptor.parameters(),
+                "lr_mult": 1.0  # Allow adaptors to learn quickly
+            })
 
         # Output layer learns fastest
         groups.append({"params": self.out.parameters(), "lr_mult": 1.0})
 
         return groups
 
-    def forward(self, x_in):
-        # Get outputs from current model
-        hidden_states_out = self.swinViT(x_in, self.normalize)
+    def forward(self, x_in, normalize: bool = True):
+        """
+        Forward pass with support for both standard and continual learning modes.
+
+        Args:
+            x_in: Input tensor
+            normalize: Whether to normalize intermediate features
+
+        Returns:
+            During training with previous model:
+                (logits, hidden_features, prev_logits)
+            During training without previous model:
+                (logits, hidden_features)
+            During inference:
+                logits
+        """
+        hidden_states_out = self.swinViT(x_in, normalize)
         enc0 = self.encoder1(x_in)
         enc1 = self.encoder2(hidden_states_out[0])
         enc2 = self.encoder3(hidden_states_out[1])
@@ -142,12 +160,12 @@ class ContinualSwinUNETR(MySwinUNETR):
         dec4 = self.encoder10(hidden_states_out[4])
 
         # Apply feature adaptation if available
-        if self.feature_adaptors is not None:
+        if self.feature_adaptors and self.training:
             enc0 = self.feature_adaptors["enc1"](enc0)
             enc1 = self.feature_adaptors["enc2"](enc1)
             enc2 = self.feature_adaptors["enc3"](enc2)
 
-        # Continue with decoder path
+        # Decoder path
         dec3 = self.decoder5(dec4, hidden_states_out[3])
         dec2 = self.decoder4(dec3, enc3)
         dec1 = self.decoder3(dec2, enc2)
@@ -155,20 +173,34 @@ class ContinualSwinUNETR(MySwinUNETR):
         out = self.decoder1(dec0, enc0)
         logits = self.out(out)
 
-        if self.training and self.previous_model is not None:
-            with torch.no_grad():
-                prev_logits, prev_features = self.previous_model(x_in)
-            return logits, hidden_states_out[4], prev_logits
+        if self.training:
+            if self.previous_model is not None:
+                with torch.no_grad():
+                    prev_outputs = self.previous_model(x_in)
+                    # Handle both tuple and direct outputs from previous model
+                    prev_logits = prev_outputs[0] if isinstance(prev_outputs, tuple) else prev_outputs
+                return logits, hidden_states_out[4], prev_logits
+            return logits, hidden_states_out[4]
 
-        return logits, hidden_states_out[4]
+        return logits
 
     def compute_distillation_loss(
-        self,
-        student_logits: torch.Tensor,
-        teacher_logits: torch.Tensor,
-        alpha: float = 0.5,
+            self,
+            student_logits: torch.Tensor,
+            teacher_logits: torch.Tensor,
+            alpha: float = 0.5
     ) -> torch.Tensor:
-        """Compute knowledge distillation loss between student and teacher"""
+        """
+        Compute knowledge distillation loss between student and teacher.
+
+        Args:
+            student_logits: Predictions from current model
+            teacher_logits: Predictions from previous model
+            alpha: Weight for distillation loss
+
+        Returns:
+            Weighted distillation loss
+        """
         # Soften probability distributions
         student_probs = F.softmax(student_logits / self.temperature, dim=1)
         teacher_probs = F.softmax(teacher_logits / self.temperature, dim=1)
@@ -177,7 +209,22 @@ class ContinualSwinUNETR(MySwinUNETR):
         kd_loss = F.kl_div(
             F.log_softmax(student_logits / self.temperature, dim=1),
             teacher_probs,
-            reduction="batchmean",
-        ) * (self.temperature**2)
+            reduction="batchmean"
+        ) * (self.temperature ** 2)
 
         return kd_loss * alpha
+
+    def load_from(self, weights):
+        """
+        Load weights with compatibility for both MONAI and custom checkpoints.
+        Extends MONAI's load_from with support for feature adaptors.
+        """
+        # First load weights using MONAI's method
+        super().load_from(weights)
+
+        # Then handle any feature adaptor weights if present
+        state_dict = weights["state_dict"] if "state_dict" in weights else weights
+        if any("feature_adaptors" in k for k in state_dict.keys()):
+            adaptor_dict = {k: v for k, v in state_dict.items()
+                            if "feature_adaptors" in k}
+            self.load_state_dict(adaptor_dict, strict=False)

@@ -285,22 +285,25 @@ class SyntheticDataset(Dataset):
         }
 
 
+
 if __name__ == "__main__":
     import os
     from tomocpt.mainConfig import mainConfig
-    import os
     from pytorch_lightning import Trainer
-    from pytorch_lightning.callbacks import ModelCheckpoint
+    from pytorch_lightning.callbacks import ModelCheckpoint, LearningRateMonitor
     import torch
     from torch.utils.data import DataLoader, Dataset
 
     # Create directories if they don't exist
     os.makedirs("checkpoints", exist_ok=True)
 
-    # Create synthetic dataset
+    # Create synthetic datasets for both training and validation
     train_config = mainConfig.train
-    dataset = SyntheticDataset(num_samples=4, chunk_size=train_config.CHUNK_SIZE)
-    dataloader = DataLoader(dataset, batch_size=2, shuffle=True)
+    train_dataset = SyntheticDataset(num_samples=4, chunk_size=train_config.CHUNK_SIZE)
+    val_dataset = SyntheticDataset(num_samples=2, chunk_size=train_config.CHUNK_SIZE)
+
+    train_dataloader = DataLoader(train_dataset, batch_size=2, shuffle=True)
+    val_dataloader = DataLoader(val_dataset, batch_size=2, shuffle=False)
 
     # Phase 1: Initial training with MySwinUNETR
     print("\n=== Phase 1: Initial Training ===")
@@ -310,23 +313,35 @@ if __name__ == "__main__":
         dirpath="checkpoints",
         filename="myswinunetr-{epoch:02d}",
         save_top_k=1,
-        monitor="loss",
+        monitor="val_loss",  # Changed to monitor validation loss
+        mode="min",  # Added mode for proper monitoring
         save_last=True,
     )
+
+    # Add learning rate monitor callback
+    lr_monitor = LearningRateMonitor(logging_interval='epoch')
 
     # Initialize model and trainer
     initial_model = BasePickingModel()
     trainer = Trainer(
         enable_checkpointing=True,
-        callbacks=[checkpoint_callback],
+        callbacks=[checkpoint_callback, lr_monitor],
         max_epochs=2,
-        logger=False,
-        accelerator="mps",  # Use MPS for Mac
+        logger=True,  # Enable logging
+        accelerator="auto",
         devices=1,
+        # Add validation checking every epoch
+        check_val_every_n_epoch=1,
+        # Optional: limit validation batches for faster training
+        limit_val_batches=2
     )
 
-    # Train the model properly using fit
-    trainer.fit(initial_model, dataloader)
+    # Train the model with validation
+    trainer.fit(
+        initial_model,
+        train_dataloaders=train_dataloader,
+        val_dataloaders=val_dataloader
+    )
 
     # Get the path of the saved checkpoint
     checkpoint_path = checkpoint_callback.best_model_path
@@ -337,35 +352,28 @@ if __name__ == "__main__":
     # Phase 2: Fine-tuning with ContinualSwinUNETR
     print("\n=== Phase 2: Fine-tuning ===")
 
-    try:
-        # Initialize new model with pretrained weights
-        fine_tune_model = BasePickingModel(
-            lr=0.0001,  # Lower learning rate for fine-tuning
-            pretrained_weights=checkpoint_path,
+
+    # Initialize new model with pretrained weights
+    fine_tune_model = BasePickingModel(
+        lr=0.0001,
+        pretrained_weights=checkpoint_path,
+    )
+
+    # Setup new trainer for fine-tuning
+    fine_tune_trainer = Trainer(
+        enable_checkpointing=False,
+        max_epochs=1,
+        logger=True,  # Enable logging
+        accelerator="auto",
+        devices=1,
+        # Add validation checking
+        check_val_every_n_epoch=1,
+        limit_val_batches=2
+    )
+
+    # Train for one epoch using fit with validation
+    fine_tune_trainer.fit(
+        fine_tune_model,
+        train_dataloaders=train_dataloader,
+        val_dataloaders=val_dataloader
         )
-
-        # Setup new trainer for fine-tuning
-        fine_tune_trainer = Trainer(
-            enable_checkpointing=False,
-            max_epochs=1,
-            logger=False,
-            accelerator="mps",
-            devices=1,
-        )
-
-        # Verify model type and run one epoch
-        print(f"Model type: {type(fine_tune_model.model).__name__}")
-
-        # Train for one epoch using fit
-        fine_tune_trainer.fit(fine_tune_model, dataloader)
-
-    except Exception as e:
-        print(f"Error during fine-tuning: {str(e)}")
-        raise
-    finally:
-        # Cleanup checkpoints
-        if os.path.exists(checkpoint_path):
-            os.remove(checkpoint_path)
-        if os.path.exists(os.path.join("checkpoints", "last.ckpt")):
-            os.remove(os.path.join("checkpoints", "last.ckpt"))
-        os.rmdir("checkpoints")
