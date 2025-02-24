@@ -306,8 +306,7 @@ def process_extracted_coordinates(
 
     # Write coordinates based on format
     if output_format == OutputFormat.relion31:
-
-        output_path = write_relion_star_file(
+        write_relion_star_file(
             output_dir=output_dir,
             tomo_names=tomoNames,
             predicted_centroids_with_scores=predicted_centroids_with_scores,
@@ -316,7 +315,7 @@ def process_extracted_coordinates(
             version=3.1,
         )
     elif output_format == OutputFormat.relion50:
-        output_path = write_relion_star_file(
+        write_relion_star_file(
             output_dir=output_dir,
             tomo_names=tomoNames,
             predicted_centroids_with_scores=predicted_centroids_with_scores,
@@ -326,7 +325,7 @@ def process_extracted_coordinates(
         )
 
     elif output_format == OutputFormat.warp:
-        output_path = write_warp_star_file(
+        write_warp_star_file(
             output_dir=output_dir,
             tomo_names=tomoNames,
             predicted_centroids_with_scores=predicted_centroids_with_scores,
@@ -334,8 +333,6 @@ def process_extracted_coordinates(
         )
     else:
         raise NotImplementedError(f"Output format {output_format} not supported")
-
-    logger.info(f"Coordinates saved to: {output_path.resolve()}")
 
 
 def _infer_one_tomo(
@@ -376,6 +373,7 @@ def _infer_one_tomo(
         model.hparams.config.prepData.desired_particle_pixel_size
     )
     if not Path(output_fname).exists():
+        # Preprocess the tomogram data
         (vol, new_shape, old_shape, voxel_size, padding_values, scalar) = (
             _preprocess_data_mrc(
                 tomoFname,
@@ -386,33 +384,8 @@ def _infer_one_tomo(
                 use_gpu=infer_config.USE_CUDA_FOR_DATA if gpu_id is not None else False,
             )
         )
-        if maskFname and Path(maskFname).exists():
-            logger.info("Loading mask")
-            try:
-                m = load_mrc(maskFname, normalize=None, return_boxSize=False)
-                mask, _ = resize_volume(
-                    m,
-                    new_shape=new_shape,
-                    chunk_size=patch_size,
-                    use_gpu=infer_config.USE_CUDA_FOR_DATA,
-                    mean_as_padding_value=False,
-                )
-                mask = torch.as_tensor(mask, dtype=vol.dtype)
-                if mask.shape != vol.shape:
-                    raise ValueError(
-                        f"Resized mask shape {mask.shape} does not match volume shape {vol.shape}"
-                    )
-                vol = vol * mask
-                del mask
-                gc.collect()
-            except Exception as e:
-                logger.warning(
-                    f"Error processing mask: {str(e)}. Using the whole volume for inference."
-                )
-        else:
-            logger.warning(
-                f"No mask provided or mask file not found for {Path(tomoFname).name}. Using the whole volume for inference."
-            )
+
+        # Add batch dimension for inference
         vol = vol.unsqueeze(0)
         subject = tio.Subject({"input_data": tio.ScalarImage(tensor=vol)})
 
@@ -426,6 +399,7 @@ def _infer_one_tomo(
         del vol
         aggregator = tio.inference.GridAggregator(grid_sampler, overlap_mode="hann")
 
+        # Perform inference
         with torch.inference_mode():
             for idx, patches_batch in enumerate(tqdm(patch_loader)):
                 input_tensor = patches_batch["input_data"][tio.DATA]
@@ -435,18 +409,36 @@ def _infer_one_tomo(
                 outputs = model.predict_step(input_tensor, idx)
                 aggregator.add_batch(outputs, locations)
 
+        # Get full volume prediction and restore original size
         output_tensor = aggregator.get_output_tensor()
         output_tensor = output_tensor.squeeze(0)
         output_tensor = unpad(output_tensor, padding_values)
         output_tensor = output_tensor.cpu().numpy()
-        # output_tensor = resize(output_tensor, output_shape=old_shape, mode='constant', cval=0)
-        output_tensor, sym_padding = resize_volume(
+        output_tensor, _ = resize_volume(
             output_tensor,
             new_shape=old_shape,
             chunk_size=patch_size,
             use_gpu=gpu_id is not None and gpu_id >= 0,
             mean_as_padding_value=False,
         )
+
+        # Apply mask if provided - mask must match the restored volume dimensions
+        if maskFname and Path(maskFname).exists():
+            logger.info("Loading mask")
+            try:
+                mask = load_mrc(maskFname, normalize=None, return_boxSize=False)
+                if mask.shape != output_tensor.shape:
+                    raise ValueError(
+                        f"Mask shape {mask.shape} does not match restored volume shape {output_tensor.shape}. "
+                        "The mask must have the same dimensions as the original volume."
+                    )
+                output_tensor = output_tensor * mask
+                del mask
+                gc.collect()
+            except Exception as e:
+                logger.error(f"Error processing mask: {str(e)}. Aborting.")
+                raise
+
         if save_pred_mask:
             write_segmentation_mask(
                 output_tensor, output_fname, angpix=voxel_size, overwrite=True
@@ -458,7 +450,7 @@ def _infer_one_tomo(
         output_tensor, voxel_size = load_mrc(
             output_fname, normalize=None, return_boxSize=True
         )
-        logger.info(f"Mask is already available for {output_fname}")
+        logger.info(f"Found previous prediction results for {output_fname}")
     else:
         return [], [], voxel_size
 
