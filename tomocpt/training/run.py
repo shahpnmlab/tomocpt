@@ -108,16 +108,7 @@ def train(
         checkpointer = ModelCheckpoint(
             monitor="val_loss", filename="weights", verbose=True
         )
-        callbacks = [
-            TQDMProgressBar(refresh_rate=10),
-            EarlyStopping(
-                monitor="val_loss",
-                patience=6 * train__config.COSINE_LR_SCHEDULE_N_EPOCHS,
-                verbose=True,
-            ),
-            checkpointer,
-            LearningRateMonitor(logging_interval="epoch"),
-        ]
+
     # This will be consolidated to pre-train and supervised train
     elif mainConfig.train.mode == TrainingModes.selfSupervised:
         Model = SelfSupervisedModel
@@ -165,10 +156,7 @@ def train(
         resume_from_checkpoint = None
 
     callbacks += [
-        StochasticWeightAveraging(
-            annealing_epochs=train__config.COSINE_LR_SCHEDULE_N_EPOCHS,
-            swa_lrs=0.1 * pl_model.lr,
-        )
+
     ]
 
     data = Data(
@@ -179,6 +167,21 @@ def train(
     )
 
     data.setup()
+
+    callbacks = [
+        #TQDMProgressBar(refresh_rate=10),
+        EarlyStopping(
+            monitor="val_loss",
+            patience=6 * train__config.COSINE_LR_SCHEDULE_N_EPOCHS,
+            verbose=True,
+        ),
+        checkpointer,
+        LearningRateMonitor(logging_interval="epoch"),
+        StochasticWeightAveraging(
+            annealing_epochs=train__config.COSINE_LR_SCHEDULE_N_EPOCHS,
+            swa_lrs=0.1 * pl_model.lr,
+        )
+    ]
 
     if is_main_process():
         logging.info(f"Size of the training dataset {len(data.train_dataloader())}")
@@ -212,7 +215,7 @@ def train(
         gradient_clip_val=1.0,
         gradient_clip_algorithm="norm",
         enable_model_summary=False,
-        enable_progress_bar=False
+        enable_progress_bar=False,
     )
 
     if trainer.is_global_zero:
