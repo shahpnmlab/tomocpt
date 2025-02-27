@@ -1,11 +1,6 @@
 from monai.networks.nets import SwinUNETR
 import torch
 
-import warnings
-
-with warnings.catch_warnings():
-    warnings.filterwarnings("ignore", category=FutureWarning)
-
 
 class MySwinUNETR(SwinUNETR):
     def forward(self, x_in):
