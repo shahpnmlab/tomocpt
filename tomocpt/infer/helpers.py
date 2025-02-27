@@ -208,7 +208,7 @@ def write_sg_motive_list(
     tomo_names: List[str],
     predicted_centroids_with_scores: List[List[float]],
     output_filename: str = "tomocpt_coords.star",
-) -> Path:  # TODO: This is incomple
+) -> Path:
     raise NotImplementedError()
 
 
