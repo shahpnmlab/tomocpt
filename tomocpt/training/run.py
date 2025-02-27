@@ -1,6 +1,7 @@
 import os
 import os.path as osp
 import shutil
+import warnings
 import subprocess
 import sys
 import psutil
@@ -20,6 +21,12 @@ from tomocpt.utils import read_particles_csvs
 from tomocpt.logger import get_logger
 
 logging = get_logger()
+
+warnings.filterwarnings(
+    "ignore",
+    message="monai.networks.nets.swin_unetr SwinUNETR.__init__:img_size*",
+    category=FutureWarning,
+)
 
 
 def train(

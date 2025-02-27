@@ -1,4 +1,3 @@
-import warnings
 import torch
 import torchvision
 from torch import nn
@@ -8,9 +7,6 @@ from tomocpt.training.losses import gradient3d_loss
 from tomocpt.logger import get_logger
 
 logging = get_logger()
-
-with warnings.catch_warnings():
-    warnings.filterwarnings("ignore", category=FutureWarning)
 
 
 class BasePickingModel(BaseModel):
