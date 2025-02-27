@@ -1,6 +1,12 @@
 from monai.networks.nets import SwinUNETR
 import torch
 
+import warnings
+
+with warnings.catch_warnings():
+    warnings.filterwarnings("ignore", category=FutureWarning)
+
+
 class MySwinUNETR(SwinUNETR):
     def forward(self, x_in):
         hidden_states_out = self.swinViT(x_in, self.normalize)
@@ -20,12 +26,13 @@ class MySwinUNETR(SwinUNETR):
 
 def _test():
     n_voxels = 64
-    model = SwinUNETR(img_size=(n_voxels, n_voxels, n_voxels),
-                      in_channels=4,
-                      out_channels=3,
-                      feature_size=24,
-                      use_checkpoint=False,
-                      )
+    model = SwinUNETR(
+        img_size=(n_voxels, n_voxels, n_voxels),
+        in_channels=4,
+        out_channels=3,
+        feature_size=24,
+        use_checkpoint=False,
+    )
 
     model = torch.nn.Sequential(model, torch.nn.Sigmoid())
     indata = torch.rand(8, 4, n_voxels, n_voxels, n_voxels)
@@ -34,11 +41,13 @@ def _test():
     out = model(indata)
     print(out.shape)
 
-    model = MySwinUNETR(img_size=(n_voxels, n_voxels, n_voxels),
-                      in_channels=4,
-                      out_channels=3,
-                      feature_size=24,
-                      use_checkpoint=False)
+    model = MySwinUNETR(
+        img_size=(n_voxels, n_voxels, n_voxels),
+        in_channels=4,
+        out_channels=3,
+        feature_size=24,
+        use_checkpoint=False,
+    )
     out, hid = model(indata)
     print(out.shape, hid.shape)
 
