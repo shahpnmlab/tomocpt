@@ -6,7 +6,10 @@ from torch import nn
 from tomocpt.networks.baseModel import BaseModel
 from tomocpt.training.losses import gradient3d_loss
 from tomocpt.logger import get_logger
+
 logging = get_logger()
+
+
 class BasePickingModel(BaseModel):
 
     def __init__(
