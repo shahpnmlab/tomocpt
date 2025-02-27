@@ -17,8 +17,11 @@ class PrepdataConfig:
         str, typer.Option(help="Comma-separated paths to tomogram directories")
     ] = MISSING
 
-    prepared_data_dir: Annotated[
-        Path, typer.Option(help="Path to where the volume label pairs should be stored")
+    training_data_dir: Annotated[
+        Path,
+        typer.Option(
+            help="Path to where the volume label pairs should be stored for subsequent training step"
+        ),
     ] = MISSING
 
     particle_length_ang: Annotated[
@@ -33,12 +36,15 @@ class PrepdataConfig:
         PrepareDataType, typer.Option(help="Coordinate file type (star or imod)?")
     ] = PrepareDataType.star
 
-    class_id: Annotated[
-        str, typer.Option(help="Comma-separated list of class IDs")
-    ] = "all"
+    class_id: Annotated[str, typer.Option(help="Comma-separated list of class IDs")] = (
+        "all"
+    )
 
     desired_particle_pixel_size: Annotated[
-        int, typer.Option(help="Resize the volume to dimensions that yield particle radius in pixels")
+        int,
+        typer.Option(
+            help="Resize the volume to dimensions that yield particle radius in pixels"
+        ),
     ] = 20
 
     USE_CUDA_FOR_DATA: bool = True
@@ -46,9 +52,11 @@ class PrepdataConfig:
 
     def parse_lists(self):
         """Convert comma-separated strings to lists"""
-        particle_length_ang = [float(x.strip()) for x in self.particle_length_ang.split(',')]
-        raw_data_dir = [Path(x.strip()) for x in self.raw_data_dir.split(',')]
-        coordinate_files = [Path(x.strip()) for x in self.coordinate_files.split(',')]
-        class_id = [x.strip() for x in self.class_id.split(',')]
+        particle_length_ang = [
+            float(x.strip()) for x in self.particle_length_ang.split(",")
+        ]
+        raw_data_dir = [Path(x.strip()) for x in self.raw_data_dir.split(",")]
+        coordinate_files = [Path(x.strip()) for x in self.coordinate_files.split(",")]
+        class_id = [x.strip() for x in self.class_id.split(",")]
 
         return particle_length_ang, raw_data_dir, coordinate_files, class_id
