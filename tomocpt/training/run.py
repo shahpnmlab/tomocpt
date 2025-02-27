@@ -15,8 +15,7 @@ from pytorch_lightning.loggers import TensorBoardLogger
 import pytorch_lightning as pl
 
 from tomocpt.dataPreparation.prepareRawData import do_chunking, get_chunking_name_done
-from tomocpt.utils import read_particles_csvs
-
+from tomocpt.utils import read_particles_csvs, is_main_process
 
 from tomocpt.logger import get_logger
 
@@ -80,9 +79,7 @@ def train(
     )
     if not Path(chunking_name_done).is_file():
         if mainConfig.train.training_data_dir is None:
-            training_data_dir = (
-                mainConfig.prepData.training_data_dir
-            )  # TODO: Is training_data_dir the same as train.training_data_dir
+            training_data_dir = mainConfig.prepData.training_data_dir
         else:
             training_data_dir = mainConfig.train.training_data_dir
         if not Path(training_data_dir).is_dir():
@@ -182,7 +179,9 @@ def train(
     )
 
     data.setup()
-    logging.info(f"Size of the training dataset {len(data.train_dataloader())}")
+
+    if is_main_process():
+        logging.info(f"Size of the training dataset {len(data.train_dataloader())}")
 
     tb_logger = TensorBoardLogger(
         save_dir=f"{mainConfig.train.model_dir}/{mainConfig.train.experiment_name}",

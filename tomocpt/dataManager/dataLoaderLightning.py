@@ -3,33 +3,59 @@ import os
 import torchio as tio
 import torch
 import pytorch_lightning as pl
+
+from tomocpt.utils import is_main_process
+
 try:
     from torchio.data import SubjectsLoader as DL
 except ImportError:
     from torch.utils.data import DL
 from tomocpt.dataManager.datasetIO import VolumeDatsetIO
+from tomocpt.logger import get_logger
 
+logging = get_logger()
 
 
 class Data(pl.LightningDataModule):
-    def set_default_args(self, data_dir: str | None,
-                         return_labels: bool | None,
-                         batch_size: int | None,
-                         workers_for_data: int | None):
+    def set_default_args(
+        self,
+        data_dir: str | None,
+        return_labels: bool | None,
+        batch_size: int | None,
+        workers_for_data: int | None,
+    ):
 
-        self.base_data_dir = data_dir if data_dir is not None else self.config .chunks_dir
-        self.batch_size = batch_size if batch_size is not None else self.config .batch_size
-        self.workers_for_data = workers_for_data if workers_for_data is not None else self.config .WORKERS_FOR_DATA
+        self.base_data_dir = (
+            data_dir if data_dir is not None else self.config.chunks_dir
+        )
+        self.batch_size = (
+            batch_size if batch_size is not None else self.config.batch_size
+        )
+        self.workers_for_data = (
+            workers_for_data
+            if workers_for_data is not None
+            else self.config.WORKERS_FOR_DATA
+        )
         self.return_labels = return_labels if return_labels is not None else False
 
-    def __init__(self, data_dir: str | None = None, return_labels: bool | None = None,
-                 batch_size: int | None = None, workers_for_data: int | None = None):
+    def __init__(
+        self,
+        data_dir: str | None = None,
+        return_labels: bool | None = None,
+        batch_size: int | None = None,
+        workers_for_data: int | None = None,
+    ):
         super().__init__()
         from tomocpt.mainConfig import mainConfig
+
         self.config = mainConfig.train
 
-        self.set_default_args(data_dir=data_dir, return_labels=return_labels,
-                              batch_size=batch_size, workers_for_data=workers_for_data)
+        self.set_default_args(
+            data_dir=data_dir,
+            return_labels=return_labels,
+            batch_size=batch_size,
+            workers_for_data=workers_for_data,
+        )
         self.dataset_training = None
         self.dataset_val = None
 
@@ -38,25 +64,31 @@ class Data(pl.LightningDataModule):
         return os.path.join(self.base_data_dir, split)
 
     def setup(self, stage: Optional[str] = None):
-        train_dir = self._get_split_dir('train')
-        val_dir = self._get_split_dir('val')
+        # Get local rank (0 for the main process, >0 for other processes)
+        import torch.distributed as dist
 
-        print(f"Loading training data from: {train_dir}")
-        print(f"Loading validation data from: {val_dir}")
+        local_rank = 0
+        if dist.is_available() and dist.is_initialized():
+            local_rank = dist.get_rank()
+
+        train_dir = self._get_split_dir("train")
+        val_dir = self._get_split_dir("val")
+
+        if is_main_process():
+            logging.info(f"Loading training data from: {train_dir}")
+            logging.info(f"Loading validation data from: {val_dir}")
 
         self.dataset_training = VolumeDatsetIO.get_dataset(
-            data_dir=train_dir,
-            isTraining=True,
-            return_labels=self.return_labels
+            data_dir=train_dir, isTraining=True, return_labels=self.return_labels
         )
 
         self.dataset_val = VolumeDatsetIO.get_dataset(
-            data_dir=val_dir,
-            isTraining=False,
-            return_labels=self.return_labels
+            data_dir=val_dir, isTraining=False, return_labels=self.return_labels
         )
 
-    def transfer_batch_to_device(self, batch: Any, device: torch.device, dataloader_idx: int) -> Any:
+    def transfer_batch_to_device(
+        self, batch: Any, device: torch.device, dataloader_idx: int
+    ) -> Any:
         batch["input_data"] = batch["input_data"][tio.DATA].to(device)
         batch["target_data"] = batch["target_data"][tio.DATA].to(device)
         return batch
@@ -67,9 +99,15 @@ class Data(pl.LightningDataModule):
             batch_size=self.batch_size,
             num_workers=self.workers_for_data,
             shuffle=True,
-            persistent_workers=True if (self.config.N_GPUS > 0 and
-                                        self.config.use_gpus > 0 and
-                                        self.workers_for_data > 0) else False
+            persistent_workers=(
+                True
+                if (
+                    self.config.N_GPUS > 0
+                    and self.config.use_gpus > 0
+                    and self.workers_for_data > 0
+                )
+                else False
+            ),
         )
         return dl
 
@@ -79,9 +117,15 @@ class Data(pl.LightningDataModule):
             batch_size=self.batch_size,
             num_workers=self.workers_for_data,
             shuffle=False,
-            persistent_workers=True if (self.config.N_GPUS > 0 and
-                                        self.config.use_gpus > 0 and
-                                        self.workers_for_data > 0) else False
+            persistent_workers=(
+                True
+                if (
+                    self.config.N_GPUS > 0
+                    and self.config.use_gpus > 0
+                    and self.workers_for_data > 0
+                )
+                else False
+            ),
         )
 
     def test_dataloader(self):
