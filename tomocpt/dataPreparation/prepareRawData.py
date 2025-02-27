@@ -14,19 +14,29 @@ from sklearn.model_selection import train_test_split
 
 from tomocpt import constants
 from tomocpt.dataManager.dataUtils import load_mrc, resize_volume
-from tomocpt.dataPreparation.helpers import _preprocess_data_mrc, get_labels_dirname, get_vol_chunks
+from tomocpt.dataPreparation.helpers import (
+    _preprocess_data_mrc,
+    get_labels_dirname,
+    get_vol_chunks,
+)
 from tomocpt.defaultConfigs.train_config import CrossValidationLevelSplit
 from tomocpt.mainConfig import mainConfig
 from tomocpt.utils import accelerator_selector, makedir
 
 
-def process_mrc(data_fname, target_fname, particle_diameter_angst,
-                outputname_template: Optional[str],
-                new_size: int,
-                chunk_size: Optional[int]=None, stride: Optional[int]=None,
-                normalization_function: str = "robust_normalization",
-                require_labels: bool = True, use_gpu: bool =False):
-    '''
+def process_mrc(
+    data_fname,
+    target_fname,
+    particle_diameter_angst,
+    outputname_template: Optional[str],
+    new_size: int,
+    chunk_size: Optional[int] = None,
+    stride: Optional[int] = None,
+    normalization_function: str = "robust_normalization",
+    require_labels: bool = True,
+    use_gpu: bool = False,
+):
+    """
     F0 = Compute number of zeros in vol => (torch.isclose(target,0).sum()
     F1 = Compute number of non-zeros in vol => target.numel() - F0
     Drop probability = 1-(F1/F0)
@@ -43,8 +53,8 @@ def process_mrc(data_fname, target_fname, particle_diameter_angst,
     Returns:
     drop_probability (tensor): a tensor of the same shape as F1 and F0, containing the drop probabilities for each
     class.
-    '''
-    particle_radius_angst = particle_diameter_angst * .5
+    """
+    particle_radius_angst = particle_diameter_angst * 0.5
 
     if outputname_template is None:
         outputname_template = constants.CUBES_FNAMES_TEMPLATES
@@ -55,48 +65,63 @@ def process_mrc(data_fname, target_fname, particle_diameter_angst,
     if stride is None:
         stride = mainConfig.train.CHUNK_STRIDE
 
-    vol, new_shape, old_shape, voxel_size, padding_values, scalar = _preprocess_data_mrc(data_fname,
-                                                                                              particle_radius_angst,
-                                                                                              normalization_function,
-                                                                                              new_size,
-                                                                                              chunk_size,
-                                                                                              use_gpu)
+    vol, new_shape, old_shape, voxel_size, padding_values, scalar = (
+        _preprocess_data_mrc(
+            data_fname,
+            particle_radius_angst,
+            normalization_function,
+            new_size,
+            chunk_size,
+            use_gpu,
+        )
+    )
     accel, _ = accelerator_selector(use_cuda=use_gpu)
 
-    alpha =  mainConfig.prepData.ALPHA_FOR_DROPPING_EMPTY_CUBES
+    alpha = mainConfig.prepData.ALPHA_FOR_DROPPING_EMPTY_CUBES
 
-    drop_probablity = 0.
+    drop_probablity = 0.0
     if target_fname:
         vol_target = load_mrc(target_fname, normalize=None, return_boxSize=False)
         vol_target = torch.tensor(vol_target)
         F0 = torch.isclose(vol_target, torch.zeros_like(vol_target)).sum()
         F1 = torch.numel(vol_target) - F0
-        drop_probablity = torch.clip(1 - alpha * (F1 / F0), torch.zeros(1), torch.ones(1))
+        drop_probablity = torch.clip(
+            1 - alpha * (F1 / F0), torch.zeros(1), torch.ones(1)
+        )
     else:
         vol_target = torch.zeros_like(vol)
 
-    if accel == 'gpu':
+    if accel == "gpu":
         vol_target = vol_target.cuda()
         vol = vol.cuda()
 
     if vol_target.shape != tuple(new_shape):
         assert min(new_shape) >= chunk_size
-        vol_target, _ = resize_volume(volume=vol_target, new_shape=new_shape, chunk_size=chunk_size, use_gpu=use_gpu)
+        vol_target, _ = resize_volume(
+            volume=vol_target,
+            new_shape=new_shape,
+            chunk_size=chunk_size,
+            use_gpu=use_gpu,
+        )
 
     labels_dirname = get_labels_dirname(not target_fname is None)
 
     n_cubes = 0
     chunk_data_fnames = []
     for i, ((chunk_data, chunk_target), coords) in enumerate(
-            get_vol_chunks(vol, vol_target, chunk_size, stride=stride)):
+        get_vol_chunks(vol, vol_target, chunk_size, stride=stride)
+    ):
 
         if chunk_target.sum() <= 0:
             if random.random() < drop_probablity:
                 continue
 
-        chunk_data_fname = outputname_template % (constants.VOLUMES_DIR_NAME_PREFIX,
-                                                  constants.VOLUMES_DIR_NAME_PREFIX,
-                                                  i, *tuple(coords))
+        chunk_data_fname = outputname_template % (
+            constants.VOLUMES_DIR_NAME_PREFIX,
+            constants.VOLUMES_DIR_NAME_PREFIX,
+            i,
+            *tuple(coords),
+        )
         chunk_data_fnames.append(chunk_data_fname)
         # chunk_data = tio.ScalarImage(tensor=torch.unsqueeze(chunk_data, 0).cpu())
         chunk_data = tio.ScalarImage(tensor=torch.Tensor(chunk_data[None, ...]).cpu())
@@ -106,17 +131,24 @@ def process_mrc(data_fname, target_fname, particle_diameter_angst,
 
         if target_fname:
             labels_dir_prefix = get_labels_dirname(require_labels)
-            chunk_target_fname = outputname_template % (labels_dir_prefix,
-                                                        labels_dir_prefix,
-                                                        i, *tuple(coords))
-            chunk_target = tio.ScalarImage(tensor=torch.Tensor(chunk_target[None, ...]).cpu())
+            chunk_target_fname = outputname_template % (
+                labels_dir_prefix,
+                labels_dir_prefix,
+                i,
+                *tuple(coords),
+            )
+            chunk_target = tio.ScalarImage(
+                tensor=torch.Tensor(chunk_target[None, ...]).cpu()
+            )
             # chunk_target = tio.LabelMap(tensor=torch.unsqueeze(chunk_target, 0).cpu())
             chunk_target.save(chunk_target_fname, squeeze=False)
             del chunk_target
             gc.collect()
         else:
             fullparent, basename = os.path.split(chunk_data_fname)
-            basename = labels_dirname + basename.removeprefix(constants.VOLUMES_DIR_NAME_PREFIX)
+            basename = labels_dirname + basename.removeprefix(
+                constants.VOLUMES_DIR_NAME_PREFIX
+            )
             dirname = os.path.join(os.path.split(fullparent)[0], labels_dirname)
             chunk_target_fname = os.path.join(dirname, basename)
             os.makedirs(dirname, exist_ok=True)
@@ -125,15 +157,18 @@ def process_mrc(data_fname, target_fname, particle_diameter_angst,
     return data_fname, n_cubes, chunk_data_fnames
 
 
-
 def get_chunking_name_done(chunkedDataDir, require_labels):
-    return f'{chunkedDataDir}/done_labels_{require_labels}.txt'
+    return f"{chunkedDataDir}/done_labels_{require_labels}.txt"
 
-def do_chunking(tomosDf: pd.DataFrame, chunkedDataDir,
-                 desired_particle_pixel_size:int,
-                 n_cpus: int,
-                 require_labels: bool = True,
-                 train_val_level=None):
+
+def do_chunking(
+    tomosDf: pd.DataFrame,
+    chunkedDataDir,
+    desired_particle_pixel_size: int,
+    n_cpus: int,
+    require_labels: bool = True,
+    train_val_level=None,
+):
     """
 
     :param tomosDf: A table with volume-lable filenames pairs
@@ -147,7 +182,9 @@ def do_chunking(tomosDf: pd.DataFrame, chunkedDataDir,
         train_val_level = mainConfig.train.train_on
 
     if train_val_level == CrossValidationLevelSplit.tomos:
-        df_train, df_val = train_test_split(tomosDf, test_size=constants.PERCENT_TO_VALIDATE)
+        df_train, df_val = train_test_split(
+            tomosDf, test_size=constants.PERCENT_TO_VALIDATE
+        )
     elif train_val_level == CrossValidationLevelSplit.cubes:
         df_train = tomosDf
         df_val = None
@@ -155,8 +192,8 @@ def do_chunking(tomosDf: pd.DataFrame, chunkedDataDir,
         raise ValueError()
 
     n_cpus = 1 if n_cpus == 0 else n_cpus
-    train_outDir = f'{chunkedDataDir}/{constants.TRAIN_DIR_NAME}'  # path/to/training/
-    val_outDir = f'{chunkedDataDir}/{constants.VAL_DIR_NAME}'  # path/to/val/
+    train_outDir = f"{chunkedDataDir}/{constants.TRAIN_DIR_NAME}"  # path/to/training/
+    val_outDir = f"{chunkedDataDir}/{constants.VAL_DIR_NAME}"  # path/to/val/
 
     if os.path.isdir(train_outDir):
         shutil.rmtree(train_outDir, ignore_errors=False)
@@ -167,48 +204,56 @@ def do_chunking(tomosDf: pd.DataFrame, chunkedDataDir,
 
     acc, dev_count = accelerator_selector(mainConfig.prepData.USE_CUDA_FOR_DATA)
 
-
     def dispatcher(i, info_row, outpath):
-        print(f"Working with {i}") #TODO: make sure that we use all gpus. To do so, replace use_gpu by gpu_id.
+        print(
+            f"Working with {i}"
+        )  # TODO: make sure that we use all gpus. To do so, replace use_gpu by gpu_id.
         bn = Path(info_row["tomogram_path"]).stem
-        bn_fname = f'{outpath}/{bn}/{outputname_template}'
-        makedir(f'{outpath}/{bn}/{constants.VOLUMES_DIR_NAME_PREFIX}')
+        bn_fname = f"{outpath}/{bn}/{outputname_template}"
+        makedir(f"{outpath}/{bn}/{constants.VOLUMES_DIR_NAME_PREFIX}")
 
         if require_labels:
             labels_names_prefix = get_labels_dirname(True)
         else:
             labels_names_prefix = get_labels_dirname(False)
 
-        makedir(f'{outpath}/{bn}/{labels_names_prefix}')
+        makedir(f"{outpath}/{bn}/{labels_names_prefix}")
         if require_labels:
             target_fname = info_row["label_path"]
         else:
             target_fname = None
         particle_diameter_angst = info_row["particle_diameter_angst"]
-        data_fname, n_cubes, chunk_data_fnames = process_mrc(data_fname=info_row["tomogram_path"], target_fname=target_fname,
-                                                             particle_diameter_angst=particle_diameter_angst,
-                                                             outputname_template=bn_fname,
-                                                             new_size=desired_particle_pixel_size,
-                                                             require_labels=require_labels,
-                                                             use_gpu=acc.startswith("cuda"))
+        data_fname, n_cubes, chunk_data_fnames = process_mrc(
+            data_fname=info_row["tomogram_path"],
+            target_fname=target_fname,
+            particle_diameter_angst=particle_diameter_angst,
+            outputname_template=bn_fname,
+            new_size=desired_particle_pixel_size,
+            require_labels=require_labels,
+            use_gpu=acc.startswith("cuda"),
+        )
 
         print(f"{data_fname}: {n_cubes} cubes written")
         return data_fname
 
-
-    train_fnames = Parallel(n_cpus, batch_size=1)(delayed(dispatcher)(i, trainObj, train_outDir) for i, trainObj in df_train.iterrows())
+    train_fnames = Parallel(n_cpus, batch_size=1)(
+        delayed(dispatcher)(i, trainObj, train_outDir)
+        for i, trainObj in df_train.iterrows()
+    )
 
     if df_val is not None:
-        Parallel(n_cpus, batch_size=1)(delayed(dispatcher)(i, valObj, val_outDir) for i, valObj in df_val.iterrows())
+        Parallel(n_cpus, batch_size=1)(
+            delayed(dispatcher)(i, valObj, val_outDir)
+            for i, valObj in df_val.iterrows()
+        )
     else:
-        #Split by cubes
-        train_fnames = train_test_split(train_fnames, test_size=constants.PERCENT_TO_VALIDATE)
+        # Split by cubes
+        train_fnames = train_test_split(
+            train_fnames, test_size=constants.PERCENT_TO_VALIDATE
+        )
         for fname in train_fnames:
             os.rename(fname, Path(val_outDir) / Path(fname).name)
-
-
 
     print(f"Prepared data saved at: \n{train_outDir}\n{val_outDir}")
     with open(get_chunking_name_done(chunkedDataDir, require_labels), "w") as f:
         f.write("done")
-
