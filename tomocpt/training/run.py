@@ -23,12 +23,6 @@ logging = get_logger()
 
 
 def train(
-    compile_model: Annotated[
-        bool,
-        typer.Option(
-            help="Compile model before fine-tuning. May improve speed at the initial cost of compiling it in the first place."
-        ),
-    ] = None,
     train_continue: Annotated[
         Optional[Path],
         typer.Option(
@@ -165,8 +159,7 @@ def train(
     else:
         pl_model = Model(**kwargs)
         resume_from_checkpoint = None
-    if compile_model:
-        pl_model = torch.compile(pl_model)
+
     callbacks += [
         StochasticWeightAveraging(
             annealing_epochs=train__config.COSINE_LR_SCHEDULE_N_EPOCHS,
@@ -194,14 +187,6 @@ def train(
         use_cuda=mainConfig.train.use_gpus, n_cpus=mainConfig.train.N_CPUS_IF_NO_GPU
     )
 
-    if compile_model:
-        logging.info(
-            "You have chosen to compile the model, switching the training strategy to FSDP"
-        )
-        strategy = "fsdp"
-    else:
-        strategy = "ddp_find_unused_parameters_false" if accel == "gpu" else "auto"
-
     trainer = pl.Trainer(
         default_root_dir=mainConfig.train.model_dir,
         devices=f"{dev_count}",
@@ -216,7 +201,7 @@ def train(
         ),
         # limit_val_batches=constants.LIMIT_VALIDATION_BATCHES,
         # val_check_interval=constants.VAL_CHECK_INTERVAL,
-        strategy=strategy,
+        strategy="ddp_find_unused_parameters_false" if accel == "gpu" else "auto",
         precision=network__config.TORCH_FLOAT_PRECISION.value,
         gradient_clip_val=1.0,
         gradient_clip_algorithm="norm",
