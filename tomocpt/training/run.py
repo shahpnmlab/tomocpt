@@ -165,7 +165,7 @@ def train(
     data.setup()
 
     callbacks = [
-        # TQDMProgressBar(refresh_rate=10),
+        TQDMProgressBar(refresh_rate=10),
         EarlyStopping(
             monitor="val_loss",
             patience=6 * train__config.COSINE_LR_SCHEDULE_N_EPOCHS,
@@ -211,7 +211,6 @@ def train(
         gradient_clip_val=1.0,
         gradient_clip_algorithm="norm",
         enable_model_summary=False,
-        enable_progress_bar=False,
     )
 
     if trainer.is_global_zero:
