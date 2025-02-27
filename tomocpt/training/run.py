@@ -212,7 +212,7 @@ def train(
         gradient_clip_val=1.0,
         gradient_clip_algorithm="norm",
         enable_model_summary=False,
-        verbose=False,
+        enable_progress_bar=False
     )
 
     if trainer.is_global_zero:
