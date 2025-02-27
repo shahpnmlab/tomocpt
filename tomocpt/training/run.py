@@ -21,132 +21,143 @@ from tomocpt.logger import get_logger
 
 logging = get_logger()
 
+
 def train(
-        compile_model: Annotated[bool, typer.Option(help="Path to pre-existing checkpoint file for fine-tuning with new data")] = None,
-        train_continue: Annotated[Optional[Path], typer.Option(help="Path to pre-existing checkpoint file for fine-tuning with new data")] = None,
-        config: DictConfig = None):
+    compile_model: Annotated[
+        bool,
+        typer.Option(
+            help="Compile model before fine-tuning. May improve speed at the initial cost of compiling it in the first place."
+        ),
+    ] = None,
+    train_continue: Annotated[
+        Optional[Path],
+        typer.Option(
+            help="Path to pre-existing checkpoint file for fine-tuning with new data"
+        ),
+    ] = None,
+    config: DictConfig = None,
+):
     """
-        Trains a deep learning model for particle picking or self-supervised learning using PyTorch Lightning.
+    Trains a deep learning model for particle picking or self-supervised learning using PyTorch Lightning.
 
-        This function handles the complete training pipeline including data preparation, model initialization,
-        and training execution. It supports both fresh training and continuing from checkpoints, with options
-        for model compilation and various training configurations.
-
-        Parameters
-        ----------
-        compile_model : bool, optional
-            Whether to compile the model using torch.compile() for potential performance improvements.
-            Defaults to None.
-        train_continue : Path, optional
-            Path to a checkpoint file for resuming training or fine-tuning. If provided for picking mode,
-            can load from either a picking or self-supervised checkpoint. Defaults to None.
-        config : DictConfig, optional
-            Configuration object containing training parameters. If not provided, uses default configuration
-            from mainConfig. Defaults to None.
-
-        Requirements
-        -----------
-        - Valid chunks_dir and model_dir must be specified in the configuration
-        - For picking mode, labeled data is required in the chunks directory
-        - Training data must be properly prepared and chunked before training starts
-
-        Notes
-        -----
-        - Supports two training modes: picking (supervised) and selfSupervised
-        - Uses TensorBoard for training monitoring and visualization
-        - Implements early stopping, learning rate monitoring, and stochastic weight averaging
-        - Supports both GPU and CPU training with automatic device selection
-        - Handles distributed training using DDP strategy when multiple GPUs are available
-        - Copies code for reproducibility when training starts
-        - Automatically launches TensorBoard if configured
-
-        Examples
-        --------
-        Basic training:
-        >>> train(compile_model=False)
-
-        Resume training from checkpoint:
-        >>> train(train_continue='path/to/checkpoint.ckpt')
-
-        Training with model compilation:
-        >>> train(compile_model=True)
-        """
+    This function handles the complete training pipeline including data preparation, model initialization,
+    and training execution. It supports both fresh training and continuing from checkpoints, with options
+    for model compilation and various training configurations.
+    """
 
     from tomocpt.mainConfig import mainConfig
+
     torch.set_float32_matmul_precision(mainConfig.train.network.TORCH_MATMUL_PRECISION)
     from tomocpt.defaultConfigs.train_config import TrainingModes
     from tomocpt.dataManager.dataLoaderLightning import Data
     from tomocpt.networks.pickingModel import BasePickingModel
     from tomocpt.networks.selfSupervisedModel import SelfSupervisedModel
     from tomocpt.utils import accelerator_selector
-    from pytorch_lightning.callbacks import TQDMProgressBar, EarlyStopping, ModelCheckpoint, LearningRateMonitor, \
-        StochasticWeightAveraging  # TODO: Importing from pytorch_lightning.callbacks is launching a jit warning. Why?. Could it be version related
+    from pytorch_lightning.callbacks import (
+        TQDMProgressBar,
+        EarlyStopping,
+        ModelCheckpoint,
+        LearningRateMonitor,
+        StochasticWeightAveraging,
+    )
 
-    #logger = logging.create_logger("info")
+    # logger = logging.create_logger("info")
     kwargs = dict(lr=mainConfig.train.optimizer.lr)
 
     train__config = mainConfig.train
     network__config = mainConfig.train.network
     assert mainConfig.train.model_dir, "Error, you need to provide a model_dir"
-    assert mainConfig.train.chunks_dir, "Error, you need to provide a chunks_dir" #TODO: Do you want to assert that, or fall back to a default?
+    assert (
+        mainConfig.train.chunks_dir
+    ), "Error, you need to provide a chunks_dir"  # TODO: Do you want to assert that, or fall back to a default?
 
     chunks_dir = mainConfig.train.chunks_dir
 
     require_labels = mainConfig.train.mode == TrainingModes.picking
-    chunking_name_done = get_chunking_name_done(chunks_dir, require_labels=require_labels)
+    chunking_name_done = get_chunking_name_done(
+        chunks_dir, require_labels=require_labels
+    )
     if not Path(chunking_name_done).is_file():
         if mainConfig.train.training_data_dir is None:
-            training_data_dir = mainConfig.prepData.prepared_data_dir #TODO: Is prepared_data_dir the same as train.training_data_dir
+            training_data_dir = (
+                mainConfig.prepData.training_data_dir
+            )  # TODO: Is training_data_dir the same as train.training_data_dir
         else:
             training_data_dir = mainConfig.train.training_data_dir
         if not Path(training_data_dir).is_dir():
-            raise RuntimeError(f"Error, prepared_data_dir {training_data_dir} not found")
+            raise RuntimeError(
+                f"Error, prepared_data_dir {training_data_dir} not found"
+            )
 
         tomosDf = read_particles_csvs(training_data_dir)
 
-        new_size = mainConfig.prepData.desired_particle_pixel_size
+        # new_size = mainConfig.prepData.desired_particle_pixel_size
         # prep_data_config = OmegaConf.load("config.yaml")
-        do_chunking(tomosDf, chunkedDataDir=mainConfig.train.chunks_dir,
-                    desired_particle_pixel_size=mainConfig.prepData.desired_particle_pixel_size,
-                    n_cpus=train__config.n_cpus_for_train,
-                    require_labels=require_labels)
+        do_chunking(
+            tomosDf,
+            chunkedDataDir=mainConfig.train.chunks_dir,
+            desired_particle_pixel_size=mainConfig.prepData.desired_particle_pixel_size,
+            n_cpus=train__config.n_cpus_for_train,
+            require_labels=require_labels,
+        )
 
-
-    assert os.path.isdir(mainConfig.train.chunks_dir), f"Error, mainConfig.train.chunks_dir: {mainConfig.train.chunks_dir} does not exist "
+    assert os.path.isdir(
+        mainConfig.train.chunks_dir
+    ), f"Error, mainConfig.train.chunks_dir: {mainConfig.train.chunks_dir} does not exist "
 
     if mainConfig.train.mode == TrainingModes.picking:
         Model = BasePickingModel
-        checkpointer = ModelCheckpoint(monitor='val_loss', filename='weights', verbose=True)
+        checkpointer = ModelCheckpoint(
+            monitor="val_loss", filename="weights", verbose=True
+        )
         callbacks = [
             TQDMProgressBar(refresh_rate=10),
-            EarlyStopping(monitor='val_loss', patience=6 * train__config.COSINE_LR_SCHEDULE_N_EPOCHS, verbose=True),
+            EarlyStopping(
+                monitor="val_loss",
+                patience=6 * train__config.COSINE_LR_SCHEDULE_N_EPOCHS,
+                verbose=True,
+            ),
             checkpointer,
-            LearningRateMonitor(logging_interval='epoch'),
+            LearningRateMonitor(logging_interval="epoch"),
         ]
     # This will be consolidated to pre-train and supervised train
     elif mainConfig.train.mode == TrainingModes.selfSupervised:
         Model = SelfSupervisedModel
-        checkpointer = ModelCheckpoint(monitor='val_loss',
-                                       filename=f'weights_{mainConfig.train.mode}_{network__config.model_type}',
-                                       verbose=True)
+        checkpointer = ModelCheckpoint(
+            monitor="val_loss",
+            filename=f"weights_{mainConfig.train.mode}_{network__config.model_type}",
+            verbose=True,
+        )
         callbacks = [
             TQDMProgressBar(refresh_rate=10),
-            EarlyStopping(monitor='val_loss', patience=6 * train__config.COSINE_LR_SCHEDULE_N_EPOCHS, verbose=True),
+            EarlyStopping(
+                monitor="val_loss",
+                patience=6 * train__config.COSINE_LR_SCHEDULE_N_EPOCHS,
+                verbose=True,
+            ),
             checkpointer,
-            LearningRateMonitor(logging_interval='epoch'),
+            LearningRateMonitor(logging_interval="epoch"),
         ]
     else:
         raise ValueError("Error, mode (%s) not valid" % mainConfig.train.mode)
 
     if train_continue:
-        resume_from_checkpoint = train_continue if mainConfig.train.restore_full_state else None
+        resume_from_checkpoint = (
+            train_continue if mainConfig.train.restore_full_state else None
+        )
 
         if mainConfig.train.mode == TrainingModes.picking:
             try:
-                pl_model = BasePickingModel.load_from_checkpoint(train_continue, **kwargs)
+                pl_model = BasePickingModel.load_from_checkpoint(
+                    train_continue, **kwargs
+                )
             except RuntimeError:
-                pretrained_model = SelfSupervisedModel.load_from_checkpoint(train_continue)
-                pl_model = BasePickingModel(**kwargs, model=pretrained_model)  # map_location="cuda:0"
+                pretrained_model = SelfSupervisedModel.load_from_checkpoint(
+                    train_continue
+                )
+                pl_model = BasePickingModel(
+                    **kwargs, model=pretrained_model
+                )  # map_location="cuda:0"
                 del pretrained_model
                 resume_from_checkpoint = None
         else:
@@ -157,46 +168,80 @@ def train(
     if compile_model:
         pl_model = torch.compile(pl_model)
     callbacks += [
-        StochasticWeightAveraging(annealing_epochs=train__config.COSINE_LR_SCHEDULE_N_EPOCHS,
-                                  swa_lrs=0.1 * pl_model.lr)]
+        StochasticWeightAveraging(
+            annealing_epochs=train__config.COSINE_LR_SCHEDULE_N_EPOCHS,
+            swa_lrs=0.1 * pl_model.lr,
+        )
+    ]
 
-    data = Data(data_dir=mainConfig.train.chunks_dir, return_labels=(mainConfig.train.mode == TrainingModes.picking),
-                batch_size=mainConfig.train.batch_size,
-                workers_for_data=mainConfig.train.n_cpus_for_train)
+    data = Data(
+        data_dir=mainConfig.train.chunks_dir,
+        return_labels=(mainConfig.train.mode == TrainingModes.picking),
+        batch_size=mainConfig.train.batch_size,
+        workers_for_data=mainConfig.train.n_cpus_for_train,
+    )
 
     data.setup()
-    logging.info(f'Size of the training dataset {len(data.train_dataloader())}')
-    
+    logging.info(f"Size of the training dataset {len(data.train_dataloader())}")
 
-    tb_logger = TensorBoardLogger(save_dir=f'{mainConfig.train.model_dir}/{mainConfig.train.experiment_name}', name='', version='')
+    tb_logger = TensorBoardLogger(
+        save_dir=f"{mainConfig.train.model_dir}/{mainConfig.train.experiment_name}",
+        name="",
+        version="",
+    )
 
-    accel, dev_count = accelerator_selector(use_cuda=mainConfig.train.use_gpus, n_cpus=mainConfig.train.N_CPUS_IF_NO_GPU)
+    accel, dev_count = accelerator_selector(
+        use_cuda=mainConfig.train.use_gpus, n_cpus=mainConfig.train.N_CPUS_IF_NO_GPU
+    )
 
-    trainer = pl.Trainer(default_root_dir=mainConfig.train.model_dir, devices=f'{dev_count}',
-                         accelerator='auto' if mainConfig.train.use_gpus else accel,
-                         max_epochs=mainConfig.train.n_epochs, callbacks=callbacks,
-                         logger=tb_logger,
-                         overfit_batches=mainConfig.train.OVERFIT_N_BATCHES if mainConfig.train.OVERFIT_N_BATCHES else 0,
-                         # limit_val_batches=constants.LIMIT_VALIDATION_BATCHES,
-                         # val_check_interval=constants.VAL_CHECK_INTERVAL,
-                         strategy="ddp_find_unused_parameters_false" if accel == "gpu" else "auto",
-                         precision=network__config.TORCH_FLOAT_PRECISION.value,
-                         gradient_clip_val=1.0,
-                         gradient_clip_algorithm='norm',
-                         enable_model_summary = False,
-                         )
+    if compile_model:
+        logging.info(
+            "You have chosen to compile the model, switching the training strategy to FSDP"
+        )
+        strategy = "fsdp"
+    else:
+        strategy = "ddp_find_unused_parameters_false" if accel == "gpu" else "auto"
+
+    trainer = pl.Trainer(
+        default_root_dir=mainConfig.train.model_dir,
+        devices=f"{dev_count}",
+        accelerator="auto" if mainConfig.train.use_gpus else accel,
+        max_epochs=mainConfig.train.n_epochs,
+        callbacks=callbacks,
+        logger=tb_logger,
+        overfit_batches=(
+            mainConfig.train.OVERFIT_N_BATCHES
+            if mainConfig.train.OVERFIT_N_BATCHES
+            else 0
+        ),
+        # limit_val_batches=constants.LIMIT_VALIDATION_BATCHES,
+        # val_check_interval=constants.VAL_CHECK_INTERVAL,
+        strategy=strategy,
+        precision=network__config.TORCH_FLOAT_PRECISION.value,
+        gradient_clip_val=1.0,
+        gradient_clip_algorithm="norm",
+        enable_model_summary=False,
+    )
 
     if trainer.is_global_zero:
         _copyCodeForReproducibility(trainer.log_dir)
 
     if mainConfig.train.launch_tensorboard and trainer.is_global_zero:
-        subprocess.Popen(["tensorboard", "--logdir", f'{mainConfig.train.model_dir}/{mainConfig.train.experiment_name}'],
-                         stdout=sys.stdout, stderr=sys.stderr)
-        #logger.info("Use the url below to monitor training on tensorboard")
-        logging.info(f"tensorboard --logdir {mainConfig.train.model_dir}/{mainConfig.train.experiment_name}")
+        subprocess.Popen(
+            [
+                "tensorboard",
+                "--logdir",
+                f"{mainConfig.train.model_dir}/{mainConfig.train.experiment_name}",
+            ],
+            stdout=sys.stdout,
+            stderr=sys.stderr,
+        )
+        # logger.info("Use the url below to monitor training on tensorboard")
+        logging.info(
+            f"tensorboard --logdir {mainConfig.train.model_dir}/{mainConfig.train.experiment_name}"
+        )
 
     trainer.fit(pl_model, datamodule=data, ckpt_path=resume_from_checkpoint)
-
 
 
 def _copyCodeForReproducibility(logdir):
@@ -239,7 +284,9 @@ def _copyCodeForReproducibility(logdir):
     # Get the parent process
     parent_process = current_process.parent()
     # Get the command line of the parent process
-    parent_command = " ".join(["'" + x + "'" if x.startswith('{"') else x for x in parent_process.cmdline()])
+    parent_command = " ".join(
+        ["'" + x + "'" if x.startswith('{"') else x for x in parent_process.cmdline()]
+    )
     fname = osp.join(logdir, "parent_command.txt")
     with open(fname, "w") as f:
-        f.write(f'{parent_command}\n')
+        f.write(f"{parent_command}\n")
