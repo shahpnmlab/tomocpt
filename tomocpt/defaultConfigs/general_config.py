@@ -10,7 +10,7 @@ class GlobalPropertyConfig:
 
     # chunks_dir: Annotated[Optional[Path], typer.Option(help="The directory with chunks")] = Path("/tmp/chunks/")
     #
-    # prepared_data_dir: Annotated[
+    # training_data_dir: Annotated[
     #     Path, typer.Option(help="Path to where the volume label pairs should be stored")
     # ] = Path("/tmp/inputs")
     #

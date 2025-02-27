@@ -1,13 +1,12 @@
 from dataclasses import dataclass, asdict, field
 from enum import Enum
-from typing import Annotated, Dict, Any, Type
+from typing import Annotated, Dict, Any
 
-import monai
 import typer
 
 from tomocpt.defaultConfigs.models.swinunetr_config import SwinUnetrConfig
 from tomocpt.defaultConfigs.models.unet_config import UnetConfig
-from packaging import version
+
 
 class ModelType(str, Enum):
     UNET = "Unet"
@@ -17,7 +16,7 @@ class ModelType(str, Enum):
     def module_path(self) -> str:
         targets = {
             ModelType.UNET: "tomocpt.networks.unet",
-            ModelType.SwinUNETR: "tomocpt.networks.swinunetr"
+            ModelType.SwinUNETR: "tomocpt.networks.swinunetr",
         }
         return targets[self]
 
@@ -29,10 +28,14 @@ class PrecisionType(str, Enum):
     bf16 = "bf16"
     float = "32"
     half = "16"
+
+
 @dataclass
 class NetworkConfig:
 
-    model_type: Annotated[ModelType, typer.Option(help="The model type", case_sensitive=False)] = ModelType.SwinUNETR
+    model_type: Annotated[
+        ModelType, typer.Option(help="The model type", case_sensitive=False)
+    ] = ModelType.SwinUNETR
 
     UNET: UnetConfig = field(default_factory=UnetConfig)
     SwinUNETR: SwinUnetrConfig = field(default_factory=SwinUnetrConfig)
@@ -43,12 +46,16 @@ class NetworkConfig:
     CONTRAST_LOSS_TEMPERATURE: float = 1e-1
 
     TORCH_MATMUL_PRECISION: str = "medium"  # "medium" "high" "highest"
-    TORCH_FLOAT_PRECISION: Annotated[PrecisionType, typer.Option(help="The precision for gpu computing", case_sensitive=False)] = PrecisionType.bf16
+    TORCH_FLOAT_PRECISION: Annotated[
+        PrecisionType,
+        typer.Option(help="The precision for gpu computing", case_sensitive=False),
+    ] = PrecisionType.bf16
 
     SELF_SUPERVISED_EMBEDING_SIZE: int = 256
 
     def build_model(self, require_labels=False, **kwargs):
         import importlib
+
         model_type = self.model_type
         model_name = str(model_type.value)
         if model_name.startswith("SwinUNETR"):
@@ -63,6 +70,3 @@ class NetworkConfig:
         target_cls = getattr(module, model_name)
         config_kwargs.update(kwargs)
         return model_name, target_cls(**config_kwargs)
-
-
-network_config = NetworkConfig()

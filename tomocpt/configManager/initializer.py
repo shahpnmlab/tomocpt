@@ -56,7 +56,9 @@ def convert_config_to_dict(config_obj: Any) -> dict:
     return config_dict
 
 
-def init(output_path: Path = Path.cwd() / "config.yaml", config: DictConfig = None) -> None:
+def init(
+    output_path: Path = Path.cwd() / "config.yaml", config: DictConfig = None
+) -> None:
     """
     Function to create a template config file for running tomoCPT,
     only including annotated fields
@@ -73,19 +75,16 @@ def init(output_path: Path = Path.cwd() / "config.yaml", config: DictConfig = No
     from tomocpt.defaultConfigs.prepdata_config import PrepdataConfig
     from tomocpt.defaultConfigs.infer_config import InferConfig
     from tomocpt.defaultConfigs.train_config import TrainConfig
-    from tomocpt.defaultConfigs.network_config import NetworkConfig
 
     prepare_conf = PrepdataConfig()
     train_conf = TrainConfig()
-    network_conf = NetworkConfig()
     infer_conf = InferConfig()
 
     # Prepare the config dictionary with only annotated fields
     config_dict = {
         "prepData": convert_config_to_dict(prepare_conf),
         "train": convert_config_to_dict(train_conf),
-        "network": convert_config_to_dict(network_conf),
-        "infer": convert_config_to_dict(infer_conf)
+        "infer": convert_config_to_dict(infer_conf),
     }
 
     # Create parent directories if they don't exist
@@ -93,10 +92,11 @@ def init(output_path: Path = Path.cwd() / "config.yaml", config: DictConfig = No
 
     # Save using OmegaConf
     from omegaconf import OmegaConf
+
     OmegaConf.save(config_dict, output_path)
 
     print(f"Config file created at: {output_path}")
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     init(Path("/tmp/config.yaml"))

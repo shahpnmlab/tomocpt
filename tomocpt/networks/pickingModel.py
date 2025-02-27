@@ -5,15 +5,16 @@ from torch import nn
 
 from tomocpt.networks.baseModel import BaseModel
 from tomocpt.training.losses import gradient3d_loss
-
-
+from tomocpt.logger import get_logger
+logging = get_logger()
 class BasePickingModel(BaseModel):
 
-    def __init__(self, lr: float | None = None,
-                 model=None, config_dict=None, *args, **kwargs):
+    def __init__(
+        self, lr: float | None = None, model=None, config_dict=None, *args, **kwargs
+    ):
         # Remove config_dict from kwargs before passing to parent
-        if 'config_dict' in kwargs:
-            config_dict = kwargs.pop('config_dict')
+        if "config_dict" in kwargs:
+            config_dict = kwargs.pop("config_dict")
 
         super(BasePickingModel, self).__init__(lr, *args, **kwargs)
 
@@ -26,7 +27,7 @@ class BasePickingModel(BaseModel):
             self.model_name = model.model_name
             self.model = model.model
 
-        print(f"PickingModel using {self.model_name}")
+        logging.info(f"PickingModel using {self.model_name}")
         self.lr = lr
 
     def loss(self, y_pred, y_true):
@@ -44,11 +45,15 @@ class BasePickingModel(BaseModel):
         negative_weights = negative_weights.view(y_true.shape[0], 1, 1, 1, 1)
 
         # Create importance mask
-        importance_mask = torch.where(y_true > 0, positive_weights, 2 * negative_weights)
+        importance_mask = torch.where(
+            y_true > 0, positive_weights, 2 * negative_weights
+        )
 
         # Compute MSE
         # loss = importance_mask * (y_pred - y_true) ** 2
-        loss = importance_mask * nn.functional.huber_loss(y_pred, y_true, reduction="none")
+        loss = importance_mask * nn.functional.huber_loss(
+            y_pred, y_true, reduction="none"
+        )
         _loss = 10 * gradient3d_loss(y_pred, y_true).sum(2)
         loss += _loss
         loss = loss.mean()
@@ -78,18 +83,43 @@ class BasePickingModel(BaseModel):
         # y_pred = nn.functional.softplus(logits, beta=BETA_FOR_SOFTPLUS)
         loss = self.loss(y_pred, y)
 
-        self.log('loss', loss, on_step=False, on_epoch=True, prog_bar=True, sync_dist=True,
-                 batch_size=x.shape[0])  # if on_step=True, reconsider sync_dist
+        self.log(
+            "loss",
+            loss,
+            on_step=False,
+            on_epoch=True,
+            prog_bar=True,
+            sync_dist=True,
+            batch_size=x.shape[0],
+        )  # if on_step=True, reconsider sync_dist
 
         if batch_idx == 0:
             size = y_pred.shape[2]
-            grid = torchvision.utils.make_grid(x[:, :, size // 2, :, :])
+            grid_params = {
+                "padding": 1,  # Smaller gap between images
+                "pad_value": 1.0,  # White borders
+            }
+            grid = torchvision.utils.make_grid(x[:, :, size // 2, :, :], **grid_params)
             tensorboard = self.logger.experiment
-            tensorboard.add_image("input", grid.to(dtype=torch.float32), global_step=self.current_epoch)
-            grid = torchvision.utils.make_grid(y[:, :, size // 2, :, :].to(dtype=torch.float32))
-            tensorboard.add_image("label", grid.to(dtype=torch.float32), global_step=self.current_epoch)
-            grid = torchvision.utils.make_grid(y_pred[:, :, size // 2, :, :].to(dtype=torch.float32))
-            tensorboard.add_image("prediction", grid.to(dtype=torch.float32), global_step=self.current_epoch)
+            tensorboard.add_image(
+                "input",
+                grid.to(dtype=torch.float32),
+                global_step=self.current_epoch,
+            )
+            grid = torchvision.utils.make_grid(
+                y[:, :, size // 2, :, :].to(dtype=torch.float32), **grid_params
+            )
+            tensorboard.add_image(
+                "label", grid.to(dtype=torch.float32), global_step=self.current_epoch
+            )
+            grid = torchvision.utils.make_grid(
+                y_pred[:, :, size // 2, :, :].to(dtype=torch.float32), **grid_params
+            )
+            tensorboard.add_image(
+                "prediction",
+                grid.to(dtype=torch.float32),
+                global_step=self.current_epoch,
+            )
 
         return loss
 
@@ -98,20 +128,40 @@ class BasePickingModel(BaseModel):
             x, y = self.resolve_batch(batch)
             logits = self(x)
             y_pred = nn.functional.sigmoid(logits)
-            # y_pred = nn.functional.softplus(logits, beta=BETA_FOR_SOFTPLUS)
             loss = self.loss(y_pred, y)
 
-        self.log('val_loss', loss, on_step=False, on_epoch=True, prog_bar=True, sync_dist=True, batch_size=x.shape[0])
+        self.log(
+            "val_loss",
+            loss,
+            on_step=False,
+            on_epoch=True,
+            prog_bar=True,
+            sync_dist=True,
+            batch_size=x.shape[0],
+        )
 
         tensorboard = self.logger.experiment
         size = y_pred.shape[2]
-        # print(x.shape)
-        grid1 = torchvision.utils.make_grid(x[:, :, size // 2, :, :])
-        tensorboard.add_image("input_val", grid1.to(dtype=torch.float32), global_step=self.current_epoch)
-        grid2 = torchvision.utils.make_grid(y[:, :, size // 2, :, :])
-        tensorboard.add_image("label_val", grid2.to(dtype=torch.float32), global_step=self.current_epoch)
-        grid3 = torchvision.utils.make_grid(y_pred[:, :, size // 2, :, :].to(dtype=torch.float32))
-        tensorboard.add_image("prediction_val", grid3.to(dtype=torch.float32), global_step=self.current_epoch)
+        grid_params = {
+            "padding": 1,  # Smaller gap between images
+            "pad_value": 1.0,  # White borders
+        }
+        grid1 = torchvision.utils.make_grid(x[:, :, size // 2, :, :], **grid_params)
+        tensorboard.add_image(
+            "input_val", grid1.to(dtype=torch.float32), global_step=self.current_epoch
+        )
+        grid2 = torchvision.utils.make_grid(y[:, :, size // 2, :, :], **grid_params)
+        tensorboard.add_image(
+            "label_val", grid2.to(dtype=torch.float32), global_step=self.current_epoch
+        )
+        grid3 = torchvision.utils.make_grid(
+            y_pred[:, :, size // 2, :, :].to(dtype=torch.float32), **grid_params
+        )
+        tensorboard.add_image(
+            "prediction_val",
+            grid3.to(dtype=torch.float32),
+            global_step=self.current_epoch,
+        )
         return loss
 
     def predict_step(self, batch, batch_idx, dataloader_idx=0):
@@ -121,15 +171,19 @@ class BasePickingModel(BaseModel):
         return y_pred
 
 
-
 if __name__ == "__main__":
     model = BasePickingModel()
     batch_size = 3
     from tomocpt.mainConfig import mainConfig
+
     train_config = mainConfig.train
     batch = dict(
-        input_data=dict(data=torch.randn(batch_size, 1, *(train_config.CHUNK_SIZE,) * 3)),
-        target_data=dict(data=torch.randn(batch_size, 1, *(train_config.CHUNK_SIZE,) * 3)),
+        input_data=dict(
+            data=torch.randn(batch_size, 1, *(train_config.CHUNK_SIZE,) * 3)
+        ),
+        target_data=dict(
+            data=torch.randn(batch_size, 1, *(train_config.CHUNK_SIZE,) * 3)
+        ),
     )
 
     out = model.predict_step(batch["input_data"]["data"], 0, dataloader_idx=0)
