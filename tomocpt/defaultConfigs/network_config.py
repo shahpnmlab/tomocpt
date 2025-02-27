@@ -25,7 +25,7 @@ class ModelType(str, Enum):
 
 
 class PrecisionType(str, Enum):
-    bf16 = "bf16"
+    bf16 = "bf16-mixed"
     float = "32"
     half = "16"
 
