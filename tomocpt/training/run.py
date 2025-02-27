@@ -155,10 +155,6 @@ def train(
         pl_model = Model(**kwargs)
         resume_from_checkpoint = None
 
-    callbacks += [
-
-    ]
-
     data = Data(
         data_dir=mainConfig.train.chunks_dir,
         return_labels=(mainConfig.train.mode == TrainingModes.picking),
@@ -169,7 +165,7 @@ def train(
     data.setup()
 
     callbacks = [
-        #TQDMProgressBar(refresh_rate=10),
+        # TQDMProgressBar(refresh_rate=10),
         EarlyStopping(
             monitor="val_loss",
             patience=6 * train__config.COSINE_LR_SCHEDULE_N_EPOCHS,
@@ -180,7 +176,7 @@ def train(
         StochasticWeightAveraging(
             annealing_epochs=train__config.COSINE_LR_SCHEDULE_N_EPOCHS,
             swa_lrs=0.1 * pl_model.lr,
-        )
+        ),
     ]
 
     if is_main_process():
