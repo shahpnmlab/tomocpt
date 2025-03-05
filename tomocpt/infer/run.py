@@ -47,7 +47,7 @@ def predict(
     else:
         n_gpus = dev_count
     # Run parallel inference
-    batch_size = len(data_fnames) / (infer_config.oversubscribe_factor * dev_count)
+    batch_size = len(data_fnames) // (infer_config.oversubscribe_factor * dev_count)
     if batch_size < 1:
         batch_size = 1
     results = Parallel(
@@ -59,7 +59,7 @@ def predict(
             infer_config.weights,
             particleLengthAng=infer_config.length,
             gpu_id=(
-                (i % infer_config.oversubscribe_factor) % n_gpus
+                (i // infer_config.oversubscribe_factor) % n_gpus
                 if n_gpus is not None
                 else None
             ),

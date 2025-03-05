@@ -401,7 +401,9 @@ def _infer_one_tomo(
 
         # Perform inference
         with torch.inference_mode():
-            for idx, patches_batch in enumerate(tqdm(patch_loader)):
+            for idx, patches_batch in enumerate(
+                tqdm(patch_loader, position=gpu_id, desc=Path(output_fname).stem)
+            ):
                 input_tensor = patches_batch["input_data"][tio.DATA]
                 if gpu_id is not None:
                     input_tensor = input_tensor.cuda(device=gpu_id)
