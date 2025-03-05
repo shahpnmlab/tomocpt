@@ -47,7 +47,7 @@ def predict(
     else:
         n_gpus = dev_count
     # Run parallel inference
-    batch_size=(len(data_fnames)/(infer_config.oversubscribe_factor * dev_count))
+    batch_size = len(data_fnames) / (infer_config.oversubscribe_factor * dev_count)
     if batch_size < 1:
         batch_size = 1
     results = Parallel(
@@ -71,10 +71,7 @@ def predict(
             threshold=infer_config.confidence_threshold,
             masksDir=infer_config.masks_dir,
         )
-
-        for i, batch_fnames in enumerate(
-            batched(data_fnames, n=batch_size)
-        )
+        for i, batch_fnames in enumerate(batched(data_fnames, n=batch_size))
     )
 
     if infer_config.save_predicted_coords:
