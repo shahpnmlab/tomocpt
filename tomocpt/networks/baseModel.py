@@ -66,11 +66,13 @@ class BaseModel(pl.LightningModule):
         return out
 
 
+    def _get_model_parameters_for_optimizer(self):
+        return self.parameters()
 
     def configure_optimizers(self):
         train_config = self.hparams.config.train
         logging.info(f"optimizer:{train_config.optimizer}", )
-        opt = hydra.utils.instantiate(train_config.optimizer, params=self.parameters()) #, decoupled_weight_decay=True
+        opt = hydra.utils.instantiate(train_config.optimizer, params=self._get_model_parameters_for_optimizer()) #, decoupled_weight_decay=True
         # opt = torch.optim.RAdam(self.parameters(), lr=self.lr, betas=(0.9, 0.99), weight_decay=self.hparams.mainConfig.train.WEIGHT_DECAY) #, decoupled_weight_decay=True)
 
         conf = {

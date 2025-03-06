@@ -58,3 +58,4 @@ class TrainConfig:
     CHUNK_STRIDE: int = 32
     RANDOM_FRACTION_TO_SAMPLE_TRAIN: float = -1.  # Train on all the chunks
     SEED_FOR_TRAIN_VAL_SPLIT: int = 42
+    DIFFERENT_LRS_FOR_FINETUNE: bool = True

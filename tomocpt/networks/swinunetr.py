@@ -1,6 +1,41 @@
 from monai.networks.nets import SwinUNETR
 import torch
 
+
+def _get_model_parameters_for_optimizer(self, different_lrs):
+    vit_params_freeze = []
+    vit_params_standard = []
+
+    encoder_params_freeze = []
+    encoder_params_standard = []
+    decoder_params = []
+    if different_lrs:
+        for name, param in self.swinViT.named_parameters():
+            if "norm" in name:
+                vit_params_standard.append(param)
+                continue
+            vit_params_freeze.append(param)
+
+        for name, param in dict(self.named_children()).items():
+            if name.startswith("encoder"):
+                if "norm" in name:
+                    encoder_params_standard.append(param)
+                    continue
+                encoder_params_freeze.append(param)
+            elif name.startswith("decoder"):
+                decoder_params.append(param)
+        parameters = [
+            {"params": vit_params_freeze, "lr_mult": 0.0},
+            {"params": vit_params_standard, "lr_mult": 1.0},
+            {"params": encoder_params_freeze, "lr_mult": 0.1},
+            {"params": encoder_params_standard, "lr_mult": 1.0},
+            {"params": decoder_params, "lr_mult": 1.0},
+        ]
+        return parameters
+    return self.parameters()
+
+SwinUNETR._get_model_parameters_for_optimizer = _get_model_parameters_for_optimizer
+
 class MySwinUNETR(SwinUNETR):
     def forward(self, x_in):
         hidden_states_out = self.swinViT(x_in, self.normalize)

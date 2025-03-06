@@ -76,7 +76,8 @@ def train(
     torch.set_float32_matmul_precision(mainConfig.train.network.TORCH_MATMUL_PRECISION)
     from tomocpt.defaultConfigs.train_config import TrainingModes
     from tomocpt.dataManager.dataLoaderLightning import Data
-    from tomocpt.networks.pickingModel import BasePickingModel
+    #from tomocpt.networks.pickingModel import BasePickingModel
+    from tomocpt.networks.pickingModel_ft import BasePickingModel #TODO: make this the deafult if works
     from tomocpt.networks.selfSupervisedModel import SelfSupervisedModel
     from tomocpt.utils import accelerator_selector
     from pytorch_lightning.callbacks import TQDMProgressBar, EarlyStopping, ModelCheckpoint, LearningRateMonitor, \
