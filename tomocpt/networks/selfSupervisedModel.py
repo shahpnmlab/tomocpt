@@ -3,75 +3,39 @@ Modified from https://github.com/Project-MONAI/research-contributions/blob/main/
 
 """
 from typing import Optional
-
 import numpy as np
 from numpy.random import randint
-import pytorch_lightning as pl
 import torch
 import torchio as tio
 import torchvision
 from torch import nn
 from torch.nn import functional as F
-from tomocpt import constants, network_config
+from tomocpt import constants
 from tomocpt.networks.baseModel import BaseModel
-from tomocpt.networks.swinunetr import MySwinUNETR
-from tomocpt.networks.unet import Unet
-
+from tomocpt.mainConfig import mainConfig
 
 class SelfSupervisedModel(BaseModel):
-    def set_default_args(self, lr: float | None,
-                         num_levels: int | None):
 
-        self.lr = lr if lr is not None else network_config.LEARNING_RATE
-        self.num_levels = num_levels if num_levels is not None else network_config.NUM_LEVELS
 
     def __init__(self, lr: float | None = None,
-                 num_levels: int | None = None):
+                 num_levels: int | None = None, model: Optional[BaseModel] = None, *args, **kwargs):
 
-        self.set_default_args(lr = lr,
-                              num_levels = num_levels)
+        super(SelfSupervisedModel, self).__init__(lr, num_levels, *args, **kwargs)
 
-        super(SelfSupervisedModel, self).__init__()
 
-        n_voxels = constants.CHUNK_SIZE
-
-        MODEL_TYPES = {
-            "UNET": lambda: Unet(
-                first_layer_out_channels=network_config.FIRST_LAYER_OUT_CHANNELS,
-                last_activation="linear",
-                stride_conv_instead_pooling=True,
-                num_levels=num_levels
-            ),
-            "SWINUNETR": lambda: MySwinUNETR(
-                img_size=(network_config.CHUNK_SIZE, network_config.CHUNK_SIZE, network_config.CHUNK_SIZE),
-                in_channels=1,
-                out_channels=1,
-                feature_size=network_config.SWINUNETR_FEAT_SIZE,
-                use_v2=True,
-                use_checkpoint=True,
-                drop_rate=network_config.DROP_RATE,
-                attn_drop_rate=network_config.ATTN_DROP_RATE,
-                dropout_path_rate=network_config.DROPOUT_PATH_RATE,
-            )
-        }
+        n_voxels = mainConfig.train.CHUNK_SIZE
 
         if model is None:
-            self.model_name = network_config.MODEL_TYPE
-            model_constructor = MODEL_TYPES.get(network_config.MODEL_TYPE.upper())
-            if model_constructor:
-                self.model = model_constructor()
-            else:
-                raise ValueError(f"Unknown model type: {network_config.MODEL_TYPE}")
+            self.model_name, self.model = self.build_model()
         else:
             self.model_name = model.model_name
             self.model = model.model
 
 
-        exampleX = torch.rand(network_config.BATCH_SIZE, 1, n_voxels, n_voxels, n_voxels)
+        exampleX = torch.rand(self.hparams.config.train.batch_size, 1, n_voxels, n_voxels, n_voxels)
         out, hid = self.model(exampleX)
         batchSize, nchan, s, _, _ = hid.shape
         assert batchSize > 1
-        self.model_name = network_config.MODEL_TYPE
         print(f"SelfSupervisedModel using {self.model_name}")
 
         def generateHead(outDims, bias=False):
@@ -81,15 +45,18 @@ class SelfSupervisedModel(BaseModel):
                 nn.Linear(nchan, outDims, bias=bias)
             )
 
-        contrastiveEmbSize = 256 #TODO: Check if this needs to go into network_config
+        contrastiveEmbSize = self.hparams.config.train.network.SELF_SUPERVISED_EMBEDING_SIZE
         self.rotation_head = generateHead(4, bias=True)
         self.contrastive_head = generateHead(contrastiveEmbSize, bias=False)
 
         self.lr = lr
         self.loss_function = LossPretrain()
 
+    def build_model(self):
+        return super().build_model(require_labels=True)
+
     def resolve_batch(self, batch):
-        return batch["input_data"][tio.DATA]
+        return batch["input_data"] #[tio.DATA] Seems to be not needed in newer versions
 
     def forward(self, x):
         out, hid = self.model(x)
@@ -97,7 +64,7 @@ class SelfSupervisedModel(BaseModel):
         contrp = self.contrastive_head(hid)
         return rotp, contrp, out
 
-    def _step(self, batch):
+    def _step(self, batch, batch_idx):
 
         x = self.resolve_batch(batch)
 
@@ -117,8 +84,7 @@ class SelfSupervisedModel(BaseModel):
         return loss, losses_tasks, (x, x1, x2), (contrastive1_p, contrastive2_p), imgs_recon
 
     def training_step(self, batch, batch_idx):
-        loss, losses_tasks, (x, x1, x2), (contrastive1_p, contrastive2_p), imgs_recon = self._step(batch, batch_idx)
-        # TODO: if on_step=True, reconsider sync_dist
+        loss, losses_tasks, (x, x1, x2), (contrastive1_p, contrastive2_p), imgs_recon = self._step(batch, batch_idx) #if on_step=True, reconsider sync_dist
         self.log('loss', loss, on_step=False, on_epoch=True, prog_bar=True, sync_dist=True, batch_size=x.shape[0])
         self.log('loss_rot', losses_tasks[0], on_step=False, on_epoch=True, prog_bar=True, sync_dist=True,
                  batch_size=x.shape[0])
@@ -182,24 +148,6 @@ class SelfSupervisedModel(BaseModel):
         y_hat = self(x)
         return y_hat
 
-    def configure_optimizers(self):
-        opt = torch.optim.RAdam(self.parameters(), lr=self.lr, betas=(0.9, 0.99),
-                                weight_decay=1e-8, decoupled_weight_decay=True)
-
-        conf = {
-            'optimizer': opt,
-        }
-
-        conf.update({
-            'lr_scheduler': torch.optim.lr_scheduler.ReduceLROnPlateau(opt, verbose=True,
-                                                                       factor=network_config.FACTOR_REDUCE_LR_PLATEAU_N_EPOCHS,
-                                                                       cooldown=max(1,
-                                                                                    network_config.PATIENT_REDUCE_LR_PLATEAU_N_EPOCHS // 4),
-                                                                       patience=int(
-                                                                           1.5 * network_config.PATIENT_REDUCE_LR_PLATEAU_N_EPOCHS)),
-            'monitor': 'val_loss'
-        })
-        return conf
 
 
 def patch_rand_drop(x, x_rep=None, max_drop=0.3, max_block_sz=0.25, tolr=0.05):
@@ -275,8 +223,7 @@ class ContrastLoss(nn.Module):
     # batch states are independent and we will optimize the runtime of 'forward'
     full_state_update: bool = True
 
-    def __init__(self, temperature = network_config.CONTRAST_LOSS_TEMPERATURE,
-                 l1_embeddings_w = network_config.CONTRAST_LOSS_L1_EMB_REGULARIZATION):
+    def __init__(self, temperature, l1_embeddings_w):
         """
         Low temperature penalizes much more embeddings that are the same
         """
@@ -308,11 +255,12 @@ class ContrastLoss(nn.Module):
 
 
 class LossPretrain(torch.nn.Module):
-    def __init__(self, rotLossW=1.0, contrasLossW=1.0, reconsLossW=10.0):
+    def __init__(self, rotLossW=1.0, contrasLossW=1.0, reconsLossW=10.0): #TODO: Pranav, you can change here the weight of each term of the self supervised loss
         super().__init__()
         self.rot_loss = torch.nn.CrossEntropyLoss()
         self.recon_loss = torch.nn.L1Loss()
-        self.contrast_loss = ContrastLoss()
+        self.contrast_loss = ContrastLoss(temperature=mainConfig.train.network.CONTRAST_LOSS_TEMPERATURE,
+                                          l1_embeddings_w=mainConfig.train.network.CONTRAST_LOSS_L1_EMB_REGULARIZATION)
         self.rotLossW = rotLossW
         self.contrasLossW = contrasLossW
         self.reconsLossW = reconsLossW
@@ -327,16 +275,18 @@ class LossPretrain(torch.nn.Module):
 
 
 if __name__ == "__main__":
-    lFun = ContrastLoss(temperature=0.1)
+    lFun = ContrastLoss(temperature=0.1, l1_embeddings_w=2)
     print(lFun(torch.rand(50, 3), torch.rand(50, 3)))
     print(lFun(torch.tensor([[1, 0, 0], [1, 0, 1.], [1, 1, 1]]), torch.tensor([[1, 0, 0], [1, 0, 1.], [1, 1, 1]])))
     print(lFun(torch.tensor([[1, 0, 0], [1, 0, 0.], [1, 1, 1]]), torch.tensor([[1, 0, 0], [1, 0, 0.], [1, 1, 1]])))
     print(lFun(torch.tensor([[1, 0, 0], [1, 0, 0.], [1, 0, 0.]]), torch.tensor([[1, 0, 0], [1, 0, 0.], [1, 0, 0.]])))
 
-    network_config.MODEL_TYPE = "SwinUNETR"  # "UNET" #"SwinUNETR"
+    network_config = mainConfig.train.network
+
+    network_config.model_type = "SwinUNETR"  # "UNET" #"SwinUNETR"
     model = SelfSupervisedModel()
 
-    chunk_size = network_config.CHUNK_SIZE
+    chunk_size = mainConfig.train.CHUNK_SIZE
     batchSize = 3
     x = torch.rand(batchSize, 1, chunk_size, chunk_size, chunk_size)
     out = model(x)

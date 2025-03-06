@@ -1,8 +1,8 @@
-from typing import Literal
+from typing import Literal, Optional
 
 import torch
-from tomocpt import network_config
 import torch.nn as nn
+
 
 NORM_LAYER = nn.InstanceNorm3d
 
@@ -98,34 +98,12 @@ class UpBlock(nn.Module):
 
 
 class Unet(nn.Module):
-    def set_default_args(self, in_channels: int | None,
-                         first_layer_out_channels: int | None,
-                         num_levels: int | None,
-                         channels_increase_factor: int | None,
-                         kernel_size: int | None,
-                         convolution_dilation: int | None,
-                         stride_conv_instead_of_pooling: bool | None,
-                         last_activation_layer: str | None,
-                         output_dim: str | None):
 
-        self.in_channels = in_channels if in_channels is not None else network_config.IN_CHANNELS
-        self.first_layer_out_channels = first_layer_out_channels if first_layer_out_channels is not None else network_config.FIRST_LAYER_OUT_CHANNELS
-        self.num_levels = num_levels if num_levels is not None else network_config.FIRST_LAYER_OUT_CHANNELS
-        self.channels_increase_factor = channels_increase_factor if channels_increase_factor is not None else network_config.CHANNELS_INCREASE_FACTOR
-        self.kernel_size = kernel_size if kernel_size is not None else network_config.KERNEL_SIZE
-        self.convolution_dilation = convolution_dilation if convolution_dilation is not None else network_config.CONV_DILATION
-        self.stride_conv_instead_of_pooling = stride_conv_instead_of_pooling if stride_conv_instead_of_pooling is not None else network_config.STRIDE_CONV_INSTEAD_OF_POOLING
-        self.last_activation_layer = last_activation_layer
-        self.output_dim = output_dim if output_dim is not None else network_config.OUTPUT_DIM
-
-    def __init__(self, in_channels: int | None = None,
-                 first_layer_out_channels:int | None = None,
-                 num_levels: int | None = None,
-                 channels_increase_factor:int | None = None,
-                 kernel_size: int  | None = None,
-                 convolution_dilation: int | None = None,
-                 last_activation_layer: Literal["linear", "sigmoid"] = "sigmoid",
-                 stride_conv_instead_pooling: bool | None = None,
+    def __init__(self, in_channels:int=1, first_layer_out_channels:Optional[int]= None,
+                 num_levels:Optional[int]= None, channels_increase_factor:Optional[int]= None,
+                 kernel_size:Optional[int]=None, last_activation:Literal["linear", "sigmoid"]= "linear",
+                 convolution_dilation:Optional[int]=None,
+                 stride_conv_instead_pooling= False,
                  output_dim="same",
                  **kwargs):
         """
@@ -141,20 +119,17 @@ class Unet(nn.Module):
         :param kwargs:
         """
         super(Unet, self).__init__()
-        self.set_default_args(in_channels=in_channels,
-                              first_layer_out_channels=first_layer_out_channels,
-                              num_levels=num_levels,
-                              channels_increase_factor=channels_increase_factor,
-                              kernel_size=kernel_size,
-                              convolution_dilation=convolution_dilation,
-                              last_activation_layer=last_activation_layer,
-                              stride_conv_instead_of_pooling=stride_conv_instead_pooling,
-                              output_dim=output_dim)
+        from tomocpt.mainConfig import mainConfig
 
-        # self.in_channels_ori = in_channels
-        # self.in_channels = in_channels
-        # self.out_channels = first_layer_out_channels
-        # self.num_blocks = num_levels
+        first_layer_out_channels = first_layer_out_channels if first_layer_out_channels else  mainConfig.train.network.FIRST_LAYER_OUT_CHANNELS
+        num_levels = num_levels if num_levels else mainConfig.train.network.NUM_LEVELS
+        channels_increase_factor = channels_increase_factor if channels_increase_factor else mainConfig.train.network.CHANNELS_INCREASE_FACTOR
+        kernel_size = kernel_size if kernel_size is not None else mainConfig.train.network.KERNEL_SIZE
+        convolution_dilation = convolution_dilation if convolution_dilation else mainConfig.train.network.CONV_DILATION
+        self.in_channels_ori = in_channels
+        self.in_channels = in_channels
+        self.out_channels = first_layer_out_channels
+        self.num_blocks = num_levels
         assert num_levels > 2, f"Error, num_levels>2 required. Current {num_levels}"
 
         self.leftarm = nn.ModuleList()
@@ -207,14 +182,15 @@ class Unet(nn.Module):
             nn.Conv3d(in_channels, out_channels=out_channels, kernel_size=1, stride=1, padding="same"),
             ]
 
-        if last_activation_layer == "linear":
+        if last_activation == "linear":
             pass
-        elif last_activation_layer == "sigmoid":
+        elif last_activation == "sigmoid":
             _last_layers.append(nn.Sigmoid())
         else:
-            raise ValueError(f"Wrong last_activation, {last_activation_layer}")
+            raise ValueError(f"Wrong last_activation, {last_activation}")
 
         self.last_layer = nn.Sequential(*_last_layers)
+
 
     def forward(self, x):
 
@@ -231,6 +207,7 @@ class Unet(nn.Module):
             x = block(x, last_layer_activations[i])
         x = self.last_layer(x)
         return x, hidden_repr
+
 
 
 if __name__ == "__main__":

@@ -1,22 +1,22 @@
-import functools
-import logging
 from pathlib import Path
 from typing import Union, Dict
 
-from networkx.algorithms.distance_measures import radius
+from tomocpt.constants import RAW_LABEL_FNAME_TEMPLATE
 from tqdm import tqdm
-
+import functools
 import mrcfile
 import numpy as np
 import pandas as pd
 
 
-logger = logging.getLogger(__name__)
+from tomocpt.labels.mod import Mod
+from tomocpt.labels.star import Star
+from tomocpt.logger import get_logger
 
+logging = get_logger()
 
 def match_data_to_tomograms(particle_data: Union[pd.DataFrame, dict],
-                            tomogram_path: Union[str, Path],
-                            tomo_label: str = 'rlnMicrographName') -> Union[pd.DataFrame, dict]:
+                            tomogram_path: Union[str, Path]) -> Union[pd.DataFrame, dict]:
     """
     Match particle data to tomograms in the specified folder.
 
@@ -28,6 +28,7 @@ def match_data_to_tomograms(particle_data: Union[pd.DataFrame, dict],
     Returns:
         Either a matched DataFrame or dict depending on input type
     """
+    COMMON_TOMO_COLUMNS = ['rlnMicrographName', 'rlnTomoName']
     folder_with_tomograms = Path(tomogram_path)
     tomograms_in_folder = list(folder_with_tomograms.glob('*.mrc'))
     tomogram_names_in_folder = sorted([tomogram.stem for tomogram in tomograms_in_folder])
@@ -49,21 +50,28 @@ def match_data_to_tomograms(particle_data: Union[pd.DataFrame, dict],
                             if name.startswith(x) and (name[len(x):len(x) + 1] in ['_', '-', ''] or name == x)]
 
         if len(possible_matches) == 1:
-            logger.info(f"Close match found for tomogram {x}: {possible_matches[0]}")
+            logging.info(f"Close match found for tomogram {x}: {possible_matches[0]}")
             name_mapping[x] = possible_matches[0]
             return possible_matches[0]
         elif len(possible_matches) > 1:
-            logger.info(f"Multiple possible matches found for tomogram {x}: {possible_matches}")
+            logging.info(f"Multiple possible matches found for tomogram {x}: {possible_matches}")
             name_mapping[x] = None
             return None
         else:
-            logger.info(f"No match found for tomogram {x} in the folder {folder_with_tomograms}.")
+            logging.info(f"No match found for tomogram {x} in the folder {folder_with_tomograms}.")
             name_mapping[x] = None
             return None
 
     if isinstance(particle_data, pd.DataFrame):
-        # Handle DataFrame input
+        # Get the 0th element of the COMMON_TOMO_COULMNS list because the comparison in
+        # line 67 will break.
+        tomo_label = [col for col in COMMON_TOMO_COLUMNS if col in particle_data.columns][0]
         particle_data = particle_data.copy()
+        if tomo_label not in particle_data.columns:
+            logging.critical(
+                f"Column '{tomo_label}' not found in particle_data DataFrame. Available columns are: {list(particle_data.columns)}")
+            raise KeyError(f"Critical error: Column '{tomo_label}' not found in DataFrame")
+
         particle_data['matched_tomogram'] = particle_data[tomo_label].apply(match_tomogram_name)
         matched_data = particle_data[particle_data['matched_tomogram'].notna()].copy()
 
@@ -128,6 +136,44 @@ def generate_gaussian_sphere(radius: float, grid_size: int,
     normed_gaussian[distance_from_center > radius] = 0
     return normed_gaussian
 
+"""
+def generate_gaussian_sphere(radius: float, grid_size: int,
+                             falloff_ratio: float = 1, accent_ratio: float = 0.5,
+                             falloff_value: float = 0.01, accent_value: float = 0.01) -> np.ndarray:
+    #TODO: generalise the gaussian generation form and move default values to config
+
+    Generate a sphere with Gaussian falloff.
+
+    Args:
+        radius (float): Radius of the sphere
+        grid_size (int): Size of the grid
+        falloff_ratio (float): Ratio for Gaussian falloff
+        accent_ratio (float): Ratio for accent
+        falloff_value (float): Falloff value
+        accent_value (float): Accent value
+
+    Returns:
+        np.ndarray: Generated sphere
+
+    sigma_falloff = (falloff_ratio * radius) / np.sqrt(-2 * np.log(falloff_value))
+    sigma_accent = (accent_ratio * radius) / np.sqrt(-2 * np.log(accent_value))
+
+    x = np.linspace(-radius, radius, grid_size)
+    y = np.linspace(-radius, radius, grid_size)
+    z = np.linspace(-radius, radius, grid_size)
+    X, Y, Z = np.meshgrid(x, y, z)
+
+    distance_from_center = np.sqrt(X ** 2 + Y ** 2 + Z ** 2)
+
+    gaussian_falloff = np.exp(-(distance_from_center ** 2) / (2 * sigma_falloff ** 2))
+    gaussian_accent = np.exp(-(distance_from_center ** 2) / (2 * sigma_accent ** 2))
+
+    combined_gaussian = gaussian_falloff + gaussian_accent
+    normed_gaussian = combined_gaussian / combined_gaussian.max()
+    normed_gaussian[distance_from_center > radius] = 0
+
+    return normed_gaussian
+"""
 def create_particle_masks(vol_coord_pairs: Dict[str, np.ndarray],
                           radius_ang: float, tomogram_path: Union[str, Path],
                           output_path: Union[str, Path], class_id: str):
@@ -150,6 +196,7 @@ def create_particle_masks(vol_coord_pairs: Dict[str, np.ndarray],
         tomogram_pixel_size = mrc.voxel_size.x
 
     radius_px = round(radius_ang / tomogram_pixel_size)
+
     sphere_box_size = int((2 * radius_px) + 1)
     if sphere_box_size % 2 == 0:
         sphere_box_size += 1
@@ -160,7 +207,7 @@ def create_particle_masks(vol_coord_pairs: Dict[str, np.ndarray],
         segmentation_vol = np.zeros(tomo_dim, dtype=precision)
 
         for point in points:
-            z, y, x = point
+            x, y, z = point
             zmin, zmax = int(z - radius_px), int(z + radius_px) + 1
             ymin, ymax = int(y - radius_px), int(y + radius_px) + 1
             xmin, xmax = int(x - radius_px), int(x + radius_px) + 1
@@ -183,15 +230,106 @@ def create_particle_masks(vol_coord_pairs: Dict[str, np.ndarray],
             overwrite=True
         )
 
-if __name__ == "__main__":
+def prepare_picking_imod(input_file: Path ,
+                         tomo_path: Path ,
+                         output_dir: Path ,
+                         particle_diameter_angst: float
+                         ) -> None:
+    particle_radius_angst = particle_diameter_angst / 2.0
+    tomo_path = Path(tomo_path)
+    output_dir = Path(output_dir)
 
-    out = generate_gaussian_sphere(radius = 10 , grid_size= 32,
-        fraction_of_radius_small_gaussian = 0.2, #0.33,
-        fraction_of_radius_large_gaussian= 0.8 ,# 0.66,
-        fraction_of_small_vs_large = 0.5,
-        sigma_radius_equivalance = 2,  # 2 sigma ~ 1 radius (95% of weight)
-        )
+    # Create output directory if it doesn't exist
+    output_dir.mkdir(parents=True, exist_ok=True)
 
-    from tomocpt.dataManager.dataUtils import plot_example
-    # plot_example(out)
-    mrcfile.write("/tmp/label.mrc", out.astype(np.float32), overwrite=True)
+    # Initialize Mod class
+    mod = Mod(input_file)
+
+    vol_coord_pairs = mod.get_coordinates()
+    matched_data = match_data_to_tomograms(vol_coord_pairs, tomo_path)
+
+    # Create tracking DataFrame
+    tracking_df = create_tracking_dataframe(matched_data, tomo_path, output_dir, particle_diameter_angst, class_id)
+
+    # Save tracking information
+    tracking_csv = output_dir / "imod_picking_tracking.csv"
+    tracking_df.to_csv(tracking_csv, index=False)
+    logging.info(f"Saved tracking information to {tracking_csv}")
+
+    # Create particle masks
+    create_particle_masks(matched_data,
+                          radius_ang=particle_radius_angst,
+                          tomogram_path=tomo_path,
+                          output_path=output_dir,
+                          class_id="all")
+
+
+def prepare_picking_star(input_file: Path,
+                         tomo_path: Path,
+                         output_dir: Path,
+                         class_id: str,
+                         particle_diameter_angst: float
+                         ) -> None:
+
+    particle_radius_angst = particle_diameter_angst / 2.0
+    tomo_path = Path(tomo_path)
+    output_dir = Path(output_dir)
+
+    # Create output directory if it doesn't exist
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    star = Star(input_file)
+
+    # Get particle subset for specific classes
+    subset_data, class_id = star.get_particle_subset(class_id)
+    matched_data = match_data_to_tomograms(subset_data, tomo_path)
+
+    # Get shifted and scaled coordinates
+    vol_coord_pairs = star.get_shifted_scaled_coordinates(matched_data, tomogram_pixel_size=star.pixel_size)
+
+    # Create tracking DataFrame
+    tracking_df = create_tracking_dataframe(vol_coord_pairs, tomo_path, output_dir, particle_diameter_angst, class_id)
+
+    # Save tracking information
+    tracking_csv = output_dir / f"star_picking_tracking_{class_id}.csv"
+    tracking_df.to_csv(tracking_csv, index=False)
+    logging.info(f"Saved tracking information to {tracking_csv}")
+
+    # Create particle masks
+    create_particle_masks(
+        vol_coord_pairs,
+        radius_ang=particle_radius_angst,
+        tomogram_path=tomo_path,
+        output_path=output_dir,
+        class_id=class_id
+    )
+
+def create_tracking_dataframe(vol_coord_pairs, tomo_path: Path, output_dir: Path,
+                              particle_diameter_angst: float, class_id:str) -> pd.DataFrame:
+    """
+    Create a DataFrame tracking tomograms, labels, and particle information.
+
+    Args:
+        vol_coord_pairs: Dictionary mapping tomogram names to particle coordinates
+        tomo_path: Path to tomogram directory
+        output_dir: Path to output directory
+        particle_diameter_angst: Particle diameter in Angstroms
+        class_id: the class id of the particle
+    Returns:
+        pd.DataFrame: DataFrame containing tracking information
+    """
+    tracking_data = []
+
+    for tomo_name, coordinates in vol_coord_pairs.items():
+        tomo_file = next(tomo_path.glob(f"*{tomo_name}*"))
+        label_file = output_dir / f"class_{class_id}" / "labels" / Path(RAW_LABEL_FNAME_TEMPLATE%str(tomo_name))
+
+        tracking_data.append({
+            'tomogram_path': str(tomo_file),
+            'label_path': str(label_file),
+            'particle_diameter_angst': particle_diameter_angst,
+            'num_particles': len(coordinates)
+        })
+
+    df = pd.DataFrame(tracking_data)
+    return df

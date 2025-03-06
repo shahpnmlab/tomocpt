@@ -7,12 +7,13 @@ import pandas as pd
 import torch
 import mrcfile
 import numpy as np
+import matplotlib.pyplot as plt
 
-from skimage.transform import resize
 from typing import Callable, Union, Tuple, List, Optional
-
 from tomocpt.constants import LABELS_DIR_NAME_PREFIX
-from tomocpt import config, constants
+from tomocpt import mainConfig, constants
+
+config = mainConfig
 
 
 def symmetrize_padding(inp):
@@ -45,6 +46,7 @@ def symmetrize_padding(inp):
             symmetric.append(i // 2)
             symmetric.append((i // 2) + 1)
     return tuple(symmetric[::-1])
+
 
 def load_mrc(fname: str, normalize: Union[str, Callable, None] = None,
              return_boxSize: bool = False) -> Union[np.array, Tuple[np.array, float]]:
@@ -105,8 +107,7 @@ def get_shape_for_resizing(volume: np.array, original_size: float, new_size: flo
 
 
 def resize_volume(volume: np.array, new_shape: Union[Tuple[int], List[int]], chunk_size,
-                  use_gpu: bool | None=None,calculate_mean:bool=True) -> np.array:
-
+                  use_gpu: bool, mean_as_padding_value: bool = True) -> Tuple[np.array, Optional[List[int]]]:
     """
     Resizes a 3D volume to a new shape using bicubic interpolation. If any dimension of the new shape is smaller
     than the given chunk_size, the function symmetrically pads the volume to match the chunk size.
@@ -115,6 +116,8 @@ def resize_volume(volume: np.array, new_shape: Union[Tuple[int], List[int]], chu
         volume (np.array): A 3D numpy array representing the volume to be resized.
         new_shape (Union[Tuple[int], List[int]]): A tuple or list of 3 integers representing the new shape of the volume.
         chunk_size (int): An integer representing the chunk size.
+        use_gpu (bool):
+        mean_as_padding_value (bool): Uses the mean of the volume as padding value
 
     Returns:
         np.array: A 3D numpy array representing the resized volume.
@@ -137,26 +140,26 @@ def resize_volume(volume: np.array, new_shape: Union[Tuple[int], List[int]], chu
         new_shape = [192, 192, 64]
         resized = resize_volume(volume, new_shape, chunk_size=16)
     """
-    if use_gpu is None:
-        use_gpu = config.USE_CUDA_FOR_DATA
-    if calculate_mean:
+    if mean_as_padding_value:
         intensity = volume.mean()
     else:
         intensity = 0
 
     shape = np.array(new_shape)
     ndim = len(volume.shape)
+    device = 'cuda' if use_gpu else 'cpu'
+
     if ndim > 3:
         resized = torch.nn.functional.interpolate(
-            torch.as_tensor(volume, device='cuda' if use_gpu else 'cpu').unsqueeze(0),
+            torch.as_tensor(volume, device=device).unsqueeze(0),
             size=new_shape, mode='trilinear', antialias=False).squeeze().cpu()
     else:
         resized = torch.nn.functional.interpolate(
-            torch.as_tensor(volume, device='cuda' if use_gpu else 'cpu').unsqueeze(0).unsqueeze(0),
+            torch.as_tensor(volume, device=device).unsqueeze(0).unsqueeze(0),
             size=new_shape, mode='trilinear', antialias=False).squeeze().squeeze().cpu()
     del volume
     gc.collect()
-
+    symmetric_padding = None
     if any(shape) < chunk_size:
         discrepancy = chunk_size - shape
         amount_to_pad = np.zeros_like(discrepancy)
@@ -173,14 +176,12 @@ def resize_volume(volume: np.array, new_shape: Union[Tuple[int], List[int]], chu
                                               mode='constant', value=intensity).squeeze()
     return resized, symmetric_padding
 
-def robust_normalization(data: np.array) -> np.array:
 
+def robust_normalization(data: np.array) -> np.array:
     p5 = np.percentile(data, q=5)
     p95 = np.percentile(data, q=95)
     median = np.median(data)
     return np.clip((data - median) / (p95 - p5), a_min=-3, a_max=3)
-
-
 
 
 def write_segmentation_mask(tensor_mask, outputname, angpix: float = 1, overwrite=True):
@@ -188,20 +189,18 @@ def write_segmentation_mask(tensor_mask, outputname, angpix: float = 1, overwrit
         m = tensor_mask.numpy()
     else:
         m = tensor_mask
-    if not overwrite:
-        mrcfile.write(outputname, data=m, voxel_size=angpix)
-    else:
-        mrcfile.write(outputname, data=m, voxel_size=angpix, overwrite=True)
+
+    mrcfile.write(outputname, data=m, voxel_size=angpix, overwrite=overwrite)
 
 
 def ang_to_pix(val, sampling):
     return int(val / sampling)
 
 
-
 def get_tomo_dims(raw_tomo_path: str):
     raw_tomo_files = list(Path(raw_tomo_path).rglob('*.mrc'))
     return _get_single_tomo_dims(raw_tomo_files[0])
+
 
 def _get_single_tomo_dims(fname):
     with mrcfile.open(fname, 'r') as f_in:
@@ -209,37 +208,39 @@ def _get_single_tomo_dims(fname):
         one_vol_voxel_size = f_in.voxel_size['x'].astype('float')
     return one_vol_shape, one_vol_voxel_size
 
-def get_labels_dirname(require_labels:bool):
+
+def get_labels_dirname(require_labels: bool):
     if require_labels:
-        return LABELS_DIR_NAME_PREFIX%"_supervised"
+        return LABELS_DIR_NAME_PREFIX % "_supervised"
     else:
-        return LABELS_DIR_NAME_PREFIX%"_selfSup"
+        return LABELS_DIR_NAME_PREFIX % "_selfSup"
 
+def plot_example(x, label):
+    if type(x) != np.ndarray:
+        x = x.cpu().detach().numpy()
+    if type(label) != np.ndarray:
+        label = label.cpu().detach().numpy()
+    if len(x.shape) == 4:
+        x = x[0, ...]
+    if len(label.shape) == 4:
+        label = label[0, ...]
 
-def plot_example(*tensors, title=None):
-    from matplotlib import pyplot as plt
-    try:
-        import cupy
-    except ImportError:
-        cupy = None
-    fig, ax = plt.subplots(len(tensors), 5, squeeze=False)
+    print(x.shape)
+    print(label.shape)
 
-    for i, x in enumerate(tensors):
-        if isinstance(x, torch.Tensor):
-            x = x.cpu().detach().numpy()
-        elif cupy and isinstance(x, cupy.ndarray):
-            x = cupy.asnumpy(x)
-        print(x.shape)
+    n = x.shape[0]
+    central = n//2
+    fig, ax = plt.subplots(2,5)
+    ax[0,0].imshow(x[central-central//2,...], cmap="gray")
+    ax[0,1].imshow(x[central-1,...], cmap="gray")
+    ax[0,2].imshow(x[central,...], cmap="gray")
+    ax[0,3].imshow(x[central+1,...], cmap="gray")
+    ax[0,4].imshow(x[central+central//2,...], cmap="gray")
 
-        n = x.shape[0]
-        central = n // 2
-        if title is not None:
-            fig.suptitle(title, fontsize=16)
-        ax[i, 0].imshow(x[central - central // 2, ...], cmap="gray")
-        ax[i, 1].imshow(x[central - 1, ...], cmap="gray")
-        ax[i, 2].imshow(x[central, ...], cmap="gray")
-        ax[i, 3].imshow(x[central + 1, ...], cmap="gray")
-        ax[i, 4].imshow(x[central + central // 2, ...], cmap="gray")
-
+    ax[1,0].imshow(label[central-central//2,...], cmap="gray")
+    ax[1,1].imshow(label[central-1,...], cmap="gray")
+    ax[1,2].imshow(label[central,...], cmap="gray")
+    ax[1,3].imshow(label[central+1,...], cmap="gray")
+    ax[1,4].imshow(label[central+central//2,...], cmap="gray")
     plt.show()
     print("")
