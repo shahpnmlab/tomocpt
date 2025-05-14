@@ -15,6 +15,8 @@ from pytorch_lightning.loggers import TensorBoardLogger
 import pytorch_lightning as pl
 
 from tomocpt.dataPreparation.prepareRawData import do_chunking, get_chunking_name_done
+from tomocpt.networks.baseModel import verify_different_lrs
+from tomocpt.training.callbacks import LRVerificationCallback
 from tomocpt.utils import read_particles_csvs, is_main_process
 
 from tomocpt.logger import get_logger
@@ -131,28 +133,26 @@ def train(
         raise ValueError("Error, mode (%s) not valid" % mainConfig.train.mode)
 
     if train_continue:
-        resume_from_checkpoint = (
-            train_continue if mainConfig.train.restore_full_state else None
-        )
+        resume_from_checkpoint = train_continue if mainConfig.train.restore_full_state else None
 
         if mainConfig.train.mode == TrainingModes.picking:
             try:
                 pl_model = BasePickingModel.load_from_checkpoint(
-                    train_continue, **kwargs
+                    train_continue, train_continue=train_continue, **kwargs
                 )
             except RuntimeError:
                 pretrained_model = SelfSupervisedModel.load_from_checkpoint(
                     train_continue
                 )
                 pl_model = BasePickingModel(
-                    **kwargs, model=pretrained_model
-                )  # map_location="cuda:0"
+                    train_continue=train_continue, **kwargs, model=pretrained_model
+                )
                 del pretrained_model
                 resume_from_checkpoint = None
         else:
-            pl_model = Model.load_from_checkpoint(train_continue, **kwargs)
+            pl_model = Model.load_from_checkpoint(train_continue, train_continue=train_continue, **kwargs)
     else:
-        pl_model = Model(**kwargs)
+        pl_model = Model(train_continue=None, **kwargs)
         resume_from_checkpoint = None
 
     data = Data(
@@ -177,10 +177,14 @@ def train(
             annealing_epochs=train__config.COSINE_LR_SCHEDULE_N_EPOCHS,
             swa_lrs=0.1 * pl_model.lr,
         ),
+        LRVerificationCallback(),
     ]
 
     if is_main_process():
         logging.info(f"Size of the training dataset {len(data.train_dataloader())}")
+        # Add this line to verify learning rates
+        verify_different_lrs(pl_model)
+
 
     tb_logger = TensorBoardLogger(
         save_dir=f"{mainConfig.train.model_dir}/{mainConfig.train.experiment_name}",

@@ -2,6 +2,42 @@ from monai.networks.nets import SwinUNETR
 import torch
 
 
+def _get_model_parameters_for_optimizer(self, different_lrs):
+    vit_params = []
+    encoder_params = []
+    decoder_params = []
+
+    if different_lrs:
+        # Collect ViT parameters (including norm layers)
+        for name, param in self.swinViT.named_parameters():
+            vit_params.append(param)
+
+        # Collect encoder and decoder parameters
+        for name, param in self.named_parameters():
+            # Skip parameters already in ViT
+            if any(p is param for p in vit_params):
+                continue
+
+            if "encoder" in name:
+                encoder_params.append(param)
+            elif "decoder" in name:
+                decoder_params.append(param)
+
+        # Create parameter groups with a more gradual learning rate decrease
+        parameters = []
+        if vit_params:
+            parameters.append({"params": vit_params, "lr_mult": 0.01})  # Fine-tune backbone slowly
+        if encoder_params:
+            parameters.append({"params": encoder_params, "lr_mult": 0.1})  # Mid-level features adapt moderately
+        if decoder_params:
+            parameters.append({"params": decoder_params, "lr_mult": 1.0})  # Task-specific parts learn fully
+
+        return parameters
+
+    return self.parameters()
+
+SwinUNETR._get_model_parameters_for_optimizer = _get_model_parameters_for_optimizer
+
 class MySwinUNETR(SwinUNETR):
     def forward(self, x_in):
         hidden_states_out = self.swinViT(x_in, self.normalize)
