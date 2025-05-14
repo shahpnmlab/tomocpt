@@ -18,6 +18,8 @@ from tomocpt.dataPreparation.prepareRawData import do_chunking, get_chunking_nam
 from tomocpt.networks.baseModel import verify_different_lrs
 from tomocpt.training.callbacks import LRVerificationCallback
 from tomocpt.utils import read_particles_csvs, is_main_process
+from tomocpt.networks.pickingModel import BasePickingModel
+from tomocpt.networks.distillationModel import DistillationPickingModel
 
 from tomocpt.logger import get_logger
 
@@ -31,13 +33,13 @@ warnings.filterwarnings(
 
 
 def train(
-    train_continue: Annotated[
-        Optional[Path],
-        typer.Option(
-            help="Path to pre-existing checkpoint file for fine-tuning with new data"
-        ),
-    ] = None,
-    config: DictConfig = None,
+        train_continue: Annotated[
+            Optional[Path],
+            typer.Option(
+                help="Path to pre-existing checkpoint file for fine-tuning with new data"
+            ),
+        ] = None,
+        config: DictConfig = None,
 ):
     """
     Trains a deep learning model for particle picking or self-supervised learning using PyTorch Lightning.
@@ -52,7 +54,6 @@ def train(
     torch.set_float32_matmul_precision(mainConfig.train.network.TORCH_MATMUL_PRECISION)
     from tomocpt.defaultConfigs.train_config import TrainingModes
     from tomocpt.dataManager.dataLoaderLightning import Data
-    from tomocpt.networks.pickingModel import BasePickingModel
     from tomocpt.networks.selfSupervisedModel import SelfSupervisedModel
     from tomocpt.utils import accelerator_selector
     from pytorch_lightning.callbacks import (
@@ -105,11 +106,62 @@ def train(
         mainConfig.train.chunks_dir
     ), f"Error, mainConfig.train.chunks_dir: {mainConfig.train.chunks_dir} does not exist "
 
+    # Model selection and initialization
     if mainConfig.train.mode == TrainingModes.picking:
-        Model = BasePickingModel
-        checkpointer = ModelCheckpoint(
-            monitor="val_loss", filename="weights", verbose=True
-        )
+        if train_continue and mainConfig.train.use_distillation:
+            # Using distillation with teacher model from train_continue
+            checkpointer = ModelCheckpoint(
+                monitor="val_loss", filename="weights", verbose=True
+            )
+
+            # Load the model with distillation
+            distill_kwargs = {
+                "teacher_checkpoint_path": train_continue,
+                "distill_weight": mainConfig.train.distill_weight,
+                "temperature": mainConfig.train.temperature
+            }
+
+            # If we're also continuing training with a student model
+            if mainConfig.train.restore_full_state:
+                resume_from_checkpoint = train_continue
+                pl_model = DistillationPickingModel.load_from_checkpoint(
+                    train_continue,
+                    train_continue=train_continue,
+                    **distill_kwargs,
+                    **kwargs
+                )
+            else:
+                # Start a new student model
+                resume_from_checkpoint = None
+                pl_model = DistillationPickingModel(
+                    train_continue=None,
+                    **distill_kwargs,
+                    **kwargs
+                )
+        else:
+            # Normal training without distillation
+            checkpointer = ModelCheckpoint(
+                monitor="val_loss", filename="weights", verbose=True
+            )
+
+            if train_continue:
+                resume_from_checkpoint = train_continue if mainConfig.train.restore_full_state else None
+                try:
+                    pl_model = BasePickingModel.load_from_checkpoint(
+                        train_continue, train_continue=train_continue, **kwargs
+                    )
+                except RuntimeError:
+                    pretrained_model = SelfSupervisedModel.load_from_checkpoint(
+                        train_continue
+                    )
+                    pl_model = BasePickingModel(
+                        train_continue=train_continue, **kwargs, model=pretrained_model
+                    )
+                    del pretrained_model
+                    resume_from_checkpoint = None
+            else:
+                pl_model = BasePickingModel(train_continue=None, **kwargs)
+                resume_from_checkpoint = None
 
     # This will be consolidated to pre-train and supervised train
     elif mainConfig.train.mode == TrainingModes.selfSupervised:
@@ -119,42 +171,17 @@ def train(
             filename=f"weights_{mainConfig.train.mode}_{network__config.model_type}",
             verbose=True,
         )
-        callbacks = [
-            TQDMProgressBar(refresh_rate=10),
-            EarlyStopping(
-                monitor="val_loss",
-                patience=6 * train__config.COSINE_LR_SCHEDULE_N_EPOCHS,
-                verbose=True,
-            ),
-            checkpointer,
-            LearningRateMonitor(logging_interval="epoch"),
-        ]
+
+        if train_continue:
+            resume_from_checkpoint = train_continue if mainConfig.train.restore_full_state else None
+            pl_model = Model.load_from_checkpoint(train_continue, train_continue=train_continue, **kwargs)
+        else:
+            pl_model = Model(train_continue=None, **kwargs)
+            resume_from_checkpoint = None
     else:
         raise ValueError("Error, mode (%s) not valid" % mainConfig.train.mode)
 
-    if train_continue:
-        resume_from_checkpoint = train_continue if mainConfig.train.restore_full_state else None
-
-        if mainConfig.train.mode == TrainingModes.picking:
-            try:
-                pl_model = BasePickingModel.load_from_checkpoint(
-                    train_continue, train_continue=train_continue, **kwargs
-                )
-            except RuntimeError:
-                pretrained_model = SelfSupervisedModel.load_from_checkpoint(
-                    train_continue
-                )
-                pl_model = BasePickingModel(
-                    train_continue=train_continue, **kwargs, model=pretrained_model
-                )
-                del pretrained_model
-                resume_from_checkpoint = None
-        else:
-            pl_model = Model.load_from_checkpoint(train_continue, train_continue=train_continue, **kwargs)
-    else:
-        pl_model = Model(train_continue=None, **kwargs)
-        resume_from_checkpoint = None
-
+    # Set up data
     data = Data(
         data_dir=mainConfig.train.chunks_dir,
         return_labels=(mainConfig.train.mode == TrainingModes.picking),
@@ -184,7 +211,6 @@ def train(
         logging.info(f"Size of the training dataset {len(data.train_dataloader())}")
         # Add this line to verify learning rates
         verify_different_lrs(pl_model)
-
 
     tb_logger = TensorBoardLogger(
         save_dir=f"{mainConfig.train.model_dir}/{mainConfig.train.experiment_name}",

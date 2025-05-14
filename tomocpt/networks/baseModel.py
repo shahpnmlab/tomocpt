@@ -171,3 +171,4 @@ def verify_different_lrs(model):
             logger.info("USING SINGLE LEARNING RATE FOR ALL PARAMETERS")
             params_count = sum(p.numel() for p in model.parameters())
             logger.info(f"Total parameters: {params_count}")
+

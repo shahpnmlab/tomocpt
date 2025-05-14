@@ -72,6 +72,22 @@ class TrainConfig:
         bool, typer.Option(help="Launch tensorboard for evaluating training")
     ] = False
 
+    # Distillation parameters
+    use_distillation: Annotated[
+        bool,
+        typer.Option(help="Enable knowledge distillation when using train_continue")
+    ] = False
+
+    distill_weight: Annotated[
+        float,
+        typer.Option(help="Weight of distillation loss (between 0 and 1)")
+    ] = 0.5
+
+    temperature: Annotated[
+        float,
+        typer.Option(help="Temperature for softening probability distributions")
+    ] = 2.0
+
     OVERFIT_N_BATCHES: Optional[int] = None
     N_GPUS: int = 4
     N_CPUS_IF_NO_GPU: int = 32

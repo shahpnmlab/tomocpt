@@ -3,7 +3,8 @@ import torch.nn as nn
 from torch.nn.functional import softmax, one_hot
 import kornia
 
-#A list of losses can be found at https://arxiv.org/pdf/2006.14822.pdf
+
+# A list of losses can be found at https://arxiv.org/pdf/2006.14822.pdf
 
 def dice_loss(sigmoidOut, ytrue, eps=1e-7):
     """Computes the Sørensen–Dice loss.
@@ -40,10 +41,12 @@ def dice_loss(sigmoidOut, ytrue, eps=1e-7):
     dice_loss = (2. * intersection / (cardinality + eps)).mean()
     return (1 - dice_loss)
 
+
 def gradient3d_loss(ypred, ytrue, order=2):
     ypred = kornia.filters.spatial_gradient3d(ypred, mode="diff", order=order)
     ytrue = kornia.filters.spatial_gradient3d(ytrue, mode="diff", order=order)
     return nn.functional.huber_loss(ypred, ytrue, reduction="none")
+
 
 def get_one_hot(y_true, n_classes):
     y_true = y_true.to(torch.int64)
@@ -55,31 +58,53 @@ def get_one_hot(y_true, n_classes):
 
 
 def boundary_loss(y_pred, y_true, dtm, smooth=1e-6, class_weights=None):
-        # Compute region based loss
+    # Compute region based loss
 
-        # Prepare inputs
-        y_true = get_one_hot(y_true, 1) #y_pred.shape[1])
-        y_pred = softmax(y_pred, dim=1)
+    # Prepare inputs
+    y_true = get_one_hot(y_true, 1)  # y_pred.shape[1])
+    y_pred = softmax(y_pred, dim=1)
 
-        if class_weights is None:
-            class_weights = torch.sum(y_true, dim=(-3,-2-1))
-            class_weights = 1. / (torch.square(class_weights) + 1.)
-        else:
-            class_weights = class_weights
+    if class_weights is None:
+        class_weights = torch.sum(y_true, dim=(-3, -2 - 1))
+        class_weights = 1. / (torch.square(class_weights) + 1.)
+    else:
+        class_weights = class_weights
 
-        # Compute boundary loss
-        # Flip each one-hot encoded class
-        y_worst = torch.square(1.0 - y_true)
+    # Compute boundary loss
+    # Flip each one-hot encoded class
+    y_worst = torch.square(1.0 - y_true)
 
-        num = torch.sum(torch.square(dtm * (y_worst - y_pred)), axis=(-3,-2,-1))
-        num *= class_weights
+    num = torch.sum(torch.square(dtm * (y_worst - y_pred)), axis=(-3, -2, -1))
+    num *= class_weights
 
-        den = torch.sum(torch.square(dtm * (y_worst - y_true)), axis=(-3,-2,-1))
-        den *= class_weights
-        den += smooth
+    den = torch.sum(torch.square(dtm * (y_worst - y_true)), axis=(-3, -2, -1))
+    den *= class_weights
+    den += smooth
 
-        boundary_loss = torch.sum(num, axis=1) / torch.sum(den, axis=1)
-        boundary_loss = torch.mean(boundary_loss)
-        boundary_loss = 1. - boundary_loss
+    boundary_loss = torch.sum(num, axis=1) / torch.sum(den, axis=1)
+    boundary_loss = torch.mean(boundary_loss)
+    boundary_loss = 1. - boundary_loss
 
-        return boundary_loss
+    return boundary_loss
+
+
+def distillation_loss(student_logits, teacher_logits, temperature=2.0):
+    """
+    Knowledge distillation loss comparing student and teacher outputs.
+    Args:
+        student_logits: Raw output from student model before activation
+        teacher_logits: Raw output from teacher model before activation
+        temperature: Softens probability distribution (higher = softer)
+    Returns:
+        KL-divergence loss between soft student and teacher distributions
+    """
+    soft_student = torch.nn.functional.sigmoid(student_logits / temperature)
+    with torch.no_grad():
+        soft_teacher = torch.nn.functional.sigmoid(teacher_logits / temperature)
+
+    # KL divergence for binary classification
+    kl_div = soft_teacher * torch.log(soft_teacher / (soft_student + 1e-7) + 1e-7) + \
+             (1 - soft_teacher) * torch.log((1 - soft_teacher) / (1 - soft_student + 1e-7) + 1e-7)
+
+    # Scale by temperature squared as in the original knowledge distillation paper
+    return temperature * temperature * kl_div.mean()
