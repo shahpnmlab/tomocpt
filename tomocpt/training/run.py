@@ -107,6 +107,7 @@ def train(
     ), f"Error, mainConfig.train.chunks_dir: {mainConfig.train.chunks_dir} does not exist "
 
     # Model selection and initialization
+    # Model selection and initialization
     if mainConfig.train.mode == TrainingModes.picking:
         if train_continue and mainConfig.train.use_distillation:
             # Using distillation with teacher model from train_continue
@@ -123,13 +124,22 @@ def train(
 
             # If we're also continuing training with a student model
             if mainConfig.train.restore_full_state:
-                resume_from_checkpoint = train_continue
-                pl_model = DistillationPickingModel.load_from_checkpoint(
-                    train_continue,
-                    train_continue=train_continue,
+                # Don't use Lightning's resume mechanism to avoid parameter group mismatch
+                resume_from_checkpoint = None
+
+                # Create new student model
+                pl_model = DistillationPickingModel(
+                    train_continue=None,  # This affects optimizer structure
                     **distill_kwargs,
                     **kwargs
                 )
+
+                # Manually load just the model weights from checkpoint
+                checkpoint = torch.load(train_continue)
+                # Filter out teacher keys and optimizer state
+                student_state_dict = {k: v for k, v in checkpoint['state_dict'].items()
+                                      if not k.startswith('teacher')}
+                pl_model.load_state_dict(student_state_dict, strict=False)
             else:
                 # Start a new student model
                 resume_from_checkpoint = None
