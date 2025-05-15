@@ -118,7 +118,7 @@ def prepare_data(config: DictConfig = None) -> None:
     # Rest of your existing prepare_labels code...
     validate_config_lists(config)
 
-    base_output_dir = Path(config.prepared_data_dir)
+    base_output_dir = Path(config.training_data_dir)
     base_output_dir.mkdir(parents=True, exist_ok=True)
 
     dataset_params = zip(particle_length_ang, raw_data_dir, coordinate_files, class_id)

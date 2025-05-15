@@ -487,8 +487,6 @@ def _infer_one_tomo(
 
 
 MODEL = None
-
-
 def infer_tomos(
     tomoFnames: List[Path],
     predsDir: str,
@@ -503,22 +501,55 @@ def infer_tomos(
     threshold: float,
     masksDir: Optional[str],
 ):
-
     from tomocpt.networks.pickingModel import BasePickingModel
+    from tomocpt.mainConfig import mainConfig
 
     global MODEL
-    if gpu_id is not None:
-        kwargs = {"map_location": f"cuda:{gpu_id}"}
-    else:
-        kwargs = {"map_location": "cpu"}
     if MODEL is None:
-        MODEL = BasePickingModel.load_from_checkpoint(modelFname, **kwargs)
+        if gpu_id is not None:
+            kwargs = {"map_location": f"cuda:{gpu_id}"}
+        else:
+            kwargs = {"map_location": "cpu"}
+            
+        # Load the checkpoint
+        checkpoint = torch.load(modelFname, **kwargs)
+        has_teacher = any(k.startswith('teacher') for k in checkpoint['state_dict'].keys())
+        
+        if has_teacher:
+            # This is a distillation model
+            logger.info("Detected distillation model checkpoint")
+            
+            # Create a base model with the correct hyperparameters
+            # Ensure we pass the same hyperparameters that would be used in training
+            MODEL = BasePickingModel(config=mainConfig)
+            
+            # Extract only the student model weights
+            # The student model has keys that start with 'model.'
+            student_state_dict = {}
+            for k, v in checkpoint['state_dict'].items():
+                if k.startswith('model.'):
+                    # Remove the 'model.' prefix for the base model
+                    student_state_dict[k[6:]] = v  # Skip 'model.'
+            
+            # Load filtered state dict into model
+            missing_keys, unexpected_keys = MODEL.model.load_state_dict(student_state_dict, strict=False)
+            if missing_keys:
+                logger.warning(f"Missing keys when loading student model: {missing_keys}")
+            if unexpected_keys:
+                logger.warning(f"Unexpected keys when loading student model: {unexpected_keys}")
+                
+            logger.info("Successfully loaded student model from distillation checkpoint")
+        else:
+            # Regular picking model
+            MODEL = BasePickingModel.load_from_checkpoint(modelFname, **kwargs)
+            logger.info("Loaded standard picking model")
 
     model = MODEL.eval()
     if gpu_id is not None:
         model = model.cuda(gpu_id)
     patch_size = model.patch_size
 
+    # Rest of the function remains unchanged
     tomo_names, one_tomo_centroids_and_scores, voxel_sizes = [], [], []
     for data_fname in tomoFnames:
         output_fname = str(Path(predsDir) / data_fname.name)
