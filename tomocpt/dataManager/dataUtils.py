@@ -106,75 +106,92 @@ def get_shape_for_resizing(volume: np.array, original_size: float, new_size: flo
     return resize_factor, output_shape
 
 
-def resize_volume(volume: np.array, new_shape: Union[Tuple[int], List[int]], chunk_size,
-                  use_gpu: bool, mean_as_padding_value: bool = True) -> Tuple[np.array, Optional[List[int]]]:
-    """
-    Resizes a 3D volume to a new shape using bicubic interpolation. If any dimension of the new shape is smaller
-    than the given chunk_size, the function symmetrically pads the volume to match the chunk size.
-
-    Args:
-        volume (np.array): A 3D numpy array representing the volume to be resized.
-        new_shape (Union[Tuple[int], List[int]]): A tuple or list of 3 integers representing the new shape of the volume.
-        chunk_size (int): An integer representing the chunk size.
-        use_gpu (bool):
-        mean_as_padding_value (bool): Uses the mean of the volume as padding value
-
-    Returns:
-        np.array: A 3D numpy array representing the resized volume.
-
-    Raises:
-        ValueError: If volume is not a 3D numpy array.
-        ValueError: If new_shape is not a tuple or list of 3 integers.
-        ValueError: If chunk_size is not an integer.
-        ValueError: If any element of new_shape is smaller than or equal to 0.
-        ValueError: If chunk_size is smaller than or equal to 0.
-
-    Examples:
-        # Resize a volume to a new shape of (256, 256, 128)
-        volume = np.random.rand(200, 200, 100)
-        new_shape = (256, 256, 128)
-        resized = resize_volume(volume, new_shape, chunk_size=32)
-
-        # Resize a volume to a new shape of [192, 192, 64]
-        volume = np.random.rand(200, 200, 100)
-        new_shape = [192, 192, 64]
-        resized = resize_volume(volume, new_shape, chunk_size=16)
-    """
+def resize_volume(volume, new_shape, chunk_size, use_gpu=True, mean_as_padding_value=True):
+    """Resize volume with proper device management and updated autocast"""
     if mean_as_padding_value:
-        intensity = volume.mean()
+        intensity = volume.mean().item()  # Get scalar value
     else:
         intensity = 0
 
-    shape = np.array(new_shape)
+    shape = torch.tensor(new_shape) if isinstance(new_shape, (list, tuple)) else new_shape
     ndim = len(volume.shape)
-    device = 'cuda' if use_gpu else 'cpu'
 
-    if ndim > 3:
-        resized = torch.nn.functional.interpolate(
-            torch.as_tensor(volume, device=device).unsqueeze(0),
-            size=new_shape, mode='trilinear', antialias=False).squeeze().cpu()
+    # Proper device management
+    if use_gpu and torch.cuda.is_available():
+        device_idx = torch.cuda.current_device()
+        device = torch.device(f'cuda:{device_idx}')
     else:
-        resized = torch.nn.functional.interpolate(
-            torch.as_tensor(volume, device=device).unsqueeze(0).unsqueeze(0),
-            size=new_shape, mode='trilinear', antialias=False).squeeze().squeeze().cpu()
-    del volume
+        device = torch.device('cpu')
+        use_gpu = False
+
+    # Ensure volume is on the correct device
+    if not isinstance(volume, torch.Tensor):
+        volume_tensor = torch.tensor(volume, device=device)
+    else:
+        volume_tensor = volume.to(device)
+
+    # Updated autocast syntax
+    with torch.amp.autocast(device.type):
+        if ndim > 3:
+            resized = torch.nn.functional.interpolate(
+                volume_tensor.unsqueeze(0),
+                size=new_shape, mode='trilinear', align_corners=False).squeeze()
+        else:
+            resized = torch.nn.functional.interpolate(
+                volume_tensor.unsqueeze(0).unsqueeze(0),
+                size=new_shape, mode='trilinear', align_corners=False).squeeze().squeeze()
+
+    # Move result to CPU and free GPU memory
+    resized_cpu = resized.cpu()
+    del volume_tensor, resized
+    if use_gpu:
+        torch.cuda.empty_cache()
     gc.collect()
+
+    # Handle padding if needed
     symmetric_padding = None
-    if any(shape) < chunk_size:
-        discrepancy = chunk_size - shape
-        amount_to_pad = np.zeros_like(discrepancy)
+    if any(s < chunk_size for s in shape):
+        discrepancy = torch.tensor(chunk_size) - shape
+        amount_to_pad = torch.zeros_like(discrepancy)
         for idx, (s, d) in enumerate(zip(shape, discrepancy)):
             if d > 0:
                 amount_to_pad[idx] = d
-        symmetric_padding = symmetrize_padding(amount_to_pad)
-        # print(symmetric_padding)
-        if ndim < 4:
-            resized = torch.nn.functional.pad(torch.as_tensor(resized).unsqueeze(0).unsqueeze(0), symmetric_padding,
-                                              mode='constant', value=intensity).squeeze().squeeze()
-        else:
-            resized = torch.nn.functional.pad(torch.as_tensor(resized).unsqueeze(0), symmetric_padding,
-                                              mode='constant', value=intensity).squeeze()
-    return resized, symmetric_padding
+
+        # Create symmetric padding
+        symmetric_padding = []
+        for i in amount_to_pad:
+            pad_val = i.item()  # Get scalar value
+            if pad_val % 2 == 0:
+                symmetric_padding.extend([pad_val // 2, pad_val // 2])
+            else:
+                symmetric_padding.extend([pad_val // 2, (pad_val // 2) + 1])
+        symmetric_padding = tuple(symmetric_padding[::-1])
+
+        # Move back to device for padding
+        pad_tensor = resized_cpu.to(device)
+        with torch.amp.autocast(device.type):
+            if ndim < 4:
+                resized_padded = torch.nn.functional.pad(
+                    pad_tensor.unsqueeze(0).unsqueeze(0),
+                    symmetric_padding,
+                    mode='constant',
+                    value=intensity
+                ).squeeze().squeeze()
+            else:
+                resized_padded = torch.nn.functional.pad(
+                    pad_tensor.unsqueeze(0),
+                    symmetric_padding,
+                    mode='constant',
+                    value=intensity
+                ).squeeze()
+
+        # Move result back to CPU
+        resized_cpu = resized_padded.cpu()
+        del pad_tensor, resized_padded
+        if use_gpu:
+            torch.cuda.empty_cache()
+
+    return resized_cpu, symmetric_padding
 
 
 def robust_normalization(data: np.array) -> np.array:

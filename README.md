@@ -100,7 +100,8 @@ infer:
   n_cpus_per_gpu: 1  # Number of CPU workers per GPU for preprocessing
 ```
 
-Edit this file to set the paths and parameters according to your needs before proceeding to the next steps.
+Edit this file to set the paths and parameters according to your needs before proceeding to the next steps. 
+If working with multiple datasets, use comma separated values.
 
 ## 2. Generate Volume-Label Pairs
 

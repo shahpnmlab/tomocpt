@@ -14,17 +14,10 @@ from tomocpt.infer.helpers import process_extracted_coordinates, infer_tomos
 
 
 def predict(
-    plot: Annotated[bool, typer.Option(help="Plot the cubes")] = False,
-    config: DictConfig = None,
+        plot: Annotated[bool, typer.Option(help="Plot the cubes")] = False,
+        config: DictConfig = None,
 ):
-    """
-    Performs parallel inference on tomogram data for particle detection and coordinate extraction.
-
-    This function processes multiple tomogram files (.mrc or .rec) in parallel, applying a trained model
-    to detect particles and optionally extract their coordinates. It supports both CPU and GPU inference
-    with automatic device selection and load balancing.
-    """
-
+    """Enhanced prediction with improved GPU distribution"""
     from tomocpt.mainConfig import mainConfig
     from tomocpt.utils import accelerator_selector
 
@@ -39,30 +32,47 @@ def predict(
         data_fnames.extend(tomosDirPath.glob(pattern))
     data_fnames = sorted(data_fnames)
 
+    # Determine available devices
     accel, dev_count = accelerator_selector(
         use_cuda=infer_config.use_cuda, n_cpus=infer_config.N_CPUS_IF_NO_GPU
     )
+
+    # Proper GPU assignment
     if accel.startswith("cpu"):
         n_gpus = None
+        use_cuda = False
     else:
         n_gpus = dev_count
-    # Run parallel inference
-    batch_size = len(data_fnames) // (infer_config.oversubscribe_factor * dev_count)
-    if batch_size < 1:
-        batch_size = 1
-    results = Parallel(
-        n_jobs=infer_config.oversubscribe_factor * dev_count, batch_size=1
-    )(
+        use_cuda = True
+        print(f"Using {n_gpus} GPUs for processing")
+
+    # Optimize batch size for parallelization
+    batch_size = max(1, len(data_fnames) // (infer_config.oversubscribe_factor * (dev_count or 1)))
+
+    # Create tasks with appropriate GPU assignments
+    tasks = []
+    for i, batch_start in enumerate(range(0, len(data_fnames), batch_size)):
+        batch_fnames = data_fnames[batch_start:batch_start + batch_size]
+
+        # Apply the requested GPU distribution formula with proper exception handling
+        if use_cuda and n_gpus:
+            if infer_config.oversubscribe_factor > 0:
+                gpu_id = (i // infer_config.oversubscribe_factor) % n_gpus
+            else:
+                gpu_id = (i % n_gpus)
+        else:
+            gpu_id = None
+
+        tasks.append((batch_fnames, gpu_id))
+
+    # Run parallel inference with proper device handling
+    results = Parallel(n_jobs=len(tasks), batch_size=1)(
         delayed(infer_tomos)(
             batch_fnames,
             infer_config.predictions_dir,
             infer_config.weights,
             particleLengthAng=infer_config.length,
-            gpu_id=(
-                (i // infer_config.oversubscribe_factor) % n_gpus
-                if n_gpus is not None
-                else None
-            ),
+            gpu_id=task_gpu_id,  # Pass the GPU ID to each task
             batch_size=infer_config.predictions_batch_size,
             plot=plot,
             save_pred_mask=infer_config.save_prediction_confidence_map,
@@ -71,9 +81,10 @@ def predict(
             threshold=infer_config.confidence_threshold,
             masksDir=infer_config.masks_dir,
         )
-        for i, batch_fnames in enumerate(batched(data_fnames, n=batch_size))
+        for batch_fnames, task_gpu_id in tasks
     )
 
+    # Process extracted coordinates
     if infer_config.save_predicted_coords:
         process_extracted_coordinates(
             results=results,
