@@ -25,35 +25,19 @@ from tomocpt.utils import accelerator_selector, makedir
 
 
 def process_mrc(
-    data_fname,
-    target_fname,
-    particle_diameter_angst,
-    outputname_template: Optional[str],
-    new_size: int,
-    chunk_size: Optional[int] = None,
-    stride: Optional[int] = None,
-    normalization_function: str = "robust_normalization",
-    require_labels: bool = True,
-    use_gpu: bool = False,
+        data_fname,
+        target_fname,
+        particle_diameter_angst,
+        outputname_template: Optional[str],
+        new_size: int,
+        chunk_size: Optional[int] = None,
+        stride: Optional[int] = None,
+        normalization_function: str = "robust_normalization",
+        require_labels: bool = True,
+        use_gpu: bool = False,
+        gpu_id: Optional[int] = None,
 ):
-    """
-    F0 = Compute number of zeros in vol => (torch.isclose(target,0).sum()
-    F1 = Compute number of non-zeros in vol => target.numel() - F0
-    Drop probability = 1-(F1/F0)
-    Computes the drop probability for a given ratio of the number of examples in two classes F1 and F0, and a scalar
-    parameter alpha.
-    If alpha is 0, drop all examples in the class with fewer samples.
-    If alpha is 1, drop as many examples as the number of samples in the minority class, so that the two classes are
-    balanced.
-    If alpha is 2, drop twice as many examples from the minority class as the number of samples in that class.
-    Args:
-    alpha (float): a scalar parameter that controls the severity of the drop.
-    F1 (int): the number of examples in the minority class.
-    F0 (int): the number of examples in the majority class.
-    Returns:
-    drop_probability (tensor): a tensor of the same shape as F1 and F0, containing the drop probabilities for each
-    class.
-    """
+    """Process MRC files with proper device management"""
     particle_radius_angst = particle_diameter_angst * 0.5
 
     if outputname_template is None:
@@ -65,6 +49,15 @@ def process_mrc(
     if stride is None:
         stride = mainConfig.train.CHUNK_STRIDE
 
+    # Determine and set target device
+    if use_gpu and torch.cuda.is_available() and gpu_id is not None:
+        device = torch.device(f"cuda:{gpu_id}")
+        torch.cuda.set_device(gpu_id)
+    else:
+        device = torch.device("cpu")
+        use_gpu = False
+
+    # Process with target device
     vol, new_shape, old_shape, voxel_size, padding_values, scalar = (
         _preprocess_data_mrc(
             data_fname,
@@ -73,27 +66,35 @@ def process_mrc(
             new_size,
             chunk_size,
             use_gpu,
+            device=device,
         )
     )
-    accel, _ = accelerator_selector(use_cuda=use_gpu)
 
     alpha = mainConfig.prepData.ALPHA_FOR_DROPPING_EMPTY_CUBES
 
+    # Handle labels with proper device management
     drop_probablity = 0.0
     if target_fname:
         vol_target = load_mrc(target_fname, normalize=None, return_boxSize=False)
-        vol_target = torch.tensor(vol_target)
+        vol_target = torch.tensor(vol_target, device=device)  # Ensure same device
+
+        # Ensure vol is on the same device
+        if vol.device != device:
+            vol = vol.to(device)
+
         F0 = torch.isclose(vol_target, torch.zeros_like(vol_target)).sum()
         F1 = torch.numel(vol_target) - F0
+
+        # Create zeros and ones on the SAME device
+        zeros = torch.zeros(1, device=device)
+        ones = torch.ones(1, device=device)
+
+        # All tensors now on same device
         drop_probablity = torch.clip(
-            1 - alpha * (F1 / F0), torch.zeros(1), torch.ones(1)
+            1 - alpha * (F1 / F0), zeros, ones
         )
     else:
-        vol_target = torch.zeros_like(vol)
-
-    if accel == "gpu":
-        vol_target = vol_target.cuda()
-        vol = vol.cuda()
+        vol_target = torch.zeros_like(vol, device=device)  # Ensure same device
 
     if vol_target.shape != tuple(new_shape):
         assert min(new_shape) >= chunk_size
@@ -108,52 +109,64 @@ def process_mrc(
 
     n_cubes = 0
     chunk_data_fnames = []
-    for i, ((chunk_data, chunk_target), coords) in enumerate(
-        get_vol_chunks(vol, vol_target, chunk_size, stride=stride)
-    ):
 
-        if chunk_target.sum() <= 0:
-            if random.random() < drop_probablity:
-                continue
+    # Process chunks with updated amp.autocast
+    with torch.amp.autocast('cuda' if use_gpu and torch.cuda.is_available() else 'cpu'):
+        for i, ((chunk_data, chunk_target), coords) in enumerate(
+                get_vol_chunks(vol, vol_target, chunk_size, stride=stride, device=device)
+        ):
+            if chunk_target.sum() <= 0:
+                # Convert to scalar for comparison
+                drop_prob_val = drop_probablity.item() if isinstance(drop_probablity, torch.Tensor) else drop_probablity
+                if random.random() < drop_prob_val:
+                    continue
 
-        chunk_data_fname = outputname_template % (
-            constants.VOLUMES_DIR_NAME_PREFIX,
-            constants.VOLUMES_DIR_NAME_PREFIX,
-            i,
-            *tuple(coords),
-        )
-        chunk_data_fnames.append(chunk_data_fname)
-        # chunk_data = tio.ScalarImage(tensor=torch.unsqueeze(chunk_data, 0).cpu())
-        chunk_data = tio.ScalarImage(tensor=torch.Tensor(chunk_data[None, ...]).cpu())
-        chunk_data.save(chunk_data_fname, squeeze=False)
-        del chunk_data
-        gc.collect()
-
-        if target_fname:
-            labels_dir_prefix = get_labels_dirname(require_labels)
-            chunk_target_fname = outputname_template % (
-                labels_dir_prefix,
-                labels_dir_prefix,
+            chunk_data_fname = outputname_template % (
+                constants.VOLUMES_DIR_NAME_PREFIX,
+                constants.VOLUMES_DIR_NAME_PREFIX,
                 i,
                 *tuple(coords),
             )
-            chunk_target = tio.ScalarImage(
-                tensor=torch.Tensor(chunk_target[None, ...]).cpu()
-            )
-            # chunk_target = tio.LabelMap(tensor=torch.unsqueeze(chunk_target, 0).cpu())
-            chunk_target.save(chunk_target_fname, squeeze=False)
-            del chunk_target
+            chunk_data_fnames.append(chunk_data_fname)
+
+            # Move to CPU for saving
+            chunk_data_cpu = chunk_data.cpu() if chunk_data.device.type != 'cpu' else chunk_data
+            chunk_data = tio.ScalarImage(tensor=chunk_data_cpu.unsqueeze(0))
+            chunk_data.save(chunk_data_fname, squeeze=False)
+            del chunk_data, chunk_data_cpu
+
+            if use_gpu and torch.cuda.is_available():
+                torch.cuda.empty_cache()
             gc.collect()
-        else:
-            fullparent, basename = os.path.split(chunk_data_fname)
-            basename = labels_dirname + basename.removeprefix(
-                constants.VOLUMES_DIR_NAME_PREFIX
-            )
-            dirname = os.path.join(os.path.split(fullparent)[0], labels_dirname)
-            chunk_target_fname = os.path.join(dirname, basename)
-            os.makedirs(dirname, exist_ok=True)
-            os.symlink(chunk_data_fname, chunk_target_fname)
-        n_cubes += 1
+
+            # Handle target with proper device management
+            if target_fname:
+                labels_dir_prefix = get_labels_dirname(require_labels)
+                chunk_target_fname = outputname_template % (
+                    labels_dir_prefix,
+                    labels_dir_prefix,
+                    i,
+                    *tuple(coords),
+                )
+                chunk_target_cpu = chunk_target.cpu() if chunk_target.device.type != 'cpu' else chunk_target
+                chunk_target = tio.ScalarImage(tensor=chunk_target_cpu.unsqueeze(0))
+                chunk_target.save(chunk_target_fname, squeeze=False)
+                del chunk_target, chunk_target_cpu
+
+                if use_gpu and torch.cuda.is_available():
+                    torch.cuda.empty_cache()
+                gc.collect()
+            else:
+                fullparent, basename = os.path.split(chunk_data_fname)
+                basename = labels_dirname + basename.removeprefix(
+                    constants.VOLUMES_DIR_NAME_PREFIX
+                )
+                dirname = os.path.join(os.path.split(fullparent)[0], labels_dirname)
+                chunk_target_fname = os.path.join(dirname, basename)
+                os.makedirs(dirname, exist_ok=True)
+                os.symlink(chunk_data_fname, chunk_target_fname)
+            n_cubes += 1
+
     return data_fname, n_cubes, chunk_data_fnames
 
 
@@ -162,22 +175,28 @@ def get_chunking_name_done(chunkedDataDir, require_labels):
 
 
 def do_chunking(
-    tomosDf: pd.DataFrame,
-    chunkedDataDir,
-    desired_particle_pixel_size: int,
-    n_cpus: int,
-    require_labels: bool = True,
-    train_val_level=None,
+        tomosDf: pd.DataFrame,
+        chunkedDataDir,
+        desired_particle_pixel_size: int,
+        n_cpus: int,
+        require_labels: bool = True,
+        train_val_level=None,
+        use_gpus: bool = True,
+        oversubscribe_factor: int = 2,
 ):
     """
+    Enhanced chunking function with multi-GPU distribution
 
-    :param tomosDf: A table with volume-lable filenames pairs
-    :param chunkedDataDir: This is where chunked cubes will be stored
-    :param n_cpus: The number of cpus to use
-    :param require_labels: Whether the data is for supervised training and thus requires labels
-    :return:
+    Args:
+        tomosDf: DataFrame with volume-label filename pairs
+        chunkedDataDir: Directory for chunked cubes storage
+        desired_particle_pixel_size: Target particle size in pixels
+        n_cpus: Number of CPUs to use
+        require_labels: Whether labels are required
+        train_val_level: Train-validation split level
+        use_gpus: Whether to use GPUs
+        oversubscribe_factor: Controls GPU oversubscription
     """
-
     if train_val_level is None:
         train_val_level = mainConfig.train.train_on
 
@@ -192,8 +211,8 @@ def do_chunking(
         raise ValueError()
 
     n_cpus = 1 if n_cpus == 0 else n_cpus
-    train_outDir = f"{chunkedDataDir}/{constants.TRAIN_DIR_NAME}"  # path/to/training/
-    val_outDir = f"{chunkedDataDir}/{constants.VAL_DIR_NAME}"  # path/to/val/
+    train_outDir = f"{chunkedDataDir}/{constants.TRAIN_DIR_NAME}"
+    val_outDir = f"{chunkedDataDir}/{constants.VAL_DIR_NAME}"
 
     if os.path.isdir(train_outDir):
         shutil.rmtree(train_outDir, ignore_errors=False)
@@ -202,12 +221,22 @@ def do_chunking(
 
     outputname_template = constants.CUBES_FNAMES_TEMPLATES
 
-    acc, dev_count = accelerator_selector(mainConfig.prepData.USE_CUDA_FOR_DATA)
+    # Get GPU information
+    n_gpus = 0
+    if use_gpus and torch.cuda.is_available():
+        n_gpus = torch.cuda.device_count()
+        print(f"Found {n_gpus} GPUs for processing")
 
-    def dispatcher(i, info_row, outpath):
-        print(
-            f"Working with {i}"
-        )  # TODO: make sure that we use all gpus. To do so, replace use_gpu by gpu_id.
+    if n_gpus == 0:
+        use_gpus = False
+        print("No GPUs available, falling back to CPU processing")
+
+    def dispatcher(i, info_row, outpath, gpu_id=None):
+
+        # Use specific GPU if available
+        if use_gpus and gpu_id is not None:
+            torch.cuda.set_device(gpu_id)
+
         bn = Path(info_row["tomogram_path"]).stem
         bn_fname = f"{outpath}/{bn}/{outputname_template}"
         makedir(f"{outpath}/{bn}/{constants.VOLUMES_DIR_NAME_PREFIX}")
@@ -223,6 +252,7 @@ def do_chunking(
         else:
             target_fname = None
         particle_diameter_angst = info_row["particle_diameter_angst"]
+
         data_fname, n_cubes, chunk_data_fnames = process_mrc(
             data_fname=info_row["tomogram_path"],
             target_fname=target_fname,
@@ -230,24 +260,56 @@ def do_chunking(
             outputname_template=bn_fname,
             new_size=desired_particle_pixel_size,
             require_labels=require_labels,
-            use_gpu=acc.startswith("cuda"),
+            use_gpu=use_gpus,
+            gpu_id=gpu_id,
         )
 
-        print(f"{data_fname}: {n_cubes} cubes written")
+        print(f"{data_fname}: {n_cubes} cubes written" + (f" on GPU {gpu_id}" if gpu_id is not None else ""))
         return data_fname
 
-    train_fnames = Parallel(n_cpus, batch_size=1)(
-        delayed(dispatcher)(i, trainObj, train_outDir)
-        for i, trainObj in df_train.iterrows()
-    )
+    # Assign GPUs using the requested distribution formula
+    if use_gpus and n_gpus > 0:
+        train_tasks = []
+        for i, row in df_train.iterrows():
+            # Apply the requested GPU distribution formula
+            if oversubscribe_factor > 0:
+                gpu_id = (i % oversubscribe_factor) % n_gpus
+            else:
+                gpu_id = (i // abs(oversubscribe_factor)) % n_gpus
+            train_tasks.append((i, row, train_outDir, gpu_id))
 
-    if df_val is not None:
-        Parallel(n_cpus, batch_size=1)(
-            delayed(dispatcher)(i, valObj, val_outDir)
-            for i, valObj in df_val.iterrows()
+        # Use parallel execution with GPU assignments
+        train_fnames = Parallel(n_cpus, batch_size=1)(
+            delayed(dispatcher)(i, row, outdir, gpu) for i, row, outdir, gpu in train_tasks
         )
+
+        if df_val is not None:
+            val_tasks = []
+            for i, row in df_val.iterrows():
+                if oversubscribe_factor > 0:
+                    gpu_id = (i % oversubscribe_factor) % n_gpus
+                else:
+                    gpu_id = (i // abs(oversubscribe_factor)) % n_gpus
+                val_tasks.append((i, row, val_outDir, gpu_id))
+
+            Parallel(n_cpus, batch_size=1)(
+                delayed(dispatcher)(i, row, outdir, gpu) for i, row, outdir, gpu in val_tasks
+            )
     else:
-        # Split by cubes
+        # Original CPU-only processing
+        train_fnames = Parallel(n_cpus, batch_size=1)(
+            delayed(dispatcher)(i, trainObj, train_outDir)
+            for i, trainObj in df_train.iterrows()
+        )
+
+        if df_val is not None:
+            Parallel(n_cpus, batch_size=1)(
+                delayed(dispatcher)(i, valObj, val_outDir)
+                for i, valObj in df_val.iterrows()
+            )
+
+    # Handle cubes-level split if needed
+    if df_val is None:
         train_fnames = train_test_split(
             train_fnames, test_size=constants.PERCENT_TO_VALIDATE
         )

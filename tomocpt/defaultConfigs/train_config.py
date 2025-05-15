@@ -1,7 +1,7 @@
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
-from typing import Optional, Annotated, Tuple
+from typing import Optional, Annotated, Tuple, List
 
 import typer
 from omegaconf import MISSING
@@ -87,6 +87,14 @@ class TrainConfig:
         float,
         typer.Option(help="Temperature for softening probability distributions")
     ] = 2.0
+
+    # Continuous learning parameters
+    continuous_learning: bool = False
+    memory_size: int = 1000
+    replay_batch_size: int = 8
+    replay_frequency: int = 1
+    train_new_task: bool = False
+    task_dirs: Optional[List[Path]] = None
 
     OVERFIT_N_BATCHES: Optional[int] = None
     N_GPUS: int = 4
