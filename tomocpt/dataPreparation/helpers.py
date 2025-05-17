@@ -9,59 +9,54 @@ logger = get_logger()
 
 
 def _preprocess_data_mrc(data_fname: str, particle_radius_angst, normalization_function,
-                         new_particle_size, chunk_size, use_gpu, device=None):
-    """
-    Enhanced preprocessing with specific GPU device support
-
-    Args:
-        data_fname: Path to input MRC file
-        particle_radius_angst: Particle radius in Angstroms
-        normalization_function: Normalization method
-        new_particle_size: Target size in pixels
-        chunk_size: Size of chunks
-        use_gpu: Whether to use GPU acceleration
-        device: Specific device to use (None = auto-select)
-
-    Returns:
-        Tuple containing processed data
-    """
+                         new_particle_size, chunk_size, use_gpu):
+    """Super simplified preprocessing function that avoids device variable"""
+    logger = get_logger()
+    
     if normalization_function == "robust_normalization":
         from tomocpt.dataManager.dataUtils import robust_normalization
         normalization_function = robust_normalization
     else:
         raise NotImplementedError(f"We only have robust_normalization and you used {normalization_function}")
 
-    # Set specific device if provided
-    if use_gpu and torch.cuda.is_available():
-        if device is None:
-            device = f"cuda:{torch.cuda.current_device()}"
+    # Determine if GPU is available
+    use_cuda = use_gpu and torch.cuda.is_available()
 
-        # Ensure we're using the right device
-        if isinstance(device, str) and device.startswith("cuda:"):
-            device_id = int(device.split(":")[1])
-            torch.cuda.set_device(device_id)
-
+    # Load data (always on CPU initially)
     vol, voxel_size = load_mrc(data_fname, normalize=normalization_function, return_boxSize=True)
     particle_size_pix = particle_radius_angst / voxel_size
     old_shape = vol.shape
 
-    # Use device-specific tensor creation
-    if use_gpu and torch.cuda.is_available():
-        vol = torch.tensor(vol, device=device)
-    else:
-        vol = torch.tensor(vol)
+    # Create tensor
+    vol_tensor = torch.tensor(vol)
+    
+    # Move to GPU if requested
+    if use_cuda:
+        try:
+            vol_tensor = vol_tensor.cuda()
+        except RuntimeError as e:
+            logger.warning(f"Failed to move tensor to GPU: {str(e)}")
+            use_cuda = False
 
-    scalar, new_shape = get_shape_for_resizing(vol, particle_size_pix, new_size=new_particle_size)
+    # Calculate new shape
+    scalar, new_shape = get_shape_for_resizing(vol_tensor, particle_size_pix, new_size=new_particle_size)
 
-    if vol.shape != tuple(new_shape):
+    # Resize if needed
+    if vol_tensor.shape != tuple(new_shape):
         logger.debug(
-            f"Resizing {data_fname} from {tuple(vol.shape)} to {new_shape}, such that the particle size is {new_particle_size}px.")
-        vol, padding_values = resize_volume(vol, new_shape, chunk_size=chunk_size, use_gpu=use_gpu)
+            f"Resizing {data_fname} from {tuple(vol_tensor.shape)} to {new_shape}, such that the particle size is {new_particle_size}px."
+        )
+        try:
+            vol_tensor, padding_values = resize_volume(vol_tensor, new_shape, chunk_size=chunk_size, use_gpu=use_cuda)
+        except RuntimeError as e:
+            logger.warning(f"Error during resize: {str(e)}")
+            if vol_tensor.device.type != 'cpu':
+                vol_tensor = vol_tensor.cpu()
+            vol_tensor, padding_values = resize_volume(vol_tensor, new_shape, chunk_size=chunk_size, use_gpu=False)
     else:
         padding_values = None
 
-    return vol, new_shape, old_shape, voxel_size, padding_values, scalar
-
+    return vol_tensor, new_shape, old_shape, voxel_size, padding_values, scalar
 
 @functools.cache
 def get_labels_dirname(require_labels:bool):
@@ -91,16 +86,14 @@ def _getRange(origin: int, shape_on_axis: int, chunk_size: int, stride: int, ran
 
 
 def get_vol_chunks(volume, label, chunk_size, stride, prepare_for_training=False, device=None):
-    """Process volume chunks with proper device handling"""
-    # Determine device
-    if device is None:
-        if torch.cuda.is_available():
-            device = torch.device(f"cuda:{torch.cuda.current_device()}")
-        else:
-            device = torch.device("cpu")
-    elif isinstance(device, str):
-        device = torch.device(device)
-
+    """Process volume chunks with simplified device handling"""
+    import torch
+    import numpy as np
+    from tomocpt import constants
+    
+    # Avoid torch.device objects entirely - just use strings and direct CUDA methods
+    gpu_available = torch.cuda.is_available()
+    
     # Get volume shape
     volume_shape = volume.shape
 
@@ -120,12 +113,15 @@ def get_vol_chunks(volume, label, chunk_size, stride, prepare_for_training=False
     def _partial_getRange(origin, shape_on_axis):
         return _getRange(origin, shape_on_axis, chunk_size, stride, randomFractionToTake)
 
-    # Process in batches for GPU efficiency
-    if device.type == 'cuda':
-        # Adjust batch size based on GPU memory
-        free_memory = torch.cuda.get_device_properties(device).total_memory - torch.cuda.memory_allocated(device)
-        batch_size = max(1, min(8, int(free_memory / (2 ** 30))))  # Rough estimate based on GB free
+    # Check if we're on GPU
+    using_gpu = gpu_available and ((isinstance(volume, torch.Tensor) and volume.device.type == 'cuda') or 
+                                 (device is not None and (
+                                     (isinstance(device, str) and device.startswith('cuda')) or
+                                     (isinstance(device, int) and device >= 0)
+                                 )))
 
+    # Process based on whether we're using GPU or not
+    if using_gpu:
         # Generate all coordinates first
         coords_list = []
         for i in _partial_getRange(i_origin, volume_shape[-3]):
@@ -134,22 +130,34 @@ def get_vol_chunks(volume, label, chunk_size, stride, prepare_for_training=False
                     coords_list.append((i, j, k))
 
         # Process coordinates in batches to manage memory
+        batch_size = 4  # Small fixed batch size to be safe
         for batch_idx in range(0, len(coords_list), batch_size):
             batch_coords = coords_list[batch_idx:batch_idx + batch_size]
 
             # Process each coordinate in batch
-            with torch.amp.autocast(device.type):
+            with torch.no_grad():
                 for i, j, k in batch_coords:
-                    # Get tensor slices ensuring they're on the right device
+                    # Get tensor slices ensuring they're on GPU
                     if isinstance(volume, torch.Tensor):
-                        volume_chunk = volume[..., i:i + chunk_size, j:j + chunk_size, k:k + chunk_size].to(device)
-                        label_chunk = label[..., i:i + chunk_size, j:j + chunk_size, k:k + chunk_size].to(device)
+                        if volume.device.type == 'cuda':
+                            volume_chunk = volume[..., i:i + chunk_size, j:j + chunk_size, k:k + chunk_size]
+                        else:
+                            volume_chunk = volume[..., i:i + chunk_size, j:j + chunk_size, k:k + chunk_size].cuda()
+                            
+                        if isinstance(label, torch.Tensor):
+                            if label.device.type == 'cuda':
+                                label_chunk = label[..., i:i + chunk_size, j:j + chunk_size, k:k + chunk_size]
+                            else:
+                                label_chunk = label[..., i:i + chunk_size, j:j + chunk_size, k:k + chunk_size].cuda()
+                        else:
+                            label_slice = label[..., i:i + chunk_size, j:j + chunk_size, k:k + chunk_size]
+                            label_chunk = torch.tensor(label_slice).cuda()
                     else:
                         vol_slice = volume[..., i:i + chunk_size, j:j + chunk_size, k:k + chunk_size]
-                        lab_slice = label[..., i:i + chunk_size, j:j + chunk_size, k:k + chunk_size]
-
-                        volume_chunk = torch.tensor(vol_slice, device=device)
-                        label_chunk = torch.tensor(lab_slice, device=device)
+                        label_slice = label[..., i:i + chunk_size, j:j + chunk_size, k:k + chunk_size]
+                        
+                        volume_chunk = torch.tensor(vol_slice).cuda()
+                        label_chunk = torch.tensor(label_slice).cuda()
 
                     yield (volume_chunk, label_chunk), (i, j, k)
 
