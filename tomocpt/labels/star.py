@@ -101,7 +101,6 @@ class Star:
             shift_headings = [f"rlnOrigin{axis}Angst" for axis in "XYZ"]
 
         coords = particle_data[xyz_headings].to_numpy()
-
         # Check if shift headings exist in the dataframe
         missing_shifts = [h for h in shift_headings if h not in particle_data.columns]
         if missing_shifts:
@@ -129,7 +128,7 @@ class Star:
         scaling_factor = star_pixel_size / tomo_pixel_size
 
         scaled_coords = shifted_coords * scaling_factor
-
+            
         subset_data = particle_data.copy()
         subset_data[xyz_headings] = scaled_coords
 

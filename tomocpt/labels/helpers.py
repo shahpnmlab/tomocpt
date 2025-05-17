@@ -15,6 +15,29 @@ from tomocpt.logger import get_logger
 
 logging = get_logger()
 
+def get_tomogram_pixel_size(tomogram_path: Path) -> float:
+    """
+    Read pixel size from the first tomogram in the directory.
+    
+    Args:
+        tomogram_path: Path to tomogram directory
+        
+    Returns:
+        float: Pixel size in Angstroms
+        
+    Note: 
+        This function assumes all tomograms in the directory have 
+        the same pixel size, which may not be true for all datasets.
+    """
+    tomo_files = list(Path(tomogram_path).glob('*.mrc'))
+    if not tomo_files:
+        raise FileNotFoundError(f"No .mrc files found in {tomogram_path}")
+        
+    with mrcfile.open(tomo_files[0]) as mrc:
+        tomogram_pixel_size = float(mrc.voxel_size.x)
+        
+    return tomogram_pixel_size
+
 def match_data_to_tomograms(particle_data: Union[pd.DataFrame, dict],
                             tomogram_path: Union[str, Path]) -> Union[pd.DataFrame, dict]:
     """
@@ -285,7 +308,8 @@ def prepare_picking_star(input_file: Path,
     matched_data = match_data_to_tomograms(subset_data, tomo_path)
 
     # Get shifted and scaled coordinates
-    vol_coord_pairs = star.get_shifted_scaled_coordinates(matched_data, tomogram_pixel_size=star.pixel_size)
+    tomogram_voxel_size = get_tomogram_pixel_size(tomo_path)
+    vol_coord_pairs = star.get_shifted_scaled_coordinates(matched_data, tomogram_pixel_size=tomogram_voxel_size)
 
     # Create tracking DataFrame
     tracking_df = create_tracking_dataframe(vol_coord_pairs, tomo_path, output_dir, particle_diameter_angst, class_id)

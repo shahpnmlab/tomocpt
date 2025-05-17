@@ -246,14 +246,8 @@ def do_chunking(
         use_gpus: bool = True,
         oversubscribe_factor: int = 2,
 ):
-    """Reliable chunking function for single-GPU and multi-GPU setups"""
-    import os
-    import shutil
-    import random
-    import torch
-    from pathlib import Path
+    """Reliable chunking function for single-GPU and multi-GPU setups with proper path handling"""
     from sklearn.model_selection import train_test_split
-    from joblib import Parallel, delayed
     
     if train_val_level is None:
         train_val_level = mainConfig.train.train_on
@@ -269,8 +263,11 @@ def do_chunking(
         raise ValueError()
 
     n_cpus = 1 if n_cpus == 0 else n_cpus
-    train_outDir = f"{chunkedDataDir}/{constants.TRAIN_DIR_NAME}"
-    val_outDir = f"{chunkedDataDir}/{constants.VAL_DIR_NAME}"
+    
+    # Make chunkedDataDir an absolute path to prevent path issues
+    chunkedDataDir = os.path.abspath(chunkedDataDir)
+    train_outDir = os.path.join(chunkedDataDir, constants.TRAIN_DIR_NAME)
+    val_outDir = os.path.join(chunkedDataDir, constants.VAL_DIR_NAME)
 
     if os.path.isdir(train_outDir):
         shutil.rmtree(train_outDir, ignore_errors=False)
@@ -289,7 +286,7 @@ def do_chunking(
         print("No GPUs available or use_gpus=False, falling back to CPU processing")
 
     def dispatcher(i, info_row, outpath, gpu_idx=None):
-        """Process a single tomogram with proper error handling"""
+        """Process a single tomogram with proper error handling and path handling"""
         try:
             # Set GPU if specified and available
             if use_gpus and gpu_idx is not None and gpu_count > 0:
@@ -300,25 +297,42 @@ def do_chunking(
                 except Exception as e:
                     print(f"Warning: Could not set GPU device: {str(e)}")
 
-            # Create directories
-            bn = Path(info_row["tomogram_path"]).stem
-            bn_fname = f"{outpath}/{bn}/{outputname_template}"
-            makedir(f"{outpath}/{bn}/{constants.VOLUMES_DIR_NAME_PREFIX}")
+            # Ensure tomogram path is absolute
+            tomogram_path = os.path.abspath(info_row["tomogram_path"])
+            
+            # Get basename without parent directories
+            bn = os.path.basename(tomogram_path)
+            if bn.endswith('.mrc'):
+                bn = bn[:-4]  # Remove extension
+                
+            # Create properly joined paths using os.path.join for reliability
+            volume_dir = os.path.join(outpath, bn, constants.VOLUMES_DIR_NAME_PREFIX)
+            makedir(volume_dir)
+            
+            # Construct the output name template properly
+            bn_fname = os.path.join(outpath, bn, outputname_template)
 
             if require_labels:
                 labels_names_prefix = get_labels_dirname(True)
             else:
                 labels_names_prefix = get_labels_dirname(False)
 
-            makedir(f"{outpath}/{bn}/{labels_names_prefix}")
+            # Create labels directory with proper path joining
+            labels_dir = os.path.join(outpath, bn, labels_names_prefix)
+            makedir(labels_dir)
             
-            target_fname = info_row["label_path"] if require_labels else None
+            # Handle label path properly
+            if require_labels:
+                target_fname = os.path.abspath(info_row["label_path"]) if info_row["label_path"] else None
+            else:
+                target_fname = None
+                
             particle_diameter_angst = info_row["particle_diameter_angst"]
 
             # Process the MRC file
             data_fname, n_cubes, chunk_data_fnames = process_mrc(
-                data_fname=info_row["tomogram_path"],
-                target_fname=target_fname,
+                data_fname=tomogram_path,  # Use the absolute path
+                target_fname=target_fname, # Use the absolute path
                 particle_diameter_angst=particle_diameter_angst,
                 outputname_template=bn_fname,
                 new_size=desired_particle_pixel_size,
@@ -337,13 +351,19 @@ def do_chunking(
                 # Free memory
                 torch.cuda.empty_cache()
                 
-                # Try again on CPU
+                # Try again on CPU - ensure proper paths are used
                 try:
+                    # Ensure paths are absolute
+                    tomogram_path = os.path.abspath(info_row["tomogram_path"])
+                    target_fname = os.path.abspath(info_row["label_path"]) if require_labels and info_row["label_path"] else None
+                    
+                    bn_fname = os.path.join(outpath, os.path.basename(tomogram_path).split('.')[0], outputname_template)
+                    
                     data_fname, n_cubes, chunk_data_fnames = process_mrc(
-                        data_fname=info_row["tomogram_path"],
-                        target_fname=target_fname if 'target_fname' in locals() else None,
+                        data_fname=tomogram_path,
+                        target_fname=target_fname,
                         particle_diameter_angst=info_row["particle_diameter_angst"],
-                        outputname_template=bn_fname if 'bn_fname' in locals() else None,
+                        outputname_template=bn_fname,
                         new_size=desired_particle_pixel_size,
                         require_labels=require_labels,
                         use_gpu=False,
@@ -404,10 +424,14 @@ def do_chunking(
             for fname in val_fnames:
                 if fname is not None:
                     try:
-                        os.rename(fname, Path(val_outDir) / Path(fname).name)
+                        # Use os.path.join for proper path handling
+                        dst = os.path.join(val_outDir, os.path.basename(fname))
+                        os.rename(fname, dst)
                     except (FileNotFoundError, OSError) as e:
                         print(f"Warning: Unable to move file {fname}: {str(e)}")
 
     print(f"Prepared data saved at:\n{train_outDir}\n{val_outDir}")
-    with open(get_chunking_name_done(chunkedDataDir, require_labels), "w") as f:
+    # Use os.path.join to construct the 'done' file path
+    done_file = os.path.join(chunkedDataDir, get_chunking_name_done(chunkedDataDir, require_labels))
+    with open(done_file, "w") as f:
         f.write("done")
