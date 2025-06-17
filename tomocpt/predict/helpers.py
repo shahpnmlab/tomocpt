@@ -1,16 +1,87 @@
-import logging
+import gc
 import re
+import warnings
 from pathlib import Path
-from typing import Union, List, Tuple
+from typing import Union, List, Tuple, Optional, Dict, Any
 
-import torch
+import mrcfile
 import numpy as np
 import pandas as pd
 import starfile
-from skimage.feature import peak_local_max
-from skimage.morphology import cube
+import imodmodel
+import torch
+import torchio as tio
+from torch.utils.data import DataLoader
 
-logger = logging.getLogger(__name__)
+from tomocpt.dataManager.preprocessing import (
+    preprocess_tomogram,
+    resize_volume,
+    get_mrc_metadata,
+    load_mrc,
+    symmetrize_and_pad
+)
+from tomocpt.logger import get_logger
+from tomocpt.mainConfig import mainConfig
+from tomocpt.defaultConfigs.infer_config import InferConfig, OutputFormat
+
+
+logger = get_logger()
+
+def unpad(inp_tensor: torch.Tensor, padding_values: Tuple[int, ...]) -> torch.Tensor:
+    """
+    Removes padding from a tensor given the padding values from F.pad.
+    The padding tuple is expected in the order (pad_x1, pad_x2, pad_y1, pad_y2, ...).
+    """
+    if padding_values is None or all(p == 0 for p in padding_values):
+        return inp_tensor
+
+    # PyTorch's padding format is (X_begin, X_end, Y_begin, Y_end, Z_begin, Z_end)
+    # We need to slice from the end of the begin-padding to the beginning of the end-padding.
+    z_pad_begin, z_pad_end, y_pad_begin, y_pad_end, x_pad_begin, x_pad_end = padding_values
+    
+    z_slice = slice(z_pad_begin, inp_tensor.shape[0] - z_pad_end)
+    y_slice = slice(y_pad_begin, inp_tensor.shape[1] - y_pad_end)
+    x_slice = slice(x_pad_begin, inp_tensor.shape[2] - x_pad_end)
+    
+    return inp_tensor[z_slice, y_slice, x_slice]
+
+
+def write_segmentation_mask(tensor_mask, outputname: str, angpix: float = 1.0, overwrite=True):
+    """Saves a numpy array or torch tensor as an MRC file."""
+    if isinstance(tensor_mask, torch.Tensor):
+        m = tensor_mask.cpu().detach().numpy()
+    else:
+        m = tensor_mask
+    output_path = Path(outputname)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    logger.info(f"Writing segmentation mask to {output_path}")
+    mrcfile.write(output_path, data=m.astype(np.float32), voxel_size=angpix, overwrite=overwrite)
+
+
+def write_imod_model(
+    output_dir: str,
+    tomo_name: str,
+    predicted_centroids_with_scores: List[List[float]],
+    output_filename: str,
+):
+    """
+    Writes particle coordinates to an IMOD model file (.mod) using the
+    high-level pandas DataFrame API.
+    """
+    if not predicted_centroids_with_scores:
+        logger.warning(f"No coordinates found for {tomo_name}, skipping .mod file creation.")
+        return
+
+    df = pd.DataFrame(predicted_centroids_with_scores, columns=['z', 'y', 'x', 'score'])
+    df_for_imod = df[['x', 'y', 'z']]
+
+    output_path = Path(output_dir) / output_filename
+    try:
+        imodmodel.write(df_for_imod, str(output_path))
+        logger.info(f"IMOD model for {tomo_name} stored in: {output_path}")
+    except Exception as e:
+        logger.error(f"Failed to write IMOD model file for {tomo_name}: {e}")
+
 
 def write_relion_star_file(output_dir: str,
                            tomo_names: List[str],
@@ -18,24 +89,7 @@ def write_relion_star_file(output_dir: str,
                            voxel_size: float,
                            output_filename: str = "tomocpt_coords.star",
                            version: Union[float, int] = 3.1) -> Path:
-    """
-    Write particle coordinates and scores to a Relion-compatible star file format.
-
-    Args:
-        output_dir: Directory where the star file will be saved
-        tomo_names: List of tomogram names
-        predicted_centroids_with_scores: List of [x, y, z, score] coordinates and scores
-        voxel_size: Pixel size in Angstroms
-        output_filename: Name of the output star file
-        version: Relion version (3.1 or 5.0)
-
-    Returns:
-        Path: Path to the written star file
-
-    Raises:
-        ValueError: If an unsupported Relion version is specified
-    """
-    # Determine the correct label based on Relion version
+    """Write particle coordinates to a Relion-compatible star file."""
     if version == 3.1:
         tomo_label = "rlnMicrographName"
     elif version == 5.0:
@@ -43,48 +97,27 @@ def write_relion_star_file(output_dir: str,
     else:
         raise ValueError(f"Unsupported Relion version: {version}. Supported versions are 3.1 and 5.0")
 
-    # Create optics table
     df_optics = pd.DataFrame({
-        'rlnOpticsGroup': [1],
-        "rlnOpticsGroupName": ["OpticsGroup1"],
-        'rlnSphericalAberration': [2.7],
-        'rlnVoltage': [300],
-        'rlnImagePixelSize': [voxel_size],
-        'rlnImageDimensionality': [3]
+        'rlnOpticsGroup': [1], "rlnOpticsGroupName": ["OpticsGroup1"],
+        'rlnSphericalAberration': [2.7], 'rlnVoltage': [300],
+        'rlnImagePixelSize': [voxel_size], 'rlnImageDimensionality': [3]
     })
-
-    # Initialize particles data dictionary
-    all_tomo_centroids_and_scores = {
-        tomo_label: [],
-        "rlnCoordinateX": [],
-        "rlnCoordinateY": [],
-        "rlnCoordinateZ": [],
-        "rlnAutopickFigureOfMerit": []
+    particles_data = {
+        tomo_label: [], "rlnCoordinateX": [], "rlnCoordinateY": [],
+        "rlnCoordinateZ": [], "rlnAutopickFigureOfMerit": []
     }
+    for tomoName, centroid in zip(tomo_names, predicted_centroids_with_scores):
+        particles_data[tomo_label].append(tomoName)
+        particles_data["rlnCoordinateX"].append(centroid[2])
+        particles_data["rlnCoordinateY"].append(centroid[1])
+        particles_data["rlnCoordinateZ"].append(centroid[0])
+        particles_data["rlnAutopickFigureOfMerit"].append(centroid[3])
 
-    # Process each coordinate
-    for tomoName, predicted_centroid in zip(tomo_names, predicted_centroids_with_scores):
-        # Add data to the dictionary
-        all_tomo_centroids_and_scores[tomo_label].append(tomoName)
-        all_tomo_centroids_and_scores["rlnCoordinateX"].append(predicted_centroid[2])
-        all_tomo_centroids_and_scores["rlnCoordinateY"].append(predicted_centroid[1])
-        all_tomo_centroids_and_scores["rlnCoordinateZ"].append(predicted_centroid[0])
-        all_tomo_centroids_and_scores["rlnAutopickFigureOfMerit"].append(predicted_centroid[3])
-
-    # Create particles table
-    df_particles = pd.DataFrame(data=all_tomo_centroids_and_scores)
-
-    # Prepare star file data
-    star_data = {
-        'optics': df_optics,
-        'particles': df_particles
-    }
-
-    # Write the star file
+    df_particles = pd.DataFrame(data=particles_data)
+    star_data = {'optics': df_optics, 'particles': df_particles}
     output_path = Path(output_dir) / output_filename
-    starfile.write(star_data, output_path, float_format="%0.2f", overwrite=True)
-    logger.info(f"Predicted coordinates are stored here: {output_path}")
-
+    starfile.write(star_data, output_path, float_format="%.2f", overwrite=True)
+    logger.info(f"Predicted coordinates are stored in: {output_path}")
     return output_path
 
 
@@ -92,232 +125,243 @@ def write_warp_star_file(output_dir: str,
                          tomo_names: List[str],
                          predicted_centroids_with_scores: List[List[float]],
                          output_filename: str = "tomocpt_coords.star") -> Path:
-    """
-    Write particle coordinates and scores to a WARP-compatible star file format.
-
-    Args:
-        output_dir: Directory where the star file will be saved
-        tomo_names: List of tomogram names
-        predicted_centroids_with_scores: List of [x, y, z, score] coordinates and scores
-        voxel_size: Pixel size in Angstroms
-        output_filename: Name of the output star file
-
-    Returns:
-        Path: Path to the written star file
-    """
-    # Initialize the data dictionary for particle coordinates
-    all_tomo_centroids_and_scores = {
-        "rlnMicrographName": [],
-        "rlnCoordinateX": [],
-        "rlnCoordinateY": [],
-        "rlnCoordinateZ": [],
-        "rlnAutopickFigureOfMerit": []
+    """Write particle coordinates to a WARP-compatible star file."""
+    particles_data = {
+        "rlnMicrographName": [], "rlnCoordinateX": [], "rlnCoordinateY": [],
+        "rlnCoordinateZ": [], "rlnAutopickFigureOfMerit": []
     }
+    for tomoName, centroid in zip(tomo_names, predicted_centroids_with_scores):
+        tomoName_warp = re.sub(r'_\d+\.\d+Apx', '.tomostar', tomoName)
+        particles_data["rlnMicrographName"].append(tomoName_warp)
+        particles_data["rlnCoordinateX"].append(centroid[2])
+        particles_data["rlnCoordinateY"].append(centroid[1])
+        particles_data["rlnCoordinateZ"].append(centroid[0])
+        particles_data["rlnAutopickFigureOfMerit"].append(centroid[3])
 
-    # Process each coordinate
-    for tomoName, predicted_centroid in zip(tomo_names, predicted_centroids_with_scores):
-        # Convert filename format
-        tomoName = re.sub(r'_\d+\.\d+Apx', '.tomostar', tomoName)
-
-        # Add data to the dictionary
-        all_tomo_centroids_and_scores["rlnMicrographName"].append(tomoName)
-        all_tomo_centroids_and_scores["rlnCoordinateX"].append(predicted_centroid[2])
-        all_tomo_centroids_and_scores["rlnCoordinateY"].append(predicted_centroid[1])
-        all_tomo_centroids_and_scores["rlnCoordinateZ"].append(predicted_centroid[0])
-        all_tomo_centroids_and_scores["rlnAutopickFigureOfMerit"].append(predicted_centroid[3])
-
-
-    # Create particles table
-    df_particles = pd.DataFrame(data=all_tomo_centroids_and_scores)
-
-    # Prepare star file data
-    star_data = {
-        'particles': df_particles
-    }
-
-    # Write the star file
+    df_particles = pd.DataFrame(data=particles_data)
     output_path = Path(output_dir) / output_filename
-    starfile.write(star_data, output_path, float_format="%0.2f", overwrite=True)
-    logger.info(f"Predicted coordinates are stored here: {output_path}")
-
+    starfile.write({'particles': df_particles}, output_path, float_format="%.2f", overwrite=True)
+    logger.info(f"Predicted coordinates are stored in: {output_path}")
     return output_path
 
-def write_sg_motive_list(output_dir: str,
-                         tomo_names: List[str],
-                         predicted_centroids_with_scores: List[List[float]],
-                         output_filename: str = "tomocpt_coords.star") -> Path:
-    return None
 
-
-def apply_mask(tomo: np.ndarray, mask: np.ndarray) -> np.ndarray:
+def peak_local_max_torch(
+    image: torch.Tensor,
+    min_distance: int,
+    threshold_abs: float,
+    exclude_border: bool = True,
+) -> torch.Tensor:
     """
-    Apply a binary mask to a tomogram.
-
-    :param tomo: The tomogram as a numpy array
-    :param mask: The mask as a numpy array
-    :return: The masked tomogram
+    A corrected PyTorch implementation of scikit-image's peak_local_max.
     """
-    if tomo.shape != mask.shape:
-        raise ValueError(f"Tomogram shape {tomo.shape} does not match mask shape {mask.shape}")
-    return tomo * mask
+    device = image.device
+    
+    kernel_size = 3
+    padding = kernel_size // 2
+    max_pooled = torch.nn.functional.max_pool3d(
+        image.unsqueeze(0).unsqueeze(0),
+        kernel_size=kernel_size,
+        stride=1,
+        padding=padding
+    ).squeeze(0).squeeze(0)
+    local_maxima = (image == max_pooled)
+
+    all_peaks = local_maxima & (image > threshold_abs)
+
+    if exclude_border:
+        b = min_distance
+        all_peaks[:b, :, :] = False; all_peaks[-b:, :, :] = False
+        all_peaks[:, :b, :] = False; all_peaks[:, -b:, :] = False
+        all_peaks[:, :, :b] = False; all_peaks[:, :, -b:] = False
+    
+    candidates = all_peaks.nonzero(as_tuple=False)
+    if candidates.shape[0] == 0:
+        return torch.empty((0, 3), device=device, dtype=torch.long)
+
+    candidate_values = image[candidates[:, 0], candidates[:, 1], candidates[:, 2]]
+    sorted_indices = torch.argsort(candidate_values, descending=True)
+    candidates = candidates[sorted_indices]
+
+    suppress_grid = torch.zeros_like(image, dtype=torch.bool)
+    final_peaks = []
+    
+    dist = min_distance
+    z, y, x = torch.meshgrid(
+        torch.arange(-dist, dist + 1, device=device),
+        torch.arange(-dist, dist + 1, device=device),
+        torch.arange(-dist, dist + 1, device=device),
+        indexing='ij'
+    )
+    suppress_mask = (z**2 + y**2 + x**2) <= dist**2
+
+    for i in range(candidates.shape[0]):
+        coord = candidates[i]
+        if suppress_grid[coord[0], coord[1], coord[2]]:
+            continue
+        final_peaks.append(coord)
+        z_min, z_max = max(0, coord[0] - dist), min(image.shape[0], coord[0] + dist + 1)
+        y_min, y_max = max(0, coord[1] - dist), min(image.shape[1], coord[1] + dist + 1)
+        x_min, x_max = max(0, coord[2] - dist), min(image.shape[2], coord[2] + dist + 1)
+        mask_z_min, mask_z_max = dist - (coord[0] - z_min), dist + (z_max - coord[0] - 1)
+        mask_y_min, mask_y_max = dist - (coord[1] - y_min), dist + (y_max - coord[1] - 1)
+        mask_x_min, mask_x_max = dist - (coord[2] - x_min), dist + (x_max - coord[2] - 1)
+        suppress_grid[z_min:z_max, y_min:y_max, x_min:x_max] |= suppress_mask[
+            mask_z_min:mask_z_max+1, mask_y_min:mask_y_max+1, mask_x_min:mask_x_max+1
+        ]
+
+    if not final_peaks:
+        return torch.empty((0, 3), device=device, dtype=torch.long)
+    return torch.stack(final_peaks)
 
 
-def unpad(inp_tensor: torch.Tensor, padding_values: Tuple):
-    if padding_values is None:
-        padding_values = (0, 0, 0, 0, 0, 0)
-    _padding_values = list(reversed(padding_values))
-    for i in range(3):
-        _i = 2 * i
-        if _padding_values[_i] == 0 and _padding_values[_i + 1] == 0:
-            _padding_values[_i] = 0
-            _padding_values[_i + 1] = inp_tensor.shape[i]
-        else:
-            _padding_values[_i + 1] = -_padding_values[_i + 1]
+def _refine_peaks_subpixel_gpu(pred_mask_gpu: torch.Tensor, peak_coords_gpu: torch.Tensor, patch_size: int = 5) -> Tuple[torch.Tensor, torch.Tensor]:
+    """Refines integer peak coordinates to sub-pixel accuracy on the GPU."""
+    if peak_coords_gpu.shape[0] == 0:
+        return torch.empty_like(peak_coords_gpu, dtype=torch.float32), torch.empty(0, device=pred_mask_gpu.device, dtype=torch.float32)
+    device = pred_mask_gpu.device; num_peaks = peak_coords_gpu.shape[0]; patch_radius = patch_size // 2
+    z, y, x = torch.meshgrid(torch.arange(-patch_radius, patch_radius + 1, device=device, dtype=torch.float32), torch.arange(-patch_radius, patch_radius + 1, device=device, dtype=torch.float32), torch.arange(-patch_radius, patch_radius + 1, device=device, dtype=torch.float32), indexing='ij')
+    A = torch.stack([z.ravel()**2, y.ravel()**2, x.ravel()**2, z.ravel()*y.ravel(), z.ravel()*x.ravel(), y.ravel()*x.ravel(), z.ravel(), y.ravel(), x.ravel(), torch.ones(x.numel(), device=device)]).T.expand(num_peaks, -1, -1)
+    patch_coords_offsets = torch.stack(torch.meshgrid(torch.arange(-patch_radius, patch_radius + 1, device=device), torch.arange(-patch_radius, patch_radius + 1, device=device), torch.arange(-patch_radius, patch_radius + 1, device=device), indexing='ij'))
+    patches_coords = peak_coords_gpu[:, :, None, None, None] + patch_coords_offsets
+    shape_tensor = torch.tensor(pred_mask_gpu.shape, device=device, dtype=torch.long)
+    patches_coords[:, 0, ...] = torch.clamp(patches_coords[:, 0, ...], 0, shape_tensor[0] - 1)
+    patches_coords[:, 1, ...] = torch.clamp(patches_coords[:, 1, ...], 0, shape_tensor[1] - 1)
+    patches_coords[:, 2, ...] = torch.clamp(patches_coords[:, 2, ...], 0, shape_tensor[2] - 1)
+    z_indices, y_indices, x_indices = patches_coords[:, 0].long(), patches_coords[:, 1].long(), patches_coords[:, 2].long()
+    patches = pred_mask_gpu[z_indices, y_indices, x_indices].view(num_peaks, -1)
+    b = torch.log(torch.clamp(patches, min=1e-6)).unsqueeze(-1)
+    try:
+        solution = torch.linalg.lstsq(A, b, driver='gels').solution.squeeze(-1)
+    except torch.linalg.LinAlgError: return peak_coords_gpu.float(), pred_mask_gpu[peak_coords_gpu[:, 0], peak_coords_gpu[:, 1], peak_coords_gpu[:, 2]]
+    coeffs = solution; c_zz, c_yy, c_xx, c_zy, c_zx, c_yx, c_z, c_y, c_x, _ = coeffs.T
+    H = torch.stack([torch.stack([2*c_zz, c_zy, c_zx]), torch.stack([c_zy, 2*c_yy, c_yx]), torch.stack([c_zx, c_yx, 2*c_xx])]).permute(2, 0, 1)
+    grad = -torch.stack([c_z, c_y, c_x]).T
+    try:
+        H_inv = torch.linalg.inv(H); offset = torch.bmm(H_inv, grad.unsqueeze(-1)).squeeze(-1)
+    except torch.linalg.LinAlgError: offset = torch.zeros_like(grad)
+    valid_mask = torch.max(torch.abs(offset), dim=1).values <= 1.0
+    refined_coords = peak_coords_gpu.float(); refined_coords[valid_mask] += offset[valid_mask]
+    refined_scores = pred_mask_gpu[peak_coords_gpu[:, 0], peak_coords_gpu[:, 1], peak_coords_gpu[:, 2]]
+    if valid_mask.any():
+        valid_offsets = offset[valid_mask]; off_z, off_y, off_x = valid_offsets.T
+        A_offset = torch.stack([off_z**2, off_y**2, off_x**2, off_z*off_y, off_z*off_x, off_y*off_x, off_z, off_y, off_x, torch.ones_like(off_z)]).T
+        log_scores_valid = torch.sum(A_offset * coeffs[valid_mask], dim=1); refined_scores_valid = torch.exp(log_scores_valid)
+        score_is_finite = torch.isfinite(refined_scores_valid); final_valid_mask = valid_mask.clone(); final_valid_mask[valid_mask] = score_is_finite
+        refined_scores[final_valid_mask] = refined_scores_valid[score_is_finite]
+    return refined_coords, refined_scores
 
-    inp_tensor = inp_tensor[_padding_values[0]:_padding_values[1],
-                 _padding_values[2]:_padding_values[3],
-                 _padding_values[4]:_padding_values[5]]
-    return inp_tensor
+def process_extracted_coordinates(output_dir: str, tomo_names: List[str], predicted_centroids_with_scores: List[List[float]], voxel_sizes: List[float], output_format: OutputFormat, output_filename: str):
+    """Processes and saves the extracted coordinates to a file."""
+    if not predicted_centroids_with_scores:
+        logger.warning("No coordinates were extracted, skipping file writing.")
+        return
 
+    first_voxel_size = voxel_sizes[0]
+    if not all(abs(vs - first_voxel_size) < 1e-4 for vs in voxel_sizes):
+        logger.warning(f"Detected multiple voxel sizes. Using the first ({first_voxel_size:.2f} Å/px) for metadata in combined file formats.")
 
-def extract_cube_at_predicted_centroid(predicted_segmentation_mask: np.array, centroid: np.array):
-    x_min, x_max = centroid[0] - 1, centroid[0] + 1
-    y_min, y_max = centroid[1] - 1, centroid[1] + 1
-    z_min, z_max = centroid[2] - 1, centroid[2] + 1
-    subvol = predicted_segmentation_mask[x_min:x_max + 1, y_min:y_max + 1, z_min:z_max + 1]
-    return np.max(subvol)
-
-
-def extract_centroids_from_pred(input_tensor: np.array, nn_ang_distance: float, particle_ang_length: float,
-                                threshold: float, angpix: float):
-    if nn_ang_distance is None:
-        min_dist = particle_ang_length / angpix
+    if output_format == OutputFormat.relion_31:
+        write_relion_star_file(output_dir, tomo_names, predicted_centroids_with_scores, first_voxel_size, output_filename, version=3.1)
+    elif output_format == OutputFormat.relion_50:
+        write_relion_star_file(output_dir, tomo_names, predicted_centroids_with_scores, first_voxel_size, output_filename, version=5.0)
+    elif output_format == OutputFormat.warp:
+        write_warp_star_file(output_dir, tomo_names, predicted_centroids_with_scores, output_filename)
+    elif output_format == OutputFormat.imod:
+        logger.info("IMOD format selected. Creating one .mod file per tomogram.")
+        df = pd.DataFrame({'tomo_name': tomo_names, 'coords': predicted_centroids_with_scores})
+        for name, group in df.groupby('tomo_name'):
+            tomo_coords = group['coords'].tolist()
+            mod_filename = f"{name}.mod"
+            write_imod_model(output_dir=output_dir, tomo_name=name, predicted_centroids_with_scores=tomo_coords, output_filename=mod_filename)
     else:
-        min_dist = nn_ang_distance / angpix
-    kernel = cube(3)
-    centroid_peaks = peak_local_max(input_tensor, threshold_abs=threshold, footprint=kernel, min_distance=int(min_dist),
-                                    exclude_border=True)
-    return centroid_peaks
+        raise ValueError(f"Unsupported output format: {output_format}")
 
-
-def _infer_one_tomo(tomoFname: str, output_fname: str, particle_ang_length: float, model: torch.nn.Module, gpu_id: int,
-                    patch_size: int = constants.CHUNK_SIZE, batch_size: int = config.BATCH_SIZE,
-                    plot: bool = False, save_preds: bool = False, extract_coords: bool = True,
-                    nn: Optional[float] = None, threshold: float = 0.3, maskFname: Optional[str] = None):
+def infer_tomos(tomo_fnames: List[Path], gpu_id: Optional[int], model_fname: str, infer_config: InferConfig) -> Tuple[List[str], List[List[float]], List[float]]:
     """
-    :param tomoFname: the filename with the tomogram
-    :param output_fname: path to directory to store inferred output
-    :param particle_ang_length: particle dimension (Å)
-    :param model: Path to trained model weights
-    :param gpu_id: The gpu_id
-    :param patch_size: Size of chunk to run inference on
-    :param batch_size: batch size. Number of chunks to process together in the GPU
-    :param plot: plot raw inference_data and segmentation mask for quick viz.
-    :param save_preds: whether to save the predicted segmentation mask
-    :param extract_coords: whether to extract coordinates from the predicted segmentation mask
-    :param nn: nearest neighbor distance (Å
-    :param threshold: threshold for peak detection
-    :param maskFname: filename of the mask to apply (optional)
-    :return:
+    Worker function for Dask, performing inference on a batch of tomograms.
+    This is the reverted, synchronous version.
     """
+    warnings.filterwarnings("ignore", message=".*`img_size` has been deprecated.*", category=FutureWarning)
+    warnings.filterwarnings("ignore", message=".*Using TorchIO images without a torchio.SubjectsLoader.*", category=UserWarning)
 
-    if not Path(output_fname).exists():
-        (vol, new_shape, old_shape, voxel_size,
-         padding_values, scalar, csv) = _preprocess_data_mrc(tomoFname, normalization_function="robust_normalization",
-                                                             new_particle_size=config.DESIRED_PARTICLE_PIXELS,
-                                                             particle_size_angst=particle_ang_length)
-        if maskFname and Path(maskFname).exists():
-            logger.info("Loading mask")
-            try:
-                m = load_mrc(maskFname, normalize=None, return_boxSize=False)
-                mask, _ = resize_volume(m, new_shape=new_shape, calculate_mean=False, chunk_size=constants.CHUNK_SIZE)
-                mask = torch.as_tensor(mask, dtype=vol.dtype)
-                if mask.shape != vol.shape:
-                    raise ValueError(f"Resized mask shape {mask.shape} does not match volume shape {vol.shape}")
-                vol = vol * mask
-                del mask
-                gc.collect()
-            except Exception as e:
-                logger.warning(f"Error processing mask: {str(e)}. Using the whole volume for inference.")
-        else:
-            logger.warning(f"No mask provided or mask file not found for {Path(tomoFname).name}. Using the whole volume for inference.")
-        vol = vol.unsqueeze(0)
-        subject = tio.Subject({"input_data": tio.ScalarImage(tensor=vol)})
+    from tomocpt.networks.pickingModel import BasePickingModel
 
-        grid_sampler = tio.GridSampler(subject, patch_size=patch_size, patch_overlap=constants.CHUNK_SIZE // 4,
-                                       padding_mode='reflect')
-        patch_loader = DataLoader(grid_sampler, batch_size=batch_size)
-        del vol
-        aggregator = tio.inference.GridAggregator(grid_sampler, overlap_mode="hann")
+    device = torch.device(f"cuda:{gpu_id}") if gpu_id is not None and torch.cuda.is_available() else torch.device("cpu")
+    if gpu_id is not None: torch.cuda.set_device(device)
 
-        with torch.inference_mode():
-            for idx, patches_batch in enumerate(tqdm(patch_loader)):
-                input_tensor = patches_batch['input_data'][tio.DATA].cuda(device=gpu_id)
-                locations = patches_batch[tio.LOCATION]
-                outputs = model.predict_step(input_tensor, idx)
-                aggregator.add_batch(outputs, locations)
+    try:
+        model = BasePickingModel.load_from_checkpoint(model_fname, map_location=device).eval()
+        logger.info(f"PickingModel using {type(model.model).__name__} loaded on {device}")
+    except Exception as e:
+        logger.error(f"Failed to load model on {device}: {e}")
+        return [], [], []
 
-        output_tensor = aggregator.get_output_tensor()
-        output_tensor = output_tensor.squeeze(0)
-        output_tensor = unpad(output_tensor, padding_values)
-        output_tensor = output_tensor.cpu().numpy()
+    try:
+        target_px_from_model = model.hparams.config.prepData.desired_particle_pixel_size
+    except AttributeError:
+        logger.warning("Could not find 'desired_particle_pixel_size' in model checkpoint. Falling back to global config value.")
+        target_px_from_model = mainConfig.prepData.desired_particle_pixel_size
 
-        #output_tensor = resize(output_tensor, output_shape=old_shape, mode='constant', cval=0)
-        output_tensor = resize_volume(output_tensor, new_shape=old_shape, calculate_mean=False, chunk_size=constants.CHUNK_SIZE)
+    results = []
+    # This inner tqdm bar will create the "clutter", but it's reliable.
+    for tomo_fname in tqdm(tomo_fnames, desc=f"Inferring on {device}", position=gpu_id or 0, leave=True):
+        try:
+            original_shape, original_voxel_size = get_mrc_metadata(str(tomo_fname))
 
-        if save_preds:
-            write_segmentation_mask(output_tensor, output_fname, angpix=voxel_size, overwrite=True)
-        if plot:
-            plot_example(subject["input_data"][tio.DATA], output_tensor)
+            processed_vol, _, padding_values = preprocess_tomogram(
+                mrc_path=str(tomo_fname),
+                particle_diameter_angst=infer_config.length,
+                target_particle_px=target_px_from_model,
+                chunk_size=model.patch_size,
+                device=device,
+                invert_contrast=infer_config.invert_contrast
+            )
 
-    else:
-        output_tensor, voxel_size = load_mrc(output_fname, normalize=None, return_boxSize=True)
-    if extract_coords:
-        coords_array = extract_centroids_from_pred(output_tensor,
-                                                   nn_ang_distance=nn, particle_ang_length=particle_ang_length,
-                                                   threshold=threshold, angpix=voxel_size)
-        if len(coords_array) == 0:
-            logger.warning(f"There are no particles to be found in {output_fname.split('/')[-1]}")
-            pass
-        else:
-            centroids_and_scores = np.zeros((coords_array.shape[0], 4))
-            tomoFnameList = []
-            for i, centroid_peak in enumerate(coords_array):
-                # centroids_and_scores[i, 0] = tomoFname.replace(tag if tag is not None, "")
-                tomoFnameList.append(Path(tomoFname).stem)
-                centroids_and_scores[i, 0] = centroid_peak[0]
-                centroids_and_scores[i, 1] = centroid_peak[1]
-                centroids_and_scores[i, 2] = centroid_peak[2]
-                centroids_and_scores[i, 3] = extract_cube_at_predicted_centroid(output_tensor, centroid_peak)
+            padded_vol, _ = symmetrize_and_pad(
+                volume=processed_vol,
+                min_size=model.patch_size
+            )
+            subject = tio.Subject(volume=tio.ScalarImage(tensor=padded_vol.unsqueeze(0)))
+            grid_sampler = tio.GridSampler(subject, patch_size=model.patch_size, patch_overlap=model.patch_size // infer_config.PATCH_OVERLAP_FACTOR)
+            patch_loader = DataLoader(grid_sampler, batch_size=infer_config.predictions_batch_size, num_workers=0)
+            aggregator = tio.inference.GridAggregator(grid_sampler, overlap_mode="hann")
 
-            return tomoFnameList, centroids_and_scores.tolist(), voxel_size
-        return None, None, None
+            with torch.inference_mode():
+                for batch in patch_loader:
+                    input_tensor = batch['volume'][tio.DATA].to(device)
+                    with torch.amp.autocast(device_type=device.type, enabled=infer_config.use_cuda):
+                        predictions = model.predict_step(input_tensor, 0)
+                    aggregator.add_batch(predictions, batch[tio.LOCATION])
 
+            aggregated_mask = aggregator.get_output_tensor().squeeze(0)
+            unpadded_mask = unpad(aggregated_mask, padding_values)
+            pred_mask_gpu = resize_volume(unpadded_mask, original_shape)
 
-def infer_tomos(tomoFnames: List[Path], predsDir: str, modelFname: str, gpu_id: int, particleLengthAng: float,
-                patch_size: int = constants.CHUNK_SIZE, batch_size: int = config.BATCH_SIZE,
-                plot: bool = False, save_preds: bool = False, extract_coords: bool = True,
-                nn: Optional[float] = None, threshold: float = 0.3, masksDir: Optional[str] = None):
+            if infer_config.masks_dir and (mask_path := Path(infer_config.masks_dir) / tomo_fname.name).exists():
+                user_mask_np = load_mrc(str(mask_path), normalize=False)
+                user_mask_gpu = torch.from_numpy(user_mask_np).to(device)
+                if user_mask_gpu.shape != pred_mask_gpu.shape:
+                    user_mask_gpu = resize_volume(user_mask_gpu, pred_mask_gpu.shape)
+                pred_mask_gpu *= user_mask_gpu
 
-    kwargs = {"map_location": f"cuda:{gpu_id}"}
-    model = BasePickingModel.load_from_checkpoint(modelFname, **kwargs)
-    model = model.eval().cuda(gpu_id)
+            if infer_config.save_prediction_confidence_map:
+                output_mask_path = Path(infer_config.predictions_dir) / f"{tomo_fname.stem}.mrc"
+                write_segmentation_mask(pred_mask_gpu, str(output_mask_path), angpix=original_voxel_size, overwrite=True)
 
-    tomo_names, one_tomo_centroids_and_scores = [], []
-    for data_fname in tomoFnames:
-        output_fname = predsDir + '/' + data_fname.name
-        mask_fname = Path(masksDir) / data_fname.name if masksDir else None
-        _tomo_names, _one_tomo_centroids_and_scores, vx = _infer_one_tomo(tomoFname=str(data_fname),
-                                                                          output_fname=output_fname,
-                                                                          particle_ang_length=particleLengthAng,
-                                                                          model=model, gpu_id=gpu_id,
-                                                                          patch_size=patch_size,
-                                                                          batch_size=batch_size, plot=plot,
-                                                                          save_preds=save_preds,
-                                                                          extract_coords=extract_coords, nn=nn,
-                                                                          threshold=threshold,
-                                                                          maskFname=str(
-                                                                              mask_fname) if mask_fname else None)
-        tomo_names.extend(_tomo_names)
-        one_tomo_centroids_and_scores.extend(_one_tomo_centroids_and_scores)
-    return tomo_names, one_tomo_centroids_and_scores, vx
+            if infer_config.save_predicted_coords:
+                min_dist_px = (infer_config.distance_threshold or infer_config.length) / original_voxel_size
+                int_coords_gpu = peak_local_max_torch(image=pred_mask_gpu, min_distance=int(min_dist_px), threshold_abs=infer_config.confidence_threshold, exclude_border=True)
+                if int_coords_gpu.shape[0] > 0:
+                    refined_coords_gpu, refined_scores_gpu = _refine_peaks_subpixel_gpu(pred_mask_gpu, int_coords_gpu)
+                    centroids_with_scores = torch.hstack([refined_coords_gpu, refined_scores_gpu.unsqueeze(-1)]).cpu().numpy()
+                    results.append((tomo_fname.stem, centroids_with_scores.tolist(), original_voxel_size))
+        except Exception as e:
+            logger.error(f"Error processing {tomo_fname.name} on {device}: {e}", exc_info=True)
+        finally:
+            gc.collect()
+            if device.type == 'cuda': torch.cuda.empty_cache()
+
+    all_names, all_centroids, all_voxel_sizes = [], [], []
+    for name, centroids, vx in results:
+        all_names.extend([name] * len(centroids)); all_centroids.extend(centroids); all_voxel_sizes.extend([vx] * len(centroids))
+    return all_names, all_centroids, all_voxel_sizes

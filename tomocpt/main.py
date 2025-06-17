@@ -3,7 +3,7 @@ from tomocpt.mainConfig import mainConfig
 from tomocpt.configManager.initializer import init
 from tomocpt.labels.run import prepare_data
 from tomocpt.training.run import train
-from tomocpt.infer.run import predict
+from tomocpt.predict.run import predict
 
 def main():
     tomocpt_app = create_app()
