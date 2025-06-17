@@ -14,43 +14,35 @@ from typing import Annotated, Optional
 from pytorch_lightning.loggers import TensorBoardLogger
 import pytorch_lightning as pl
 
-from tomocpt.dataPreparation.prepareRawData import do_chunking, get_chunking_name_done
+from tomocpt.dataManager.chunking import do_chunking, get_chunking_name_done
+from tomocpt.dataManager.dataloading import Data
+from tomocpt.networks.baseModel import verify_different_lrs
+from tomocpt.training.callbacks import LRVerificationCallback
 from tomocpt.utils import read_particles_csvs, is_main_process
-
+from tomocpt.networks.pickingModel import BasePickingModel
+from tomocpt.networks.distillationModel import DistillationPickingModel
 from tomocpt.logger import get_logger
 
 logging = get_logger()
-
-warnings.filterwarnings(
-    "ignore",
-    message="monai.networks.nets.swin_unetr SwinUNETR.__init__:img_size*",
-    category=FutureWarning,
-)
-
+warnings.filterwarnings("ignore", ".*SwinUNETR.*", FutureWarning)
 
 def train(
-    train_continue: Annotated[
-        Optional[Path],
-        typer.Option(
-            help="Path to pre-existing checkpoint file for fine-tuning with new data"
-        ),
-    ] = None,
-    config: DictConfig = None,
+        train_continue: Annotated[
+            Optional[Path],
+            typer.Option(
+                help="Path to pre-existing checkpoint file for fine-tuning with new data"
+            ),
+        ] = None,
+        config: DictConfig = None,
 ):
     """
     Trains a deep learning model for particle picking or self-supervised learning using PyTorch Lightning.
-
-    This function handles the complete training pipeline including data preparation, model initialization,
-    and training execution. It supports both fresh training and continuing from checkpoints, with options
-    for model compilation and various training configurations.
     """
 
     from tomocpt.mainConfig import mainConfig
 
     torch.set_float32_matmul_precision(mainConfig.train.network.TORCH_MATMUL_PRECISION)
     from tomocpt.defaultConfigs.train_config import TrainingModes
-    from tomocpt.dataManager.dataLoaderLightning import Data
-    from tomocpt.networks.pickingModel import BasePickingModel
     from tomocpt.networks.selfSupervisedModel import SelfSupervisedModel
     from tomocpt.utils import accelerator_selector
     from pytorch_lightning.callbacks import (
@@ -61,15 +53,12 @@ def train(
         StochasticWeightAveraging,
     )
 
-    # logger = logging.create_logger("info")
     kwargs = dict(lr=mainConfig.train.optimizer.lr)
 
     train__config = mainConfig.train
     network__config = mainConfig.train.network
     assert mainConfig.train.model_dir, "Error, you need to provide a model_dir"
-    assert (
-        mainConfig.train.chunks_dir
-    ), "Error, you need to provide a chunks_dir"  # TODO: Do you want to assert that, or fall back to a default?
+    assert mainConfig.train.chunks_dir, "Error, you need to provide a chunks_dir"
 
     chunks_dir = mainConfig.train.chunks_dir
 
@@ -78,10 +67,13 @@ def train(
         chunks_dir, require_labels=require_labels
     )
     if not Path(chunking_name_done).is_file():
+        logging.info("Chunked data not found or incomplete. Starting data preparation...")
+        # Intelligently determine the source directory for raw data
         if mainConfig.train.training_data_dir is None:
             training_data_dir = mainConfig.prepData.training_data_dir
         else:
             training_data_dir = mainConfig.train.training_data_dir
+        
         if not Path(training_data_dir).is_dir():
             raise RuntimeError(
                 f"Error, prepared_data_dir {training_data_dir} not found"
@@ -89,25 +81,85 @@ def train(
 
         tomosDf = read_particles_csvs(training_data_dir)
 
-        # new_size = mainConfig.prepData.desired_particle_pixel_size
-        # prep_data_config = OmegaConf.load("config.yaml")
+        # Call the new, refactored do_chunking function with all its required parameters
+        # sourced from the mainConfig object.
         do_chunking(
             tomosDf,
             chunkedDataDir=mainConfig.train.chunks_dir,
             desired_particle_pixel_size=mainConfig.prepData.desired_particle_pixel_size,
-            n_cpus=train__config.n_cpus_for_train,
+            n_cpus=train__config.n_cpus_for_preprocessing,
             require_labels=require_labels,
+            train_val_level=mainConfig.train.train_on,
+            use_gpus=mainConfig.train.use_gpus,
         )
-
-    assert os.path.isdir(
-        mainConfig.train.chunks_dir
-    ), f"Error, mainConfig.train.chunks_dir: {mainConfig.train.chunks_dir} does not exist "
-
+        logging.info("Data preparation complete.")
+    else:
+        logging.info("Found existing chunked data. Skipping data preparation.")
+    # Model selection and initialization
     if mainConfig.train.mode == TrainingModes.picking:
-        Model = BasePickingModel
-        checkpointer = ModelCheckpoint(
-            monitor="val_loss", filename="weights", verbose=True
-        )
+        if train_continue and mainConfig.train.use_distillation:
+            # Using distillation with teacher model from train_continue
+            checkpointer = ModelCheckpoint(
+                monitor="val_loss", filename="weights", verbose=True
+            )
+
+            # Load the model with distillation
+            distill_kwargs = {
+                "teacher_checkpoint_path": train_continue,
+                "distill_weight": mainConfig.train.distill_weight,
+                "temperature": mainConfig.train.temperature
+            }
+
+            # If we're also continuing training with a student model
+            if mainConfig.train.restore_full_state:
+                # Don't use Lightning's resume mechanism to avoid parameter group mismatch
+                resume_from_checkpoint = None
+
+                # Create new student model
+                pl_model = DistillationPickingModel(
+                    train_continue=None,  # This affects optimizer structure
+                    **distill_kwargs,
+                    **kwargs
+                )
+
+                # Manually load just the model weights from checkpoint
+                checkpoint = torch.load(train_continue)
+                # Filter out teacher keys and optimizer state
+                student_state_dict = {k: v for k, v in checkpoint['state_dict'].items()
+                                      if not k.startswith('teacher')}
+                pl_model.load_state_dict(student_state_dict, strict=False)
+            else:
+                # Start a new student model
+                resume_from_checkpoint = None
+                pl_model = DistillationPickingModel(
+                    train_continue=None,
+                    **distill_kwargs,
+                    **kwargs
+                )
+        else:
+            # Normal training without distillation
+            checkpointer = ModelCheckpoint(
+                monitor="val_loss", filename="weights", verbose=True
+            )
+
+            if train_continue:
+                resume_from_checkpoint = train_continue if mainConfig.train.restore_full_state else None
+                try:
+                    pl_model = BasePickingModel.load_from_checkpoint(
+                        train_continue, train_continue=train_continue, **kwargs
+                    )
+                except RuntimeError:
+                    pretrained_model = SelfSupervisedModel.load_from_checkpoint(
+                        train_continue
+                    )
+                    pl_model = BasePickingModel(
+                        train_continue=train_continue, **kwargs, model=pretrained_model
+                    )
+                    del pretrained_model
+                    resume_from_checkpoint = None
+            else:
+                pl_model = BasePickingModel(train_continue=None, **kwargs)
+                resume_from_checkpoint = None
 
     # This will be consolidated to pre-train and supervised train
     elif mainConfig.train.mode == TrainingModes.selfSupervised:
@@ -117,49 +169,22 @@ def train(
             filename=f"weights_{mainConfig.train.mode}_{network__config.model_type}",
             verbose=True,
         )
-        callbacks = [
-            TQDMProgressBar(refresh_rate=10),
-            EarlyStopping(
-                monitor="val_loss",
-                patience=6 * train__config.COSINE_LR_SCHEDULE_N_EPOCHS,
-                verbose=True,
-            ),
-            checkpointer,
-            LearningRateMonitor(logging_interval="epoch"),
-        ]
+
+        if train_continue:
+            resume_from_checkpoint = train_continue if mainConfig.train.restore_full_state else None
+            pl_model = Model.load_from_checkpoint(train_continue, train_continue=train_continue, **kwargs)
+        else:
+            pl_model = Model(train_continue=None, **kwargs)
+            resume_from_checkpoint = None
     else:
         raise ValueError("Error, mode (%s) not valid" % mainConfig.train.mode)
 
-    if train_continue:
-        resume_from_checkpoint = (
-            train_continue if mainConfig.train.restore_full_state else None
-        )
-
-        if mainConfig.train.mode == TrainingModes.picking:
-            try:
-                pl_model = BasePickingModel.load_from_checkpoint(
-                    train_continue, **kwargs
-                )
-            except RuntimeError:
-                pretrained_model = SelfSupervisedModel.load_from_checkpoint(
-                    train_continue
-                )
-                pl_model = BasePickingModel(
-                    **kwargs, model=pretrained_model
-                )  # map_location="cuda:0"
-                del pretrained_model
-                resume_from_checkpoint = None
-        else:
-            pl_model = Model.load_from_checkpoint(train_continue, **kwargs)
-    else:
-        pl_model = Model(**kwargs)
-        resume_from_checkpoint = None
-
+    # Set up data
     data = Data(
         data_dir=mainConfig.train.chunks_dir,
         return_labels=(mainConfig.train.mode == TrainingModes.picking),
         batch_size=mainConfig.train.batch_size,
-        workers_for_data=mainConfig.train.n_cpus_for_train,
+        workers_for_data=mainConfig.train.n_cpus_for_dataloading,
     )
 
     data.setup()
@@ -177,10 +202,13 @@ def train(
             annealing_epochs=train__config.COSINE_LR_SCHEDULE_N_EPOCHS,
             swa_lrs=0.1 * pl_model.lr,
         ),
+        LRVerificationCallback(),
     ]
 
     if is_main_process():
         logging.info(f"Size of the training dataset {len(data.train_dataloader())}")
+        # Add this line to verify learning rates
+        verify_different_lrs(pl_model)
 
     tb_logger = TensorBoardLogger(
         save_dir=f"{mainConfig.train.model_dir}/{mainConfig.train.experiment_name}",

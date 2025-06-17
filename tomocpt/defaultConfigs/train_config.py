@@ -43,8 +43,11 @@ class TrainConfig:
     n_epochs: Annotated[int, typer.Option(help="Number of epochs to train")] = 10
     batch_size: Annotated[int, typer.Option(help="batch size")] = 16
     use_gpus: Annotated[bool, typer.Option(help="use cuda for training")] = True
-    n_cpus_for_train: Annotated[
-        int, typer.Option(help="Number of CPU workers per GPU to pre-process data")
+    n_cpus_for_preprocessing: Annotated[
+        int, typer.Option(help="Number of CPU workers for the initial chunking/preprocessing step.")
+    ] = 8
+    n_cpus_for_dataloading: Annotated[
+        int, typer.Option(help="Number of CPU workers per GPU for the PyTorch DataLoader during training.")
     ] = 8
     experiment_name: Annotated[
         Optional[str], typer.Option(help="The name of the experiment")
@@ -71,6 +74,22 @@ class TrainConfig:
     launch_tensorboard: Annotated[
         bool, typer.Option(help="Launch tensorboard for evaluating training")
     ] = False
+
+    # Distillation parameters
+    use_distillation: Annotated[
+        bool,
+        typer.Option(help="Enable knowledge distillation when using train_continue")
+    ] = False
+
+    distill_weight: Annotated[
+        float,
+        typer.Option(help="Weight of distillation loss (between 0 and 1)")
+    ] = 0.5
+
+    temperature: Annotated[
+        float,
+        typer.Option(help="Temperature for softening probability distributions")
+    ] = 2.0
 
     OVERFIT_N_BATCHES: Optional[int] = None
     N_GPUS: int = 4
