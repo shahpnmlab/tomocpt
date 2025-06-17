@@ -14,23 +14,17 @@ from typing import Annotated, Optional
 from pytorch_lightning.loggers import TensorBoardLogger
 import pytorch_lightning as pl
 
-from tomocpt.dataPreparation.prepareRawData import do_chunking, get_chunking_name_done
+from tomocpt.dataManager.chunking import do_chunking, get_chunking_name_done
+from tomocpt.dataManager.dataloading import Data
 from tomocpt.networks.baseModel import verify_different_lrs
 from tomocpt.training.callbacks import LRVerificationCallback
 from tomocpt.utils import read_particles_csvs, is_main_process
 from tomocpt.networks.pickingModel import BasePickingModel
 from tomocpt.networks.distillationModel import DistillationPickingModel
-
 from tomocpt.logger import get_logger
 
 logging = get_logger()
-
-warnings.filterwarnings(
-    "ignore",
-    message="monai.networks.nets.swin_unetr SwinUNETR.__init__:img_size*",
-    category=FutureWarning,
-)
-
+warnings.filterwarnings("ignore", ".*SwinUNETR.*", FutureWarning)
 
 def train(
         train_continue: Annotated[
@@ -43,17 +37,12 @@ def train(
 ):
     """
     Trains a deep learning model for particle picking or self-supervised learning using PyTorch Lightning.
-
-    This function handles the complete training pipeline including data preparation, model initialization,
-    and training execution. It supports both fresh training and continuing from checkpoints, with options
-    for model compilation and various training configurations.
     """
 
     from tomocpt.mainConfig import mainConfig
 
     torch.set_float32_matmul_precision(mainConfig.train.network.TORCH_MATMUL_PRECISION)
     from tomocpt.defaultConfigs.train_config import TrainingModes
-    from tomocpt.dataManager.dataLoaderLightning import Data
     from tomocpt.networks.selfSupervisedModel import SelfSupervisedModel
     from tomocpt.utils import accelerator_selector
     from pytorch_lightning.callbacks import (
@@ -64,27 +53,28 @@ def train(
         StochasticWeightAveraging,
     )
 
-    # logger = logging.create_logger("info")
     kwargs = dict(lr=mainConfig.train.optimizer.lr)
 
     train__config = mainConfig.train
     network__config = mainConfig.train.network
     assert mainConfig.train.model_dir, "Error, you need to provide a model_dir"
-    assert (
-        mainConfig.train.chunks_dir
-    ), "Error, you need to provide a chunks_dir"  # TODO: Do you want to assert that, or fall back to a default?
+    assert mainConfig.train.chunks_dir, "Error, you need to provide a chunks_dir"
 
     chunks_dir = mainConfig.train.chunks_dir
 
+    # --- THIS IS THE CORRECTED LOGIC BLOCK, RESTORING THE ORIGINAL FLOW ---
     require_labels = mainConfig.train.mode == TrainingModes.picking
     chunking_name_done = get_chunking_name_done(
         chunks_dir, require_labels=require_labels
     )
     if not Path(chunking_name_done).is_file():
+        logging.info("Chunked data not found or incomplete. Starting data preparation...")
+        # Intelligently determine the source directory for raw data
         if mainConfig.train.training_data_dir is None:
             training_data_dir = mainConfig.prepData.training_data_dir
         else:
             training_data_dir = mainConfig.train.training_data_dir
+        
         if not Path(training_data_dir).is_dir():
             raise RuntimeError(
                 f"Error, prepared_data_dir {training_data_dir} not found"
@@ -92,21 +82,20 @@ def train(
 
         tomosDf = read_particles_csvs(training_data_dir)
 
-        # new_size = mainConfig.prepData.desired_particle_pixel_size
-        # prep_data_config = OmegaConf.load("config.yaml")
+        # Call the new, refactored do_chunking function with all its required parameters
+        # sourced from the mainConfig object.
         do_chunking(
             tomosDf,
             chunkedDataDir=mainConfig.train.chunks_dir,
             desired_particle_pixel_size=mainConfig.prepData.desired_particle_pixel_size,
-            n_cpus=train__config.n_cpus_for_train,
+            n_cpus=train__config.n_cpus_for_preprocessing,
             require_labels=require_labels,
+            train_val_level=mainConfig.train.train_on,
+            use_gpus=mainConfig.train.use_gpus,
         )
-
-    assert os.path.isdir(
-        mainConfig.train.chunks_dir
-    ), f"Error, mainConfig.train.chunks_dir: {mainConfig.train.chunks_dir} does not exist "
-
-    # Model selection and initialization
+        logging.info("Data preparation complete.")
+    else:
+        logging.info("Found existing chunked data. Skipping data preparation.")
     # Model selection and initialization
     if mainConfig.train.mode == TrainingModes.picking:
         if train_continue and mainConfig.train.use_distillation:
@@ -196,7 +185,7 @@ def train(
         data_dir=mainConfig.train.chunks_dir,
         return_labels=(mainConfig.train.mode == TrainingModes.picking),
         batch_size=mainConfig.train.batch_size,
-        workers_for_data=mainConfig.train.n_cpus_for_train,
+        workers_for_data=mainConfig.train.n_cpus_for_dataloading,
     )
 
     data.setup()

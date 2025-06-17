@@ -199,125 +199,124 @@ def extract_centroids_from_pred(input_tensor: np.array, nn_ang_distance: float, 
                                     exclude_border=True)
     return centroid_peaks
 
-
-def _infer_one_tomo(tomoFname: str, output_fname: str, particle_ang_length: float, model: torch.nn.Module, gpu_id: int,
-                    patch_size: int = constants.CHUNK_SIZE, batch_size: int = config.BATCH_SIZE,
-                    plot: bool = False, save_preds: bool = False, extract_coords: bool = True,
-                    nn: Optional[float] = None, threshold: float = 0.3, maskFname: Optional[str] = None):
+def _refine_peak_subpixel(peak_coord: np.ndarray, pred_map: np.ndarray, patch_size: int = 5) -> Tuple[np.ndarray, float]:
     """
-    :param tomoFname: the filename with the tomogram
-    :param output_fname: path to directory to store inferred output
-    :param particle_ang_length: particle dimension (Å)
-    :param model: Path to trained model weights
-    :param gpu_id: The gpu_id
-    :param patch_size: Size of chunk to run inference on
-    :param batch_size: batch size. Number of chunks to process together in the GPU
-    :param plot: plot raw inference_data and segmentation mask for quick viz.
-    :param save_preds: whether to save the predicted segmentation mask
-    :param extract_coords: whether to extract coordinates from the predicted segmentation mask
-    :param nn: nearest neighbor distance (Å
-    :param threshold: threshold for peak detection
-    :param maskFname: filename of the mask to apply (optional)
-    :return:
+    Refines an integer peak coordinate to sub-pixel accuracy using a 3D quadratic fit.
     """
+    cz, cy, cx = peak_coord.astype(int)
+    patch_radius = patch_size // 2
+    
+    # Ensure patch does not go out of bounds
+    z_min, z_max = cz - patch_radius, cz + patch_radius + 1
+    y_min, y_max = cy - patch_radius, cy + patch_radius + 1
+    x_min, x_max = cx - patch_radius, cx + patch_radius + 1
+    if not (z_min >= 0 and z_max <= pred_map.shape[0] and y_min >= 0 and y_max <= pred_map.shape[1] and x_min >= 0 and x_max <= pred_map.shape[2]):
+        return peak_coord.astype(float), pred_map[cz, cy, cx]
 
-    if not Path(output_fname).exists():
-        (vol, new_shape, old_shape, voxel_size,
-         padding_values, scalar, csv) = _preprocess_data_mrc(tomoFname, normalization_function="robust_normalization",
-                                                             new_particle_size=config.DESIRED_PARTICLE_PIXELS,
-                                                             particle_size_angst=particle_ang_length)
-        if maskFname and Path(maskFname).exists():
-            logger.info("Loading mask")
-            try:
-                m = load_mrc(maskFname, normalize=None, return_boxSize=False)
-                mask, _ = resize_volume(m, new_shape=new_shape, calculate_mean=False, chunk_size=constants.CHUNK_SIZE)
-                mask = torch.as_tensor(mask, dtype=vol.dtype)
-                if mask.shape != vol.shape:
-                    raise ValueError(f"Resized mask shape {mask.shape} does not match volume shape {vol.shape}")
-                vol = vol * mask
-                del mask
-                gc.collect()
-            except Exception as e:
-                logger.warning(f"Error processing mask: {str(e)}. Using the whole volume for inference.")
-        else:
-            logger.warning(f"No mask provided or mask file not found for {Path(tomoFname).name}. Using the whole volume for inference.")
-        vol = vol.unsqueeze(0)
-        subject = tio.Subject({"input_data": tio.ScalarImage(tensor=vol)})
+    patch = pred_map[z_min:z_max, y_min:y_max, x_min:x_max]
+    
+    # Use log of values for better numerical stability with Gaussian-like peaks
+    patch_log = np.log(np.maximum(patch, 1e-6)) # Add epsilon to avoid log(0)
 
-        grid_sampler = tio.GridSampler(subject, patch_size=patch_size, patch_overlap=constants.CHUNK_SIZE // 4,
-                                       padding_mode='reflect')
-        patch_loader = DataLoader(grid_sampler, batch_size=batch_size)
-        del vol
-        aggregator = tio.inference.GridAggregator(grid_sampler, overlap_mode="hann")
+    # Create coordinate system relative to the patch center
+    z, y, x = np.mgrid[-patch_radius:patch_radius+1, -patch_radius:patch_radius+1, -patch_radius:patch_radius+1]
+    
+    # Design matrix for quadratic: z^2, y^2, x^2, zy, zx, yx, z, y, x, 1
+    A = np.vstack([z.ravel()**2, y.ravel()**2, x.ravel()**2, 
+                   z.ravel()*y.ravel(), z.ravel()*x.ravel(), y.ravel()*x.ravel(),
+                   z.ravel(), y.ravel(), x.ravel(), np.ones(x.size)]).T
+    b = patch_log.ravel()
 
-        with torch.inference_mode():
-            for idx, patches_batch in enumerate(tqdm(patch_loader)):
-                input_tensor = patches_batch['input_data'][tio.DATA].cuda(device=gpu_id)
-                locations = patches_batch[tio.LOCATION]
-                outputs = model.predict_step(input_tensor, idx)
-                aggregator.add_batch(outputs, locations)
+    try:
+        # Solve for the coefficients of the quadratic
+        coeffs, _, _, _ = np.linalg.lstsq(A, b, rcond=None)
+        a, b, c, d, e, f, g, h, i, _ = coeffs
 
-        output_tensor = aggregator.get_output_tensor()
-        output_tensor = output_tensor.squeeze(0)
-        output_tensor = unpad(output_tensor, padding_values)
-        output_tensor = output_tensor.cpu().numpy()
+        # Hessian matrix for finding the peak
+        H = np.array([[2*a, d, e], [d, 2*b, f], [e, f, 2*c]])
+        H_inv = np.linalg.inv(H)
+        
+        # Gradient vector
+        grad = -np.array([g, h, i])
+        
+        # Sub-pixel offset from the patch center
+        offset = H_inv @ grad
+        
+        # Ensure the peak is within a reasonable distance (e.g., 1 voxel from center)
+        if np.max(np.abs(offset)) > 1.0:
+            return peak_coord.astype(float), pred_map[cz, cy, cx]
+        
+        refined_coord = peak_coord.astype(float) + offset
+        refined_score = np.exp(np.polyval(coeffs, offset)) # Use fitted value as score
 
-        #output_tensor = resize(output_tensor, output_shape=old_shape, mode='constant', cval=0)
-        output_tensor = resize_volume(output_tensor, new_shape=old_shape, calculate_mean=False, chunk_size=constants.CHUNK_SIZE)
-
-        if save_preds:
-            write_segmentation_mask(output_tensor, output_fname, angpix=voxel_size, overwrite=True)
-        if plot:
-            plot_example(subject["input_data"][tio.DATA], output_tensor)
-
-    else:
-        output_tensor, voxel_size = load_mrc(output_fname, normalize=None, return_boxSize=True)
-    if extract_coords:
-        coords_array = extract_centroids_from_pred(output_tensor,
-                                                   nn_ang_distance=nn, particle_ang_length=particle_ang_length,
-                                                   threshold=threshold, angpix=voxel_size)
-        if len(coords_array) == 0:
-            logger.warning(f"There are no particles to be found in {output_fname.split('/')[-1]}")
-            pass
-        else:
-            centroids_and_scores = np.zeros((coords_array.shape[0], 4))
-            tomoFnameList = []
-            for i, centroid_peak in enumerate(coords_array):
-                # centroids_and_scores[i, 0] = tomoFname.replace(tag if tag is not None, "")
-                tomoFnameList.append(Path(tomoFname).stem)
-                centroids_and_scores[i, 0] = centroid_peak[0]
-                centroids_and_scores[i, 1] = centroid_peak[1]
-                centroids_and_scores[i, 2] = centroid_peak[2]
-                centroids_and_scores[i, 3] = extract_cube_at_predicted_centroid(output_tensor, centroid_peak)
-
-            return tomoFnameList, centroids_and_scores.tolist(), voxel_size
-        return None, None, None
+        return refined_coord, refined_score
+    except np.linalg.LinAlgError:
+        # Fallback to integer coordinate if fit fails
+        return peak_coord.astype(float), pred_map[cz, cy, cx]
 
 
-def infer_tomos(tomoFnames: List[Path], predsDir: str, modelFname: str, gpu_id: int, particleLengthAng: float,
-                patch_size: int = constants.CHUNK_SIZE, batch_size: int = config.BATCH_SIZE,
-                plot: bool = False, save_preds: bool = False, extract_coords: bool = True,
-                nn: Optional[float] = None, threshold: float = 0.3, masksDir: Optional[str] = None):
+def _infer_one_tomo(tomo_fname: str, model: torch.nn.Module, device: torch.device) -> Tuple[np.ndarray, float]:
+    """Performs inference on a single tomogram."""
+    infer_conf = mainConfig.infer
+    prep_conf = mainConfig.prepData
+    original_vol, original_voxel_size = load_mrc(tomo_fname, normalize=False, return_voxel_size=True)
+    original_shape = original_vol.shape
+    del original_vol
 
-    kwargs = {"map_location": f"cuda:{gpu_id}"}
-    model = BasePickingModel.load_from_checkpoint(modelFname, **kwargs)
-    model = model.eval().cuda(gpu_id)
+    processed_vol, _, _, _ = preprocess_volume(
+        mrc_path=tomo_fname, particle_diameter_angst=infer_conf.length,
+        target_particle_px=prep_conf.desired_particle_pixel_size,
+        chunk_size=model.patch_size, device=device, is_label=False)
 
-    tomo_names, one_tomo_centroids_and_scores = [], []
-    for data_fname in tomoFnames:
-        output_fname = predsDir + '/' + data_fname.name
-        mask_fname = Path(masksDir) / data_fname.name if masksDir else None
-        _tomo_names, _one_tomo_centroids_and_scores, vx = _infer_one_tomo(tomoFname=str(data_fname),
-                                                                          output_fname=output_fname,
-                                                                          particle_ang_length=particleLengthAng,
-                                                                          model=model, gpu_id=gpu_id,
-                                                                          patch_size=patch_size,
-                                                                          batch_size=batch_size, plot=plot,
-                                                                          save_preds=save_preds,
-                                                                          extract_coords=extract_coords, nn=nn,
-                                                                          threshold=threshold,
-                                                                          maskFname=str(
-                                                                              mask_fname) if mask_fname else None)
-        tomo_names.extend(_tomo_names)
-        one_tomo_centroids_and_scores.extend(_one_tomo_centroids_and_scores)
-    return tomo_names, one_tomo_centroids_and_scores, vx
+    subject = tio.Subject(volume=tio.ScalarImage(tensor=processed_vol.unsqueeze(0)))
+    grid_sampler = tio.GridSampler(subject, patch_size=model.patch_size, patch_overlap=model.patch_size // infer_conf.PATCH_OVERLAP_FACTOR)
+    patch_loader = DataLoader(grid_sampler, batch_size=infer_conf.predictions_batch_size)
+    aggregator = tio.inference.GridAggregator(grid_sampler, overlap_mode="hann")
+
+    with torch.inference_mode():
+        for batch in patch_loader:
+            input_tensor = batch['volume'][tio.DATA].to(device)
+            with torch.amp.autocast(device_type=device.type):
+                predictions = model.predict_step(input_tensor, 0)
+            aggregator.add_batch(predictions, batch[tio.LOCATION])
+
+    aggregated_mask = aggregator.get_output_tensor().squeeze(0)
+    unpadded_mask_cpu = resize_volume(aggregated_mask.cpu(), original_shape, torch.device('cpu'))
+    del aggregated_mask
+    return unpadded_mask_cpu.numpy(), original_voxel_size
+
+
+def infer_tomos(tomo_fnames: List[Path], gpu_id: Optional[int], model_fname: str, particle_length_ang: float,
+                preds_dir: str, save_pred_mask: bool, extract_coords: bool, threshold: float,
+                nearest_neigs_angs: Optional[float], masks_dir: Optional[str]) -> Tuple[List[str], List[List[float]], List[float]]:
+    """Worker function for inference, now with sub-pixel refinement."""
+    from tomocpt.networks.pickingModel import BasePickingModel
+    device = torch.device(f"cuda:{gpu_id}") if gpu_id is not None and torch.cuda.is_available() else torch.device("cpu")
+    if gpu_id is not None: torch.cuda.set_device(device)
+    
+    model = BasePickingModel.load_from_checkpoint(model_fname, map_location=device).eval()
+
+    results = []
+    for tomo_fname in tqdm(tomo_fnames, desc=f"Device {device}", position=gpu_id or 0):
+        pred_mask, voxel_size = _infer_one_tomo(str(tomo_fname), model, device)
+        if masks_dir and (mask_path := Path(masks_dir) / tomo_fname.name).exists():
+            pred_mask *= load_mrc(str(mask_path), normalize=False)
+        if save_pred_mask:
+            write_segmentation_mask(pred_mask, str(Path(preds_dir) / tomo_fname.name), angpix=voxel_size, overwrite=True)
+        if extract_coords:
+            int_coords = peak_local_max(pred_mask, min_distance=int((nearest_neigs_angs or particle_length_ang) / voxel_size), 
+                                        threshold_abs=threshold, exclude_border=True)
+            if int_coords.shape[0] > 0:
+                refined_coords_and_scores = [_refine_peak_subpixel(peak, pred_mask) for peak in int_coords]
+                final_coords = [c for c, s in refined_coords_and_scores]
+                final_scores = [s for c, s in refined_coords_and_scores]
+                centroids_with_scores = np.hstack([np.array(final_coords), np.array(final_scores)[:, np.newaxis]])
+                results.append((tomo_fname.stem, centroids_with_scores.tolist(), voxel_size))
+        gc.collect()
+
+    all_names, all_centroids, all_voxel_sizes = [], [], []
+    for name, centroids, vx in results:
+        all_names.extend([name] * len(centroids))
+        all_centroids.extend(centroids)
+        all_voxel_sizes.extend([vx] * len(centroids))
+    return all_names, all_centroids, all_voxel_sizes

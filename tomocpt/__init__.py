@@ -1,4 +1,4 @@
-__version__ = "2025.02.0"
+__version__ = "2025.06.16"
 # cofig = load_config()
 from rich import traceback
 

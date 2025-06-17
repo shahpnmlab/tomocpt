@@ -4,9 +4,9 @@ from dataclasses import dataclass
 @dataclass
 class SwinUnetrConfig:
     ##### THIS IS CONFIG FOR SWINUNETR
-    drop_rate:float = 0.3
-    attn_drop_rate:float = 0.3
-    dropout_path_rate:float = 0.2
+    drop_rate:float = 0.15
+    attn_drop_rate:float = 0.15
+    dropout_path_rate:float = 0.05
     in_channels: int = 1
     out_channels: int=1
     feature_size: int = 12 * 3  # Should be multiple of 12
