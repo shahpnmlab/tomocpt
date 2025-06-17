@@ -62,7 +62,6 @@ def train(
 
     chunks_dir = mainConfig.train.chunks_dir
 
-    # --- THIS IS THE CORRECTED LOGIC BLOCK, RESTORING THE ORIGINAL FLOW ---
     require_labels = mainConfig.train.mode == TrainingModes.picking
     chunking_name_done = get_chunking_name_done(
         chunks_dir, require_labels=require_labels

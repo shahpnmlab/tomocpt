@@ -82,7 +82,6 @@ def resize_volume(
             )
         return resized_vol.squeeze(0).squeeze(0)
 
-    # --- THE "SMART RESIZE" LOGIC ---
     if input_device.type == 'cuda':
         try:
             # First, try to perform the resize on the GPU for maximum speed.
@@ -150,18 +149,13 @@ def preprocess_tomogram(
     result on the CPU for safe caching.
     """
     vol_np = load_mrc(mrc_path, normalize=True, return_voxel_size=False)
-    
-    # --- FIX for header_only=True bug ---
-    # Correctly get voxel_size from metadata without loading data twice.
+
     _, original_voxel_size = get_mrc_metadata(mrc_path)
-    # --- END OF FIX ---
 
     original_particle_px = particle_diameter_angst / original_voxel_size
     target_shape_for_resize, _ = get_shape_for_resizing(vol_np.shape, original_particle_px, target_particle_px)
-
     vol_tensor = torch.from_numpy(vol_np).to(device)
-    
-    # Use the new "smart" resize function
+
     resized_tensor = resize_volume(vol_tensor, target_shape_for_resize)
     
     # Padding is lightweight, so it can run on the device of the resized_tensor
@@ -190,8 +184,7 @@ def process_label_to_match_tomogram(
     label_np = load_mrc(mrc_path, normalize=False, return_voxel_size=False)
     
     label_tensor = torch.from_numpy(label_np).to(device)
-    
-    # Use the new "smart" resize function
+
     resized_label = resize_volume(label_tensor, final_tomogram_shape)
         
     result_cpu = resized_label.cpu()

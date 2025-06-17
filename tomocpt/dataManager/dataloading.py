@@ -30,7 +30,7 @@ class VolumeDatsetIO(Dataset):
         1. Gets file paths for the given index.
         2. Creates a torchio.Subject to load and hold the data.
         3. Applies TorchIO transforms to the Subject.
-        4. **Crucially, extracts the underlying torch.Tensor from each image.**
+        4. Extracts the underlying torch.Tensor from each image.
         5. Returns a simple dictionary of tensors, which the default DataLoader can collate.
         """
         vol_path, label_path = self.filepath_tuples[index]
@@ -69,9 +69,11 @@ class VolumeDatsetIO(Dataset):
 
     @classmethod
     def get_dataset(cls, data_dir: str, is_training: bool, return_labels: bool):
+
         transform = tio.Compose([
             tio.RandomAffine(degrees=45, default_pad_value="otsu", p=0.8),
-            tio.OneOf({tio.RandomElasticDeformation(): 0.1, tio.RandomBlur(std=1): 0.1}, p=0.75),
+            tio.OneOf({tio.RandomElasticDeformation(): 0.1,
+                       tio.RandomBlur(std=1): 0.1}, p=0.75),
         ]) if is_training else None
         
         list_of_filepaths = cls._get_filepaths(data_dir, return_labels)

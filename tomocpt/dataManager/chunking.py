@@ -43,7 +43,7 @@ def _save_chunk(tensor: torch.Tensor, path: str):
 
 def process_single_tomo_task(task: Dict[str, Any]) -> tuple:
     """
-    This is the core task function. It now includes a try-except block to fall
+    This is the core task function. It includes a try-except block to fall
     back to CPU processing for operations that cause CUDA OOM errors.
     """
     try:
@@ -74,7 +74,6 @@ def process_single_tomo_task(task: Dict[str, Any]) -> tuple:
         labels_dir = tomo_out_dir / labels_dir_name
         makedir(vol_dir); makedir(labels_dir)
 
-        # --- THE FINAL ROBUSTNESS FIX: "Try GPU, Fallback to CPU" ---
         try:
             # First, attempt all memory-intensive work on the GPU for speed.
             vol_tensor_gpu = vol_tensor_cpu.to(device)
@@ -98,9 +97,7 @@ def process_single_tomo_task(task: Dict[str, Any]) -> tuple:
             )
             gc.collect()
             torch.cuda.empty_cache()
-            
-            # --- Fallback Path ---
-            # Retry the operations on the CPU tensors.
+
             drop_probability = 0.0
             if require_labels and not (tomo_path_str == tomo_info["label_path"]):
                 f0 = (label_tensor_cpu == 0).sum()
@@ -111,9 +108,10 @@ def process_single_tomo_task(task: Dict[str, Any]) -> tuple:
             subject = tio.Subject(volume=tio.ScalarImage(tensor=vol_tensor_cpu.unsqueeze(0)), 
                                   label=tio.LabelMap(tensor=label_tensor_cpu.unsqueeze(0)))
             del vol_tensor_cpu, label_tensor_cpu
-        # --- END OF FIX ---
 
-        grid_sampler = tio.GridSampler(subject, patch_size=mainConfig.train.CHUNK_SIZE, patch_overlap=mainConfig.train.CHUNK_SIZE - mainConfig.train.CHUNK_STRIDE)
+        grid_sampler = tio.GridSampler(subject, patch_size=mainConfig.train.CHUNK_SIZE,
+                                       patch_overlap=mainConfig.train.CHUNK_SIZE - mainConfig.train.CHUNK_STRIDE)
+
         dataloader = torch.utils.data.DataLoader(grid_sampler, batch_size=1)
         
         n_threads = os.cpu_count() or 1
@@ -148,9 +146,9 @@ def process_single_tomo_task(task: Dict[str, Any]) -> tuple:
             torch.cuda.empty_cache()
 
 
-def do_chunking(tomosDf: pd.DataFrame, chunkedDataDir: str, desired_particle_pixel_size: int, n_cpus: int, require_labels: bool = True, 
+def do_chunking(tomosDf: pd.DataFrame, chunkedDataDir: str,
+                n_cpus: int, require_labels: bool = True,
                 train_val_level: CrossValidationLevelSplit = CrossValidationLevelSplit.tomos, use_gpus: bool = True):
-    # This orchestrator function is correct and included for completeness.
     try:
         if train_val_level == CrossValidationLevelSplit.tomos:
             df_train, df_val = train_test_split(tomosDf, test_size=constants.PERCENT_TO_VALIDATE, random_state=42)
