@@ -26,12 +26,13 @@ class PreprocessTomogramd(MapTransform):
         diameter = d[self.particle_diameter_key]
 
         # This function now correctly returns a CPU tensor and its shape
-        processed_tomo, final_tomo_shape = preprocess_tomogram(
+        processed_tomo, final_tomo_shape, _ = preprocess_tomogram(
             mrc_path=d[self.tomo_key],
             particle_diameter_angst=diameter,
             target_particle_px=self.target_px,
             chunk_size=self.chunk_size,
             device=self.device,
+            invert_contrast=False
         )
         d[self.tomo_key] = processed_tomo
 

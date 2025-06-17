@@ -16,11 +16,9 @@ import pytorch_lightning as pl
 
 from tomocpt.dataManager.chunking import do_chunking, get_chunking_name_done
 from tomocpt.dataManager.dataloading import Data
-from tomocpt.networks.baseModel import verify_different_lrs
 from tomocpt.training.callbacks import LRVerificationCallback
 from tomocpt.utils import read_particles_csvs, is_main_process
 from tomocpt.networks.pickingModel import BasePickingModel
-from tomocpt.networks.distillationModel import DistillationPickingModel
 from tomocpt.logger import get_logger
 
 logging = get_logger()

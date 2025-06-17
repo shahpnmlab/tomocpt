@@ -1,6 +1,7 @@
 import gc
 import traceback
 from typing import Callable, Tuple, Union
+from pathlib import Path
 
 import mrcfile
 import numpy as np
@@ -8,7 +9,6 @@ import torch
 from tomocpt.logger import get_logger
 
 logging = get_logger()
-
 
 def load_mrc(
     fname: str, normalize: bool = True, return_voxel_size: bool = False
@@ -84,20 +84,16 @@ def resize_volume(
 
     if input_device.type == 'cuda':
         try:
-            # First, try to perform the resize on the GPU for maximum speed.
             return _perform_resize(input_device)
         except torch.cuda.OutOfMemoryError:
             logging.warning(
                 "CUDA out of memory during resize operation. "
                 "Falling back to CPU for this task. This will be slower."
             )
-            # Clean up GPU memory before trying again on CPU
             gc.collect()
             torch.cuda.empty_cache()
-            # Retry the operation on the CPU
             return _perform_resize(torch.device("cpu"))
     else:
-        # If the tensor was already on the CPU, just perform the resize there.
         return _perform_resize(input_device)
 
 
@@ -143,12 +139,17 @@ def preprocess_tomogram(
     target_particle_px: int,
     chunk_size: int,
     device: torch.device,
-) -> Tuple[torch.Tensor, Tuple[int, ...]]:
+    invert_contrast: bool = False,
+) -> Tuple[torch.Tensor, Tuple[int, ...], Tuple[int, ...]]:
     """
     Processes a tomogram by loading, resizing, and padding it, returning the
-    result on the CPU for safe caching.
+    result on the CPU for safe caching and the padding values.
     """
     vol_np = load_mrc(mrc_path, normalize=True, return_voxel_size=False)
+    
+    if invert_contrast:
+        vol_np *= -1
+        logging.info(f"Tomogram contrast inverted for {Path(mrc_path).name}")
 
     _, original_voxel_size = get_mrc_metadata(mrc_path)
 
@@ -158,8 +159,7 @@ def preprocess_tomogram(
 
     resized_tensor = resize_volume(vol_tensor, target_shape_for_resize)
     
-    # Padding is lightweight, so it can run on the device of the resized_tensor
-    padded_tensor, _ = symmetrize_and_pad(resized_tensor, chunk_size)
+    padded_tensor, padding_tuple = symmetrize_and_pad(resized_tensor, chunk_size)
     final_shape = tuple(padded_tensor.shape)
 
     result_cpu = padded_tensor.cpu()
@@ -169,7 +169,7 @@ def preprocess_tomogram(
         torch.cuda.empty_cache()
     gc.collect()
 
-    return result_cpu, final_shape
+    return result_cpu, final_shape, padding_tuple
 
 
 def process_label_to_match_tomogram(
