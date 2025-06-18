@@ -16,13 +16,16 @@ import pytorch_lightning as pl
 
 from tomocpt.dataManager.chunking import do_chunking, get_chunking_name_done
 from tomocpt.dataManager.dataloading import Data
+from tomocpt.networks.baseModel import verify_different_lrs
 from tomocpt.training.callbacks import LRVerificationCallback
 from tomocpt.utils import read_particles_csvs, is_main_process
 from tomocpt.networks.pickingModel import BasePickingModel
+from tomocpt.networks.distillationModel import DistillationPickingModel
 from tomocpt.logger import get_logger
 
 logging = get_logger()
 warnings.filterwarnings("ignore", ".*SwinUNETR.*", FutureWarning)
+
 
 def train(
         train_continue: Annotated[
@@ -71,7 +74,7 @@ def train(
             training_data_dir = mainConfig.prepData.training_data_dir
         else:
             training_data_dir = mainConfig.train.training_data_dir
-        
+
         if not Path(training_data_dir).is_dir():
             raise RuntimeError(
                 f"Error, prepared_data_dir {training_data_dir} not found"
