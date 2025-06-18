@@ -16,11 +16,10 @@ class TrainingModes(str, Enum):
 
 @dataclass
 class OptimizerConfig:
-    _target_: str = "torch.optim.RAdam"
+    _target_: str = "torch.optim.AdamW"
     lr: Annotated[float, typer.Option(help="Learning rate")] = 4e-4
-    weight_decay: float = 1e-8
+    weight_decay: float = 1e-5
     betas: Tuple[float, float] = (0.9, 0.999)
-    # decoupled_weight_decay=True
 
 
 class CrossValidationLevelSplit(str, Enum):
@@ -30,6 +29,7 @@ class CrossValidationLevelSplit(str, Enum):
 
 @dataclass
 class TrainConfig:
+    # Core paths
     training_data_dir: Annotated[
         Path, typer.Option(help="Path to where the volume label pairs are stored")
     ] = None
@@ -40,18 +40,10 @@ class TrainConfig:
         Path,
         typer.Option(help="The directory where the training weights will be saved"),
     ] = MISSING
-    n_epochs: Annotated[int, typer.Option(help="Number of epochs to train")] = 10
+
+    # Training parameters
+    n_epochs: Annotated[int, typer.Option(help="Number of epochs to train")] = 100
     batch_size: Annotated[int, typer.Option(help="batch size")] = 16
-    use_gpus: Annotated[bool, typer.Option(help="use cuda for training")] = True
-    n_cpus_for_preprocessing: Annotated[
-        int, typer.Option(help="Number of CPU workers for the initial chunking/preprocessing step.")
-    ] = 8
-    n_cpus_for_dataloading: Annotated[
-        int, typer.Option(help="Number of CPU workers per GPU for the PyTorch DataLoader during training.")
-    ] = 8
-    experiment_name: Annotated[
-        Optional[str], typer.Option(help="The name of the experiment")
-    ] = "tomocpt"
     mode: Annotated[TrainingModes, typer.Option(help="The training mode")] = (
         TrainingModes.picking
     )
@@ -59,48 +51,82 @@ class TrainConfig:
         CrossValidationLevelSplit,
         typer.Option(help="Whether to split train-val on chunks or tomograms"),
     ] = CrossValidationLevelSplit.tomos
+
+    # System configuration
+    use_gpus: Annotated[bool, typer.Option(help="use cuda for training")] = True
+    n_cpus_for_train: Annotated[
+        int, typer.Option(help="Number of CPU workers per GPU to pre-process data")
+    ] = 8
+
+    # Model configuration
+    network: Annotated[NetworkConfig, typer.Option(help="The network config")] = field(
+        default_factory=NetworkConfig
+    )
+    optimizer: Annotated[OptimizerConfig, typer.Option(help="The optimizer")] = field(
+        default_factory=OptimizerConfig
+    )
+
+    # State management
     restore_full_state: Annotated[
         bool,
         typer.Option(
             help="If true, load the optimizer and other info on top of the weights"
         ),
     ] = True
-    optimizer: Annotated[OptimizerConfig, typer.Option(help="The optimizer")] = field(
-        default_factory=OptimizerConfig
-    )
-    network: Annotated[NetworkConfig, typer.Option(help="The network config")] = field(
-        default_factory=NetworkConfig
-    )
+
+    # Monitoring
+    experiment_name: Annotated[
+        Optional[str], typer.Option(help="The name of the experiment")
+    ] = "tomocpt"
     launch_tensorboard: Annotated[
         bool, typer.Option(help="Launch tensorboard for evaluating training")
     ] = False
 
-    # Distillation parameters
+    # Knowledge distillation
     use_distillation: Annotated[
         bool,
-        typer.Option(help="Enable knowledge distillation when using train_continue")
+        typer.Option(help="Enable knowledge distillation when fine-tuning with train_continue.")
     ] = False
-
     distill_weight: Annotated[
         float,
-        typer.Option(help="Weight of distillation loss (between 0 and 1)")
+        typer.Option(help="Weight for the distillation loss (0 to 1). Loss = (1-w)*Task + w*Distill.")
     ] = 0.5
-
     temperature: Annotated[
         float,
-        typer.Option(help="Temperature for softening probability distributions")
+        typer.Option(help="Temperature for softening distributions in distillation.")
     ] = 2.0
+
+    # Continuous learning
+    continuous_learning: Annotated[
+        bool,
+        typer.Option(help="Enable continuous learning with experience replay.")
+    ] = False
+    train_new_task: Annotated[
+        bool,
+        typer.Option(help="Flag to signal the start of a new task, creating a teacher model.")
+    ] = False
+    memory_size: Annotated[
+        int,
+        typer.Option(help="Maximum number of samples to store in the experience replay buffer.")
+    ] = 1000
+    replay_batch_size: Annotated[
+        int,
+        typer.Option(help="Batch size for samples replayed from memory.")
+    ] = 8
+
+    # ----------------------------------------------------
 
     OVERFIT_N_BATCHES: Optional[int] = None
     N_GPUS: int = 4
     N_CPUS_IF_NO_GPU: int = 32
     USE_CUDA_FOR_DATA: bool = True
 
-    FACTOR_REDUCE_LR_PLATEAU_N_EPOCHS: float = 0.5
-    COSINE_LR_SCHEDULE_N_EPOCHS: int = 6
-    PATIENT_REDUCE_LR_PLATEAU_N_EPOCHS: int = 6
+    # Scheduler parameters
+    COSINE_LR_SCHEDULE_N_EPOCHS: int = 10  # T_0 for CosineAnnealingWarmRestarts
+    PATIENT_REDUCE_LR_PLATEAU_N_EPOCHS: int = 15  # Patience for EarlyStopping
 
     CHUNK_SIZE: int = 64
     CHUNK_STRIDE: int = 32
     RANDOM_FRACTION_TO_SAMPLE_TRAIN: float = -1.0  # Train on all the chunks
     SEED_FOR_TRAIN_VAL_SPLIT: int = 42
+

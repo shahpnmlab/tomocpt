@@ -12,13 +12,13 @@ class PreprocessTomogramd(MapTransform):
     A MONAI-compatible transform that ensures the label has the exact same
     spatial dimensions as the tomogram and correctly handles CPU tensor caching.
     """
-    def __init__(self, tomo_key: str, label_key: str, particle_diameter_key: str, device: torch.device):
+    def __init__(self, tomo_key: str, label_key: str, particle_diameter_key: str, device: torch.device, target_particle_px: int):
         super().__init__([tomo_key, label_key])
         self.tomo_key = tomo_key
         self.label_key = label_key
         self.particle_diameter_key = particle_diameter_key
         self.device = device
-        self.target_px = mainConfig.prepData.desired_particle_pixel_size
+        self.target_px = target_particle_px
         self.chunk_size = mainConfig.train.CHUNK_SIZE
 
     def __call__(self, data: Dict[str, Any]) -> Dict[str, Any]:

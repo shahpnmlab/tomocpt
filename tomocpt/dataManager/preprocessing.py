@@ -158,7 +158,6 @@ def preprocess_tomogram(
     vol_tensor = torch.from_numpy(vol_np).to(device)
 
     resized_tensor = resize_volume(vol_tensor, target_shape_for_resize)
-    
     padded_tensor, padding_tuple = symmetrize_and_pad(resized_tensor, chunk_size)
     final_shape = tuple(padded_tensor.shape)
 
