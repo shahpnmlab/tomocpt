@@ -17,8 +17,8 @@ logger = get_logger()
 
 
 def predict(
-    plot: Annotated[bool, typer.Option(help="Plotting not implemented")] = False,
-    config: DictConfig = None,
+        plot: Annotated[bool, typer.Option(help="Plotting not implemented")] = False,
+        config: DictConfig = None,
 ):
     """
     Performs parallel inference on tomogram data using a trained model.
@@ -43,7 +43,7 @@ def predict(
         return
 
     Path(infer_config.predictions_dir).mkdir(parents=True, exist_ok=True)
-    
+
     n_gpus = torch.cuda.device_count() if infer_config.use_cuda and torch.cuda.is_available() else 0
 
     if n_gpus > 0:
@@ -54,7 +54,7 @@ def predict(
         logger.info(f"Starting Dask CUDA cluster for inference with {num_workers} GPU workers.")
     else:
         from dask.distributed import LocalCluster
-        num_workers = min((os.cpu_count() or 1), len(data_fnames))
+        num_workers = min((os.cpu_count() or 1), len(data_fnames), 4)  # Limit CPU workers
         cluster = LocalCluster(n_workers=num_workers)
         client = Client(cluster)
         logger.info(f"Starting Dask cluster for inference with {num_workers} CPU workers.")
@@ -63,19 +63,20 @@ def predict(
     tasks_per_worker = [[] for _ in range(num_workers)]
     for i, fname in enumerate(data_fnames):
         tasks_per_worker[i % num_workers].append(fname)
-        
+
     futures = []
     for i in range(num_workers):
         if tasks_per_worker[i]:
             # Each future represents one worker processing its batch of files
-            future = client.submit(infer_tomos, tasks_per_worker[i], i if n_gpus > 0 else None, infer_config.weights, infer_config)
+            future = client.submit(infer_tomos, tasks_per_worker[i], i if n_gpus > 0 else None, infer_config.weights,
+                                   infer_config)
             futures.append(future)
 
     results = []
-    # This single tqdm bar will wrap the as_completed iterator.
+    # This outer tqdm bar shows progress of worker batches finishing.
     with tqdm(total=len(futures), desc="Processing Tomogram Batches") as pbar:
         for future, result in as_completed(futures, with_results=True):
-            if result[0]: # Check if any names were returned
+            if result and result[0]:  # Check if any names were returned
                 results.append(result)
             pbar.update(1)
 
@@ -89,7 +90,7 @@ def predict(
             all_tomo_names.extend(names)
             all_centroids.extend(centroids)
             all_voxel_sizes.extend(vxs)
-            
+
         if all_tomo_names:
             process_extracted_coordinates(
                 output_dir=infer_config.predictions_dir,
