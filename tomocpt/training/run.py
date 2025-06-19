@@ -21,6 +21,8 @@ from tomocpt.training.callbacks import LRVerificationCallback
 from tomocpt.utils import read_particles_csvs, is_main_process
 from tomocpt.networks.pickingModel import BasePickingModel
 from tomocpt.networks.distillationModel import DistillationPickingModel
+from tomocpt.networks.continuousLearningModel import ContinuousLearningModel
+
 from tomocpt.logger import get_logger
 
 logging = get_logger()
@@ -69,7 +71,6 @@ def train(
     )
     if not Path(chunking_name_done).is_file():
         logging.info("Chunked data not found or incomplete. Starting data preparation...")
-        # Intelligently determine the source directory for raw data
         if mainConfig.train.training_data_dir is None:
             training_data_dir = mainConfig.prepData.training_data_dir
         else:
@@ -82,8 +83,6 @@ def train(
 
         tomosDf = read_particles_csvs(training_data_dir)
 
-        # Call the new, refactored do_chunking function with all its required parameters
-        # sourced from the mainConfig object.
         do_chunking(
             tomosDf,
             chunkedDataDir=mainConfig.train.chunks_dir,
@@ -96,53 +95,65 @@ def train(
         logging.info("Data preparation complete.")
     else:
         logging.info("Found existing chunked data. Skipping data preparation.")
+
     # Model selection and initialization
     if mainConfig.train.mode == TrainingModes.picking:
-        if train_continue and mainConfig.train.use_distillation:
-            # Using distillation with teacher model from train_continue
-            checkpointer = ModelCheckpoint(
-                monitor="val_loss", filename="weights", verbose=True
-            )
+        # Check for Continual Learning mode first. Use .get() for safety if key is not in config.
+        if mainConfig.train.continuous_learning:
+            logging.info("Initializing model in Continual Learning mode.")
+            # Gather CL-specific hyperparameters from config
+            cl_kwargs = {
+                "config": mainConfig,  # Pass the whole config to be stored in hparams
+                "memory_size": mainConfig.train.memory_size,
+                "replay_batch_size": mainConfig.train.replay_batch_size,
+                "distill_weight": mainConfig.train.distill_weight,
+                "temperature": mainConfig.train.temperature,
+                **kwargs  # Pass base kwargs like lr
+            }
 
-            # Load the model with distillation
+            checkpointer = ModelCheckpoint(monitor="val_loss", filename="weights_cl", verbose=True)
+
+            if train_continue:
+                # This is a new task in the CL sequence. Load the previous model and memory.
+                logging.info(f"Continual learning: starting new task from checkpoint {train_continue}")
+                # Signal to the model to create a teacher on the first epoch of this new task
+                mainConfig.train.train_new_task = True
+
+                pl_model = ContinuousLearningModel.load_from_checkpoint(
+                    train_continue,
+                    train_continue=train_continue,  # For base class optimizer logic
+                    **cl_kwargs
+                )
+                resume_from_checkpoint = train_continue if mainConfig.train.restore_full_state else None
+            else:
+                # This is the very first task in the CL sequence. No teacher yet.
+                logging.info("Continual learning: starting the first task from scratch.")
+                mainConfig.train.train_new_task = False  # No teacher needed
+
+                pl_model = ContinuousLearningModel(train_continue=None, **cl_kwargs)
+                resume_from_checkpoint = None
+
+        # --- The rest of the logic is for non-continual learning modes ---
+        elif train_continue and mainConfig.train.use_distillation:
+            # Using standard distillation with a fixed teacher model from train_continue
+            checkpointer = ModelCheckpoint(monitor="val_loss", filename="weights", verbose=True)
             distill_kwargs = {
                 "teacher_checkpoint_path": train_continue,
                 "distill_weight": mainConfig.train.distill_weight,
                 "temperature": mainConfig.train.temperature
             }
-
-            # If we're also continuing training with a student model
             if mainConfig.train.restore_full_state:
-                # Don't use Lightning's resume mechanism to avoid parameter group mismatch
                 resume_from_checkpoint = None
-
-                # Create new student model
-                pl_model = DistillationPickingModel(
-                    train_continue=None,  # This affects optimizer structure
-                    **distill_kwargs,
-                    **kwargs
-                )
-
-                # Manually load just the model weights from checkpoint
+                pl_model = DistillationPickingModel(train_continue=None, **distill_kwargs, **kwargs)
                 checkpoint = torch.load(train_continue)
-                # Filter out teacher keys and optimizer state
-                student_state_dict = {k: v for k, v in checkpoint['state_dict'].items()
-                                      if not k.startswith('teacher')}
+                student_state_dict = {k: v for k, v in checkpoint['state_dict'].items() if not k.startswith('teacher')}
                 pl_model.load_state_dict(student_state_dict, strict=False)
             else:
-                # Start a new student model
                 resume_from_checkpoint = None
-                pl_model = DistillationPickingModel(
-                    train_continue=None,
-                    **distill_kwargs,
-                    **kwargs
-                )
+                pl_model = DistillationPickingModel(train_continue=None, **distill_kwargs, **kwargs)
         else:
-            # Normal training without distillation
-            checkpointer = ModelCheckpoint(
-                monitor="val_loss", filename="weights", verbose=True
-            )
-
+            # Normal training without distillation or continual learning
+            checkpointer = ModelCheckpoint(monitor="val_loss", filename="weights", verbose=True)
             if train_continue:
                 resume_from_checkpoint = train_continue if mainConfig.train.restore_full_state else None
                 try:
@@ -150,20 +161,17 @@ def train(
                         train_continue, train_continue=train_continue, **kwargs
                     )
                 except RuntimeError:
-                    pretrained_model = SelfSupervisedModel.load_from_checkpoint(
-                        train_continue
-                    )
-                    pl_model = BasePickingModel(
-                        train_continue=train_continue, **kwargs, model=pretrained_model
-                    )
+                    pretrained_model = SelfSupervisedModel.load_from_checkpoint(train_continue)
+                    pl_model = BasePickingModel(train_continue=train_continue, **kwargs, model=pretrained_model)
                     del pretrained_model
                     resume_from_checkpoint = None
             else:
                 pl_model = BasePickingModel(train_continue=None, **kwargs)
                 resume_from_checkpoint = None
+    # ======================================================================
 
-    # This will be consolidated to pre-train and supervised train
     elif mainConfig.train.mode == TrainingModes.selfSupervised:
+        # This section remains unchanged
         Model = SelfSupervisedModel
         checkpointer = ModelCheckpoint(
             monitor="val_loss",
@@ -208,7 +216,6 @@ def train(
 
     if is_main_process():
         logging.info(f"Size of the training dataset {len(data.train_dataloader())}")
-        # Add this line to verify learning rates
         verify_different_lrs(pl_model)
 
     tb_logger = TensorBoardLogger(
@@ -233,8 +240,6 @@ def train(
             if mainConfig.train.OVERFIT_N_BATCHES
             else 0
         ),
-        # limit_val_batches=constants.LIMIT_VALIDATION_BATCHES,
-        # val_check_interval=constants.VAL_CHECK_INTERVAL,
         strategy="ddp_find_unused_parameters_false" if accel == "gpu" else "auto",
         precision=network__config.TORCH_FLOAT_PRECISION.value,
         gradient_clip_val=1.0,
@@ -255,7 +260,6 @@ def train(
             stdout=sys.stdout,
             stderr=sys.stderr,
         )
-        # logger.info("Use the url below to monitor training on tensorboard")
         logging.info(
             f"tensorboard --logdir {mainConfig.train.model_dir}/{mainConfig.train.experiment_name}"
         )
