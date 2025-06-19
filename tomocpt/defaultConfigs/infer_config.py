@@ -27,6 +27,7 @@ class InferConfig:
     save_predicted_coords: Annotated[bool, typer.Option(help="Enable/disable saving of predicted particle coordinates.")] = True
     save_prediction_confidence_map: Annotated[bool, typer.Option(help="Save the full 3D prediction confidence map as an MRC file.")] = False
     use_cuda: Annotated[bool, typer.Option(help="Enable/disable CUDA for GPU acceleration.")] = True
+    use_tta: Annotated[bool, typer.Option(help="Use test-time augmentation for prediction")] = True
     invert_contrast: Annotated[bool, typer.Option(help="Invert tomogram contrast (signal becomes black).")] = False
     cpus_per_worker: Annotated[int, typer.Option(help="Number of CPU threads to support each Dask worker (for I/O, etc.).")] = 2
     PATCH_OVERLAP_FACTOR: int = 4
