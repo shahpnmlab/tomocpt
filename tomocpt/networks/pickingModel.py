@@ -12,8 +12,15 @@ logging = get_logger()
 class BasePickingModel(BaseModel):
 
     def __init__(
-        self, lr: float | None = None, model=None, config_dict=None, *args, **kwargs
+            self, lr: float | None = None, model=None, config_dict=None,
+            ema_alpha: float = 0.3, *args, **kwargs
     ):
+        # EMA Alpha (smoothing factor):
+        # ema_alpha=0.3: 30% current loss + 70% historical average = quick adaptation
+        # ema_alpha=0.1: 10% current loss + 90% historical average = heavy smoothing
+        # Higher alpha = more responsive to recent validation losses
+        # Lower alpha = more noise filtering, slower to detect real changes
+
         # Remove config_dict from kwargs before passing to parent
         if "config_dict" in kwargs:
             config_dict = kwargs.pop("config_dict")
@@ -22,6 +29,7 @@ class BasePickingModel(BaseModel):
 
         # Store config if needed
         self.config = config_dict
+        self.ema_alpha = ema_alpha  # Smoothing factor for EMA
 
         if model is None:
             self.model_name, self.model = self.build_model()
@@ -132,12 +140,30 @@ class BasePickingModel(BaseModel):
             y_pred = nn.functional.sigmoid(logits)
             loss = self.loss(y_pred, y)
 
+        # Log raw validation loss
         self.log(
             "val_loss",
             loss,
             on_step=False,
             on_epoch=True,
             prog_bar=True,
+            sync_dist=True,
+            batch_size=x.shape[0],
+        )
+
+        # Calculate and log smoothed validation loss using EMA
+        current_loss = loss.item()
+        if not hasattr(self, 'val_loss_ema'):
+            self.val_loss_ema = current_loss
+        else:
+            self.val_loss_ema = self.ema_alpha * current_loss + (1 - self.ema_alpha) * self.val_loss_ema
+
+        self.log(
+            "val_loss_smooth",
+            self.val_loss_ema,
+            on_step=False,
+            on_epoch=True,
+            prog_bar=False,  # Don't clutter progress bar
             sync_dist=True,
             batch_size=x.shape[0],
         )

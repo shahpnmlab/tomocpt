@@ -201,8 +201,9 @@ def train(
     callbacks = [
         TQDMProgressBar(refresh_rate=10),
         EarlyStopping(
-            monitor="val_loss",
-            patience=6 * train__config.COSINE_LR_SCHEDULE_N_EPOCHS,
+            monitor="val_loss_smooth",
+            patience=10,
+            min_delta=0.005,
             verbose=True,
         ),
         checkpointer,
