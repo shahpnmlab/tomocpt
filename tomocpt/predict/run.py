@@ -54,7 +54,7 @@ def predict(
         logger.info(f"Starting Dask CUDA cluster for inference with {num_workers} GPU workers.")
     else:
         from dask.distributed import LocalCluster
-        num_workers = min((os.cpu_count() or 1), len(data_fnames))
+        num_workers = min((os.cpu_count() or 1), len(data_fnames), (infer_config.cpus_per_worker or os.cpu_count()))
         cluster = LocalCluster(n_workers=num_workers)
         client = Client(cluster)
         logger.info(f"Starting Dask cluster for inference with {num_workers} CPU workers.")
@@ -68,15 +68,19 @@ def predict(
     for i in range(num_workers):
         if tasks_per_worker[i]:
             # Each future represents one worker processing its batch of files
-            future = client.submit(infer_tomos, tasks_per_worker[i], i if n_gpus > 0 else None, infer_config.weights, infer_config)
+            gpu_id = i if n_gpus > 0 else None
+            future = client.submit(infer_tomos, tasks_per_worker[i], gpu_id, infer_config.weights, infer_config)
             futures.append(future)
 
+    # This main progress bar tracks the completion of entire worker batches.
+    # The detailed per-patch progress bars will be displayed by the workers themselves.
     results = []
-    # This single tqdm bar will wrap the as_completed iterator.
     with tqdm(total=len(futures), desc="Processing Tomogram Batches") as pbar:
-        for future, result in as_completed(futures, with_results=True):
-            if result[0]: # Check if any names were returned
-                results.append(result)
+        for future in as_completed(futures):
+            # as_completed yields futures as they complete
+            worker_result_list = future.result()
+            if worker_result_list:
+                results.extend(worker_result_list)
             pbar.update(1)
 
     client.close()
@@ -85,10 +89,16 @@ def predict(
     if infer_config.save_predicted_coords and results:
         logger.info("Aggregating and saving extracted coordinates...")
         all_tomo_names, all_centroids, all_voxel_sizes = [], [], []
-        for names, centroids, vxs in results:
-            all_tomo_names.extend(names)
-            all_centroids.extend(centroids)
-            all_voxel_sizes.extend(vxs)
+        
+        # The 'results' list contains dictionaries, each for a single tomogram's output.
+        for res_dict in results:
+            tomo_name = res_dict["name"]
+            voxel_size = res_dict["voxel_size"]
+            # A single tomogram can have multiple coordinates (centroids).
+            for centroid in res_dict["coords"]:
+                all_tomo_names.append(tomo_name)
+                all_centroids.append(centroid)
+                all_voxel_sizes.append(voxel_size)
             
         if all_tomo_names:
             process_extracted_coordinates(
