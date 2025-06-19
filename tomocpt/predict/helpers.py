@@ -390,14 +390,12 @@ def _get_prediction_mask_with_tta(
     """
     deaugmented_masks = []
 
-    if infer_config.use_tta:
+    # Use getattr for backward compatibility if `use_tta` is not in the config.
+    use_tta = getattr(infer_config, 'use_tta', False)
+    if use_tta:
         # Define geometric transforms for TTA
-        tta_transforms = [
-            tio.Compose([]),  # Identity
-            tio.Flip(axes='D'),
-            tio.Flip(axes='H'),
-            tio.Flip(axes='W'),
-        ]
+        flips = [tio.Flip(axes=i) for i in (0, 1, 2)]
+        tta_transforms = [tio.Compose([])] + [tio.Compose([t]) for t in flips]
         logger.info(f"Using TTA with {len(tta_transforms)} transforms.")
     else:
         tta_transforms = [tio.Compose([])]  # Just the identity transform
@@ -426,13 +424,12 @@ def _get_prediction_mask_with_tta(
         augmented_mask = aggregator.get_output_tensor()
 
         # Apply the inverse transform to bring the mask back to the original orientation
-        deaugmented_mask = transform.inverse(augmented_mask)
+        deaugmented_mask = transform(augmented_mask)
         deaugmented_masks.append(deaugmented_mask)
 
     # Average the predictions from all augmentations and remove channel dim
     final_mask = torch.stack(deaugmented_masks).mean(dim=0).squeeze(0)
     return final_mask
-
 
 def _predict_single_tomogram(
         model,
