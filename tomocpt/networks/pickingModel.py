@@ -90,7 +90,6 @@ class BasePickingModel(BaseModel):
         x, y = self.resolve_batch(batch)
         logits = self(x)
         y_pred = nn.functional.sigmoid(logits)
-        # y_pred = nn.functional.softplus(logits, beta=BETA_FOR_SOFTPLUS)
         loss = self.loss(y_pred, y)
 
         self.log(
@@ -103,35 +102,10 @@ class BasePickingModel(BaseModel):
             batch_size=x.shape[0],
         )  # if on_step=True, reconsider sync_dist
 
-        if batch_idx == 0:
-            size = y_pred.shape[2]
-            grid_params = {
-                "padding": 1,  # Smaller gap between images
-                "pad_value": 1.0,  # White borders
-            }
-            grid = torchvision.utils.make_grid(x[:, :, size // 2, :, :], **grid_params)
-            tensorboard = self.logger.experiment
-            tensorboard.add_image(
-                "input",
-                grid.to(dtype=torch.float32),
-                global_step=self.current_epoch,
-            )
-            grid = torchvision.utils.make_grid(
-                y[:, :, size // 2, :, :].to(dtype=torch.float32), **grid_params
-            )
-            tensorboard.add_image(
-                "label", grid.to(dtype=torch.float32), global_step=self.current_epoch
-            )
-            grid = torchvision.utils.make_grid(
-                y_pred[:, :, size // 2, :, :].to(dtype=torch.float32), **grid_params
-            )
-            tensorboard.add_image(
-                "prediction",
-                grid.to(dtype=torch.float32),
-                global_step=self.current_epoch,
-            )
-
+        if batch_idx == 0 and self.global_rank == 0:
+            self._log_images(x, y, y_pred, "train")
         return loss
+
 
     def validation_step(self, batch, batch_idx):
             x, y = self.resolve_batch(batch)
@@ -163,7 +137,14 @@ class BasePickingModel(BaseModel):
         
         # Log the smoothed metric for EarlyStopping and ModelCheckpoint
         self.log("val_loss_smooth", self.val_loss_ema, prog_bar=True)
+    
+    def predict_step(self, batch, batch_idx, dataloader_idx=0):
+        logits = self(batch)
+        # y_pred = nn.functional.softplus(logits, beta=BETA_FOR_SOFTPLUS)
+        y_pred = nn.functional.sigmoid(logits)
+        return y_pred
 
+    def _log_images(self, x, y, y_pred, prefix):
         tensorboard = self.logger.experiment
         size = y_pred.shape[2]
         grid_params = {
@@ -188,11 +169,6 @@ class BasePickingModel(BaseModel):
         )
         return loss
 
-    def predict_step(self, batch, batch_idx, dataloader_idx=0):
-        logits = self(batch)
-        # y_pred = nn.functional.softplus(logits, beta=BETA_FOR_SOFTPLUS)
-        y_pred = nn.functional.sigmoid(logits)
-        return y_pred
 
 
 if __name__ == "__main__":
