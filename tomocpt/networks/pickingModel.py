@@ -134,39 +134,35 @@ class BasePickingModel(BaseModel):
         return loss
 
     def validation_step(self, batch, batch_idx):
-        with torch.no_grad():
             x, y = self.resolve_batch(batch)
             logits = self(x)
             y_pred = nn.functional.sigmoid(logits)
             loss = self.loss(y_pred, y)
 
-        # Log raw validation loss
-        self.log(
-            "val_loss",
-            loss,
-            on_step=False,
-            on_epoch=True,
-            prog_bar=True,
-            sync_dist=True,
-            batch_size=x.shape[0],
-        )
+            self.log("val_loss", loss, on_step=False, on_epoch=True, prog_bar=True, sync_dist=True)
 
-        # Calculate and log smoothed validation loss using EMA
-        current_loss = loss.item()
-        if not hasattr(self, 'val_loss_ema'):
-            self.val_loss_ema = current_loss
+            if batch_idx == 0 and self.global_rank == 0:
+                self._log_images(x, y, y_pred, "val")
+                
+            return loss
+
+    def on_validation_epoch_end(self):
+        """
+        Called at the end of the validation epoch to compute the smoothed loss.
+        """
+        current_val_loss = self.trainer.callback_metrics.get("val_loss")
+        if current_val_loss is None:
+            return
+
+        # Calculate the EMA on the epoch's average loss
+        if self.val_loss_ema is None:
+            self.val_loss_ema = current_val_loss
         else:
-            self.val_loss_ema = self.ema_alpha * current_loss + (1 - self.ema_alpha) * self.val_loss_ema
-
-        self.log(
-            "val_loss_smooth",
-            self.val_loss_ema,
-            on_step=False,
-            on_epoch=True,
-            prog_bar=False,  # Don't clutter progress bar
-            sync_dist=True,
-            batch_size=x.shape[0],
-        )
+            alpha = self.hparams.ema_alpha
+            self.val_loss_ema = alpha * current_val_loss + (1 - alpha) * self.val_loss_ema
+        
+        # Log the smoothed metric for EarlyStopping and ModelCheckpoint
+        self.log("val_loss_smooth", self.val_loss_ema, prog_bar=True)
 
         tensorboard = self.logger.experiment
         size = y_pred.shape[2]

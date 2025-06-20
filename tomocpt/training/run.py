@@ -147,22 +147,32 @@ def train(
     )
 
     data.setup()
+    
+    checkpointer = ModelCheckpoint(
+        monitor="val_loss_smooth", 
+        mode="min",
+        filename="best-model-{epoch}-{val_loss_smooth:.4f}",
+        save_top_k=1,
+        verbose=True)
+
+    early_stopper = EarlyStopping(
+        monitor="val_loss_smooth",
+        mode="min",
+        patience=0.1 * mainConfig.train.n_epochs,  
+        min_delta=0.001,
+        verbose=True)
+
+    swa = StochasticWeightAveraging(
+            annealing_epochs=train__config.COSINE_LR_SCHEDULE_N_EPOCHS,
+            swa_lrs=0.1 * pl_model.lr)
 
     callbacks = [
         TQDMProgressBar(refresh_rate=10),
-        EarlyStopping(
-            monitor="val_loss_smooth",
-            patience=10,
-            min_delta=0.005,
-            verbose=True,
-        ),
+        early_stopper,
         checkpointer,
         LearningRateMonitor(logging_interval="epoch"),
-        StochasticWeightAveraging(
-            annealing_epochs=train__config.COSINE_LR_SCHEDULE_N_EPOCHS,
-            swa_lrs=0.1 * pl_model.lr,
-        ),
-        LRVerificationCallback(),
+        swa
+        #LRVerificationCallback(),
     ]
 
     if is_main_process():
