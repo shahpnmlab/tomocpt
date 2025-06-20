@@ -167,7 +167,6 @@ class BasePickingModel(BaseModel):
             grid3.to(dtype=torch.float32),
             global_step=self.current_epoch,
         )
-        return loss
 
 
 
