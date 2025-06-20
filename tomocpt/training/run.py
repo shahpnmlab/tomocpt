@@ -99,8 +99,6 @@ def train(
 
     # Model selection and initialization
     if mainConfig.train.mode == TrainingModes.picking:
-        # --- Simplified logic: Normal training or fine-tuning with BasePickingModel ---
-        # Advanced strategies like distillation and continual learning have been removed.
         checkpointer = ModelCheckpoint(monitor="val_loss", filename="weights", verbose=True)
         if train_continue:
             resume_from_checkpoint = train_continue if mainConfig.train.restore_full_state else None
@@ -109,11 +107,9 @@ def train(
                 pl_model = BasePickingModel.load_from_checkpoint(
                     train_continue, train_continue=train_continue, **kwargs
                 )
-                logging.info(f"Resuming training for BasePickingModel from: {train_continue}")
             except RuntimeError:
                 # If the above fails, it might be a checkpoint from a self-supervised model.
                 # In this case, load only the weights for fine-tuning, not the full trainer state.
-                logging.info(f"Loading weights from {train_continue} for fine-tuning a new BasePickingModel.")
                 pretrained_model = SelfSupervisedModel.load_from_checkpoint(train_continue)
                 pl_model = BasePickingModel(train_continue=train_continue, **kwargs, model=pretrained_model)
                 del pretrained_model
@@ -123,7 +119,6 @@ def train(
             logging.info("Initializing a new BasePickingModel for training from scratch.")
             pl_model = BasePickingModel(train_continue=None, **kwargs)
             resume_from_checkpoint = None
-    # ======================================================================
 
     elif mainConfig.train.mode == TrainingModes.selfSupervised:
         # This section remains unchanged
@@ -171,8 +166,13 @@ def train(
     ]
 
     if is_main_process():
+        logging.info(f"Using {mainConfig.train.mode} model.")
+        if train_continue:
+            logging.info(f"Fine-tuning or resuming from checkpoint: {train_continue}")
+        else:
+            logging.info("Training new model from scratch.")
+        verify_different_lrs(pl_model) 
         logging.info(f"Size of the training dataset {len(data.train_dataloader())}")
-        verify_different_lrs(pl_model)
 
     tb_logger = TensorBoardLogger(
         save_dir=f"{mainConfig.train.model_dir}/{mainConfig.train.experiment_name}",

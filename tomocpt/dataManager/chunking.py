@@ -145,8 +145,7 @@ def process_single_tomo_task(task: Dict[str, Any]) -> tuple:
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
 
-
-def do_chunking(tomosDf: pd.DataFrame, chunkedDataDir: str,
+def do_chunking(tomosDf: pd.DataFrame, chunkedDataDir: str, desired_particle_pixel_size: int,
                 n_cpus: int, require_labels: bool = True,
                 train_val_level: CrossValidationLevelSplit = CrossValidationLevelSplit.tomos, use_gpus: bool = True):
     try:
@@ -158,10 +157,11 @@ def do_chunking(tomosDf: pd.DataFrame, chunkedDataDir: str,
         train_outDir, val_outDir = Path(chunkedDataDir) / "train", Path(chunkedDataDir) / "val"
         if train_outDir.exists(): shutil.rmtree(train_outDir)
         if val_outDir.exists(): shutil.rmtree(val_outDir)
-        makedir(train_outDir); makedir(val_outDir)
+        makedir(train_outDir);
+        makedir(val_outDir)
 
         cache_dir = Path(chunkedDataDir) / ".monai_cache"
-        
+
         all_tasks: List[Dict[str, Any]] = []
         datasets = {'train': df_train}
         if df_val is not None: datasets['val'] = df_val
@@ -171,14 +171,15 @@ def do_chunking(tomosDf: pd.DataFrame, chunkedDataDir: str,
             outpath = train_outDir if split == 'train' else val_outDir
             for _, row in df.iterrows():
                 all_tasks.append({"tomo_info": row, "outpath": str(outpath), "cache_dir": cache_dir,
-                                  "require_labels": require_labels})
-        
+                                  "require_labels": require_labels,
+                                  "desired_particle_pixel_size": desired_particle_pixel_size})
+
         if not all_tasks:
             logging.warning("No tomograms found to process. Stopping data preparation.")
             return
 
         n_gpus = torch.cuda.device_count() if use_gpus and torch.cuda.is_available() else 0
-        
+
         if n_cpus <= 0:
             logging.warning(f"Configured n_cpus ({n_cpus}) is not positive. Defaulting to all available CPUs.")
             n_cpus = os.cpu_count()
@@ -186,13 +187,14 @@ def do_chunking(tomosDf: pd.DataFrame, chunkedDataDir: str,
         if n_gpus > 0:
             num_workers = n_gpus
             threads_per_worker = max(1, n_cpus // n_gpus)
-            
+
             cluster = LocalCUDACluster(
                 n_workers=num_workers,
                 threads_per_worker=threads_per_worker
             )
             client = Client(cluster)
-            logging.info(f"Starting Dask CUDA cluster with {num_workers} GPU workers, each with {threads_per_worker} threads.")
+            logging.info(
+                f"Starting Dask CUDA cluster with {num_workers} GPU workers, each with {threads_per_worker} threads.")
         else:
             from dask.distributed import LocalCluster
             num_workers = min(n_cpus, len(all_tasks))
@@ -213,14 +215,15 @@ def do_chunking(tomosDf: pd.DataFrame, chunkedDataDir: str,
 
         client.close()
         cluster.close()
-        
+
         if train_val_level == CrossValidationLevelSplit.cubes:
             all_tomo_dirs = [d for d in train_outDir.iterdir() if d.is_dir()]
             _, val_dirs = train_test_split(all_tomo_dirs, test_size=constants.PERCENT_TO_VALIDATE, random_state=42)
             for d in val_dirs: shutil.move(str(d), val_outDir)
 
         logging.info(f"Chunking finished. Data saved at: {train_outDir} and {val_outDir}")
-        with open(get_chunking_name_done(chunkedDataDir, require_labels), "w") as f: f.write("done")
+        with open(get_chunking_name_done(chunkedDataDir, require_labels), "w") as f:
+            f.write("done")
 
     except Exception:
         logging.error("A critical error occurred in the main do_chunking function!")
