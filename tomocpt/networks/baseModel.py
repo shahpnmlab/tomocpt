@@ -83,7 +83,8 @@ class BaseModel(pl.LightningModule):
 
     def configure_optimizers(self):
         train_config = self.hparams.config.train
-        logging.info(f"optimizer:{train_config.optimizer}")
+        if self.global_rank == 0:
+            logging.info(f"optimizer:{train_config.optimizer}")
 
         parameters = self._get_model_parameters_for_optimizer()
 

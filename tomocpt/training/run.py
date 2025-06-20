@@ -181,7 +181,7 @@ def train(
             logging.info(f"Fine-tuning or resuming from checkpoint: {train_continue}")
         else:
             logging.info("Training new model from scratch.")
-        verify_different_lrs(pl_model) 
+        #verify_different_lrs(pl_model) 
         logging.info(f"Size of the training dataset {len(data.train_dataloader())}")
 
     tb_logger = TensorBoardLogger(

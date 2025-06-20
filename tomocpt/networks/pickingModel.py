@@ -30,6 +30,7 @@ class BasePickingModel(BaseModel):
         # Store config if needed
         self.config = config_dict
         self.ema_alpha = ema_alpha  # Smoothing factor for EMA
+        self.val_loss_ema = None
 
         if model is None:
             self.model_name, self.model = self.build_model()
@@ -37,8 +38,12 @@ class BasePickingModel(BaseModel):
             self.model_name = model.model_name
             self.model = model.model
 
-        logging.info(f"PickingModel using {self.model_name}")
         self.lr = lr
+    
+    def setup(self, stage: str) -> None:
+        """Called after the model is moved to the correct device."""
+        if self.global_rank == 0:
+            logging.info(f"PickingModel using {self.model_name}")
 
     def loss(self, y_pred, y_true):
         eps = 1
@@ -132,11 +137,11 @@ class BasePickingModel(BaseModel):
         if self.val_loss_ema is None:
             self.val_loss_ema = current_val_loss
         else:
-            alpha = self.hparams.ema_alpha
+            alpha = self.ema_alpha
             self.val_loss_ema = alpha * current_val_loss + (1 - alpha) * self.val_loss_ema
         
         # Log the smoothed metric for EarlyStopping and ModelCheckpoint
-        self.log("val_loss_smooth", self.val_loss_ema, prog_bar=True)
+        self.log("val_loss_smooth", self.val_loss_ema, prog_bar=True, sync_dist=True)
     
     def predict_step(self, batch, batch_idx, dataloader_idx=0):
         logits = self(batch)
