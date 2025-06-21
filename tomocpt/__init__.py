@@ -1,4 +1,4 @@
-__version__ = "2025.06.19"
+__version__ = "2025.06.21"
 
 from rich import traceback
 
