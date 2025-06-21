@@ -31,11 +31,19 @@ def read_particles_csvs(dirname):
     df = pd.concat([pd.read_csv(f) for f in fnames])
     return df
 
-
 def is_main_process():
     """Determine if this is the main process (rank 0)."""
+    import os
     import torch.distributed as dist
-
+    
+    # Check environment variables first (available from process start)
+    rank = int(os.environ.get('RANK', os.environ.get('LOCAL_RANK', 0)))
+    if rank != 0:
+        return False
+    
+    # If distributed is available and initialized, double-check with the backend
     if dist.is_available() and dist.is_initialized():
         return dist.get_rank() == 0
-    return True
+    
+    # Only return True if rank is 0 from environment variables
+    return rank == 0

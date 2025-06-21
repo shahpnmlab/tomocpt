@@ -71,7 +71,8 @@ def train(
         chunks_dir, require_labels=require_labels
     )
     if not Path(chunking_name_done).is_file():
-        logging.info("Chunked data not found or incomplete. Starting data preparation...")
+        if is_main_process():
+            logging.info("Chunked data not found or incomplete. Starting data preparation...")
         if mainConfig.train.training_data_dir is None:
             training_data_dir = mainConfig.prepData.training_data_dir
         else:
@@ -93,9 +94,11 @@ def train(
             train_val_level=mainConfig.train.train_on,
             use_gpus=mainConfig.train.use_gpus,
         )
-        logging.info("Data preparation complete.")
+        if is_main_process():
+            logging.info("Data preparation complete.")
     else:
-        logging.info("Found existing chunked data. Skipping data preparation.")
+        if is_main_process():
+            logging.info("Found existing chunked data. Skipping data preparation.")
 
     # Model selection and initialization
     if mainConfig.train.mode == TrainingModes.picking:
@@ -116,7 +119,8 @@ def train(
                 resume_from_checkpoint = None # Start training from epoch 0 with pretrained weights
         else:
             # Standard training from scratch
-            logging.info("Initializing a new BasePickingModel for training from scratch.")
+            if is_main_process():
+                logging.info("Initializing a new BasePickingModel for training from scratch.")
             pl_model = BasePickingModel(train_continue=None, **kwargs)
             resume_from_checkpoint = None
 

@@ -135,12 +135,11 @@ class BaseModel(pl.LightningModule):
         conf.update({
             'lr_scheduler': torch.optim.lr_scheduler.ReduceLROnPlateau(
                 opt,
-                verbose=True,
                 factor=train_config.FACTOR_REDUCE_LR_PLATEAU_N_EPOCHS,
                 cooldown=max(1, train_config.PATIENT_REDUCE_LR_PLATEAU_N_EPOCHS // 4),
                 patience=int(1.5 * train_config.PATIENT_REDUCE_LR_PLATEAU_N_EPOCHS)
             ),
-            'monitor': 'val_loss'
+            'monitor': 'val_loss_smooth'
         })
         return conf
 
@@ -151,22 +150,48 @@ def verify_different_lrs(model):
     if hasattr(model, '_get_model_parameters_for_optimizer'):
         params = model._get_model_parameters_for_optimizer()
         if isinstance(params, list) and all(isinstance(p, dict) and 'params' in p for p in params):
-            logging.info("USING DIFFERENT LEARNING RATES")
-            for i, group in enumerate(params):
-                params_count = sum(p.numel() for p in group['params'])
-                lr_mult = group.get('lr_mult', 1.0)
-                logging.info(f"Group {i}: {params_count} parameters, lr_mult={lr_mult}")
+            # Only log from rank 0 to avoid duplicate output
+            if hasattr(model, 'global_rank') and model.global_rank == 0:
+                logging.info("USING DIFFERENT LEARNING RATES")
+                for i, group in enumerate(params):
+                    params_count = sum(p.numel() for p in group['params'])
+                    lr_mult = group.get('lr_mult', 1.0)
+                    logging.info(f"Group {i}: {params_count} parameters, lr_mult={lr_mult}")
 
-                # Print some parameter names from this group (max 5)
-                if hasattr(model, 'named_parameters'):
-                    param_names = []
-                    for name, param in model.named_parameters():
-                        if any(p is param for p in group['params']):
-                            param_names.append(name)
-                            if len(param_names) >= 5:
-                                break
-                    logging.info(f"  Sample parameters: {', '.join(param_names)}")
+                    # Print some parameter names from this group (max 5)
+                    if hasattr(model, 'named_parameters'):
+                        param_names = []
+                        for name, param in model.named_parameters():
+                            if any(p is param for p in group['params']):
+                                param_names.append(name)
+                                if len(param_names) >= 5:
+                                    break
+                        logging.info(f"  Sample parameters: {', '.join(param_names)}")
+            elif not hasattr(model, 'global_rank'):
+                # Fallback for when model doesn't have global_rank attribute
+                logging.info("USING DIFFERENT LEARNING RATES")
+                for i, group in enumerate(params):
+                    params_count = sum(p.numel() for p in group['params'])
+                    lr_mult = group.get('lr_mult', 1.0)
+                    logging.info(f"Group {i}: {params_count} parameters, lr_mult={lr_mult}")
+
+                    # Print some parameter names from this group (max 5)
+                    if hasattr(model, 'named_parameters'):
+                        param_names = []
+                        for name, param in model.named_parameters():
+                            if any(p is param for p in group['params']):
+                                param_names.append(name)
+                                if len(param_names) >= 5:
+                                    break
+                        logging.info(f"  Sample parameters: {', '.join(param_names)}")
         else:
-            logging.info("USING SINGLE LEARNING RATE FOR ALL PARAMETERS")
-            params_count = sum(p.numel() for p in model.parameters())
-            logging.info(f"Total parameters: {params_count}")
+            # Only log from rank 0 to avoid duplicate output
+            if hasattr(model, 'global_rank') and model.global_rank == 0:
+                logging.info("USING SINGLE LEARNING RATE FOR ALL PARAMETERS")
+                params_count = sum(p.numel() for p in model.parameters())
+                logging.info(f"Total parameters: {params_count}")
+            elif not hasattr(model, 'global_rank'):
+                # Fallback for when model doesn't have global_rank attribute
+                logging.info("USING SINGLE LEARNING RATE FOR ALL PARAMETERS")
+                params_count = sum(p.numel() for p in model.parameters())
+                logging.info(f"Total parameters: {params_count}")
