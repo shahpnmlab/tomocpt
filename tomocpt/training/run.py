@@ -20,12 +20,8 @@ from tomocpt.networks.baseModel import verify_different_lrs
 from tomocpt.training.callbacks import LRVerificationCallback
 from tomocpt.utils import read_particles_csvs, is_main_process
 from tomocpt.networks.pickingModel import BasePickingModel
-# --- Removed imports for Distillation and Continual Learning models ---
-# from tomocpt.networks.distillationModel import DistillationPickingModel
-# from tomocpt.networks.continuousLearningModel import ContinuousLearningModel
 
 from tomocpt.logger import get_logger
-
 logging = get_logger()
 warnings.filterwarnings("ignore", ".*SwinUNETR.*", FutureWarning)
 
@@ -102,7 +98,6 @@ def train(
 
     # Model selection and initialization
     if mainConfig.train.mode == TrainingModes.picking:
-        checkpointer = ModelCheckpoint(monitor="val_loss", filename="weights", verbose=True)
         if train_continue:
             resume_from_checkpoint = train_continue if mainConfig.train.restore_full_state else None
             try:
