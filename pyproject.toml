@@ -42,6 +42,7 @@ dependencies = [
     "einops==0.8.0",
     "dask==2025.5.0",
     "dask-cuda==25.6.0",
+    "click==8.1.7"
 ]
 
 [project.urls]
