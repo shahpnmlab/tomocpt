@@ -415,7 +415,7 @@ def _predict_single_tomogram(
         write_segmentation_mask(pred_mask_gpu, str(output_mask_path), angpix=original_voxel_size, overwrite=True)
 
     if infer_config.save_predicted_coords:
-        min_dist_px = (infer_config.distance_threshold or infer_config.length) / original_voxel_size
+        min_dist_px = np.ceil((infer_config.distance_threshold or infer_config.length) / original_voxel_size)
         int_coords_gpu = peak_local_max_torch(
             image=pred_mask_gpu,
             min_distance=int(min_dist_px),
