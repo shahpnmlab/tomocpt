@@ -200,8 +200,65 @@ def peak_local_max_torch(
         return torch.empty((0, 3), device=device, dtype=torch.long)
     return torch.stack(final_peaks)
 
+def _prune_refined_peaks_gpu(
+    coords: torch.Tensor,
+    scores: torch.Tensor,
+    min_distance: float
+) -> Tuple[torch.Tensor, torch.Tensor]:
+    """
+    Prunes refined, sub-pixel coordinates to enforce a minimum distance after refinement.
 
-def _refine_peaks_subpixel_gpu(pred_mask_gpu: torch.Tensor, peak_coords_gpu: torch.Tensor, patch_size: int = 5) -> \
+    Iterates through coordinates sorted by score, keeping the highest-scoring peak
+    and removing any other lower-scoring peaks within the specified minimum distance.
+
+    Args:
+        coords (torch.Tensor): Tensor of shape (N, 3) with sub-pixel coordinates.
+        scores (torch.Tensor): Tensor of shape (N,) with corresponding peak scores.
+        min_distance (float): The minimum distance to enforce between peaks in pixels.
+
+    Returns:
+        A tuple containing:
+        - torch.Tensor: The pruned coordinates.
+        - torch.Tensor: The scores of the pruned coordinates.
+    """
+    if coords.shape[0] < 2:
+        return coords, scores
+
+    device = coords.device
+    min_distance_sq = min_distance ** 2
+
+    # Sort peaks by score in descending order
+    sorted_indices = torch.argsort(scores, descending=True)
+    sorted_coords = coords[sorted_indices]
+    sorted_scores = scores[sorted_indices]
+
+    # Mask to track which peaks to keep
+    keep_mask = torch.ones(sorted_coords.shape[0], dtype=torch.bool, device=device)
+
+    for i in range(sorted_coords.shape[0]):
+        # If this peak has already been suppressed by a higher-scoring one, skip it
+        if not keep_mask[i]:
+            continue
+
+        # This is a good peak. Now, suppress any subsequent, lower-scoring peaks that are too close.
+        # Calculate squared distances to all subsequent peaks.
+        distances_sq = torch.sum((sorted_coords[i+1:] - sorted_coords[i])**2, dim=1)
+        
+        # Find which of the *subsequent* peaks are too close
+        too_close_mask = distances_sq < min_distance_sq
+        
+        # Update the 'keep_mask' for the subsequent peaks.
+        # A peak is marked as False if it's too close to the current 'good' peak.
+        if too_close_mask.any():
+            keep_mask[i+1:][too_close_mask] = False
+
+    final_coords = sorted_coords[keep_mask]
+    final_scores = sorted_scores[keep_mask]
+
+    return final_coords, final_scores
+
+
+def _refine_peaks_subpixel_gpu(pred_mask_gpu: torch.Tensor, peak_coords_gpu: torch.Tensor, patch_size: int = 3) -> \
 Tuple[torch.Tensor, torch.Tensor]:
     """Refines integer peak coordinates to sub-pixel accuracy on the GPU by fitting a 3D quadratic function."""
     if peak_coords_gpu.shape[0] == 0:
@@ -309,8 +366,6 @@ def process_extracted_coordinates(output_dir: str, tomo_names: List[str],
     else:
         raise ValueError(f"Unsupported output format: {output_format}")
 
-
-# <<< MODIFIED to accept a persistent pbar object >>>
 def _get_prediction_mask_with_tta(
         model,
         padded_vol: torch.Tensor,
@@ -415,18 +470,30 @@ def _predict_single_tomogram(
         write_segmentation_mask(pred_mask_gpu, str(output_mask_path), angpix=original_voxel_size, overwrite=True)
 
     if infer_config.save_predicted_coords:
-        min_dist_px = np.ceil((infer_config.distance_threshold or infer_config.length) / original_voxel_size)
+        # Calculate min_distance in pixels as a float for precision
+        min_dist_px = (infer_config.distance_threshold or infer_config.length) / original_voxel_size
+        
+        # peak_local_max_torch requires an integer distance; use ceiling for safety
         int_coords_gpu = peak_local_max_torch(
             image=pred_mask_gpu,
-            min_distance=int(min_dist_px),
+            min_distance=int(np.ceil(min_dist_px)),
             threshold_abs=infer_config.confidence_threshold,
             exclude_border=True
         )
         if int_coords_gpu.shape[0] > 0:
             refined_coords_gpu, refined_scores_gpu = _refine_peaks_subpixel_gpu(pred_mask_gpu, int_coords_gpu)
-            centroids_with_scores = torch.hstack(
-                [refined_coords_gpu, refined_scores_gpu.unsqueeze(-1)]).cpu().numpy().tolist()
-            return {"name": tomo_fname.stem, "coords": centroids_with_scores, "voxel_size": original_voxel_size}
+
+            # Prune the refined coordinates to enforce the minimum distance constraint again
+            final_coords_gpu, final_scores_gpu = _prune_refined_peaks_gpu(
+                refined_coords_gpu,
+                refined_scores_gpu,
+                min_distance=min_dist_px  # Use the precise float value for pruning
+            )
+            
+            if final_coords_gpu.shape[0] > 0:
+                centroids_with_scores = torch.hstack(
+                    [final_coords_gpu, final_scores_gpu.unsqueeze(-1)]).cpu().numpy().tolist()
+                return {"name": tomo_fname.stem, "coords": centroids_with_scores, "voxel_size": original_voxel_size}
     return None
 
 
@@ -474,4 +541,4 @@ def infer_tomos(tomo_fnames: List[Path], gpu_id: Optional[int], model_fname: str
                 gc.collect()
                 if device.type == 'cuda': torch.cuda.empty_cache()
     
-    return results_aggregator
+    return results_aggregator```
