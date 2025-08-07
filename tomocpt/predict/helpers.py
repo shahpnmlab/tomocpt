@@ -541,4 +541,4 @@ def infer_tomos(tomo_fnames: List[Path], gpu_id: Optional[int], model_fname: str
                 gc.collect()
                 if device.type == 'cuda': torch.cuda.empty_cache()
     
-    return results_aggregator```
+    return results_aggregator
