@@ -132,7 +132,6 @@ def get_mrc_metadata(mrc_path: str) -> Tuple[Tuple[int, ...], float]:
         shape = mrc.data.shape
         voxel_size = mrc.voxel_size.x.astype(np.float32)
     return shape, voxel_size
-
 def preprocess_tomogram(
     mrc_path: str,
     particle_diameter_angst: float,
@@ -155,10 +154,25 @@ def preprocess_tomogram(
 
     original_particle_px = particle_diameter_angst / original_voxel_size
     target_shape_for_resize, _ = get_shape_for_resizing(vol_np.shape, original_particle_px, target_particle_px)
-    vol_tensor = torch.from_numpy(vol_np).to(device)
 
-    resized_tensor = resize_volume(vol_tensor, target_shape_for_resize)
-    
+    try:
+        if device.type == 'cuda':
+            torch.cuda.empty_cache()
+        vol_tensor = torch.from_numpy(vol_np).to(device)
+        resized_tensor = resize_volume(vol_tensor, target_shape_for_resize)
+    except torch.cuda.OutOfMemoryError:
+        logging.warning(
+            f"CUDA OOM when loading tomogram {Path(mrc_path).name}. "
+            f"Preprocessing will proceed on CPU."
+        )
+        gc.collect()
+        if device.type == 'cuda':
+            torch.cuda.empty_cache()
+        
+        cpu_device = torch.device("cpu")
+        vol_tensor = torch.from_numpy(vol_np).to(cpu_device)
+        resized_tensor = resize_volume(vol_tensor, target_shape_for_resize)
+
     padded_tensor, padding_tuple = symmetrize_and_pad(resized_tensor, chunk_size)
     final_shape = tuple(padded_tensor.shape)
 
@@ -182,10 +196,23 @@ def process_label_to_match_tomogram(
     pre-processed tomogram and returning it on the CPU.
     """
     label_np = load_mrc(mrc_path, normalize=False, return_voxel_size=False)
-    
-    label_tensor = torch.from_numpy(label_np).to(device)
+    try:
+        if device.type == 'cuda':
+            torch.cuda.empty_cache()
+        label_tensor = torch.from_numpy(label_np).to(device)
+        resized_label = resize_volume(label_tensor, final_tomogram_shape)
+    except torch.cuda.OutOfMemoryError:
+        logging.warning(
+            f"CUDA OOM when loading label {Path(mrc_path).name}. "
+            f"Label processing will proceed on CPU."
+        )
+        gc.collect()
+        if device.type == 'cuda':
+            torch.cuda.empty_cache()
 
-    resized_label = resize_volume(label_tensor, final_tomogram_shape)
+        cpu_device = torch.device("cpu")
+        label_tensor = torch.from_numpy(label_np).to(cpu_device)
+        resized_label = resize_volume(label_tensor, final_tomogram_shape)
         
     result_cpu = resized_label.cpu()
 

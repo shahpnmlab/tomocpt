@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "tomocpt"
-version = "0.5"
+version = "0.5.1"
 description = "Python tools for picking cryo Tomograms"
 readme = "README.md"
 keywords = ["particle picking", "cryoEM", "tomograms"]
