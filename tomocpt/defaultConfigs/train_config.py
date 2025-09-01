@@ -30,15 +30,16 @@ class CrossValidationLevelSplit(str, Enum):
 
 @dataclass
 class TrainConfig:
-    training_data_dir: Annotated[
-        Path, typer.Option(help="Path to where the volume label pairs are stored")
-    ] = None
-    chunks_dir: Annotated[
-        Optional[Path], typer.Option(help="Path to directory containing chunked data")
-    ] = MISSING
+    
     model_dir: Annotated[
         Path,
         typer.Option(help="The directory where the training weights will be saved"),
+    ] = MISSING
+    training_data_dir: Annotated[
+        Optional[Path], typer.Option(help="Path to where the volume label pairs are stored")
+    ] = None
+    chunks_dir: Annotated[
+        Optional[Path], typer.Option(help="Path to directory containing chunked data")
     ] = MISSING
     n_epochs: Annotated[int, typer.Option(help="Number of epochs to train")] = 10
     batch_size: Annotated[int, typer.Option(help="batch size")] = 16

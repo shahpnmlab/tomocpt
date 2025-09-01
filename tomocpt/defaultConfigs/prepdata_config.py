@@ -18,11 +18,13 @@ class PrepdataConfig:
     ] = MISSING
 
     training_data_dir: Annotated[
-        Path,
+        Optional[Path],
         typer.Option(
             help="Path to where the volume label pairs should be stored for subsequent training step"
         ),
     ] = MISSING
+
+    
 
     particle_length_ang: Annotated[
         str, typer.Option(help="Comma-separated list of particle lengths in angstroms")
