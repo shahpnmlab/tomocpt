@@ -210,6 +210,7 @@ def train(
         gradient_clip_val=1.0,
         gradient_clip_algorithm="norm",
         enable_model_summary=False,
+        accumulate_grad_batches=mainConfig.train.gradient_accumulation_steps,
     )
 
     if trainer.is_global_zero:
