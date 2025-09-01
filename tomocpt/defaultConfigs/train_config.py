@@ -43,6 +43,7 @@ class TrainConfig:
     ] = MISSING
     n_epochs: Annotated[int, typer.Option(help="Number of epochs to train")] = 10
     batch_size: Annotated[int, typer.Option(help="batch size")] = 16
+    gradient_accumulation_steps: Annotated[int, typer.Option(help="Accumulate gradients over N steps")] = 1
     use_gpus: Annotated[bool, typer.Option(help="use cuda for training")] = True
     n_cpus_for_preprocessing: Annotated[
         int, typer.Option(help="Number of CPU workers for the initial chunking/preprocessing step.")

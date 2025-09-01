@@ -24,13 +24,13 @@ You should see the following output
   Usage: tomocpt [OPTIONS] COMMAND [ARGS]...                                                                                                                                                
                                                                                                                                                                                            
 ╭─ Options ───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
-│ --help          Show this message and exit.                                                                                                                                             │
+│ --help          Show this message and exit.                                                                                                                                             
 ╰─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
 ╭─ Commands ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
-│ init           Function to create a template config file for running tomoCPT, only including annotated fields                                                                           │
-│ prepare_data   Prepares particle picking datasets by processing multiple tomograms and their corresponding coordinate files.                                                            │
-│ train          Trains a deep learning model for particle picking or self-supervised learning using PyTorch Lightning.                                                                   │
-│ predict        Performs parallel inference on tomogram data for particle detection and coordinate extraction.                                                                           │
+│ init           Function to create a template config file for running tomoCPT, only including annotated fields                                                                           
+│ prepare_data   Prepares particle picking datasets by processing multiple tomograms and their corresponding coordinate files.                                                            
+│ train          Trains a deep learning model for particle picking or self-supervised learning using PyTorch Lightning.                                                                   
+│ predict        Performs parallel inference on tomogram data for particle detection and coordinate extraction.                                                                           
 ╰─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
 ```
 
@@ -89,7 +89,7 @@ infer:
   masks_dir: null  # Optional directory with masks to limit prediction to specific regions
   length: ???  # Particle diameter in Angstroms; should match training value (REQUIRED)
   distance_threshold: null  # Minimum distance between particles in Angstroms; null for auto
-  predictions_coord_filename: tomopicker_coords.star  # Filename for output coordinates
+  predictions_coord_filename: tomocpt_coords.star  # Filename for output coordinates
   predictions_coord_format: relion  # Format for output: "relion31", "relion50", or "warp"
   save_prediction_confidence_map: false  # Whether to save probability maps as .mrc files
   save_predicted_coords: true  # Whether to save predicted coordinates to star file
@@ -155,7 +155,7 @@ Now train the model using the prepared data.
 ```bash
 tomocpt train \
   --chunks-dir /tmp/chunks/ \
-  --model-dir /path/to/where/weights/shoud/be/saved/weights/ \
+  --model-dir /path/to/where/weights/should/be/saved/weights/ \
   --experiment-name "first_model" \
   --n-epochs 100 \
   --batch-size 4 \
@@ -170,7 +170,7 @@ tomocpt train --config-file my_config.yaml
 ```
 
 ### Training with fine-tuning from existing weights:
-You can download a pre-trained model from [here].(https://zenodo.org/records/14871940)
+You can download a pre-trained model from [here](https://zenodo.org/records/14871940)
 ```bash
 tomocpt train \
   --config-file my_config.yaml \
@@ -240,10 +240,10 @@ The prediction process processes each tomogram and outputs coordinates:
 ```
 Processing tomo_01.mrc: 100%|██████████| [02:15<00:00]
 Processing tomo_02.mrc: 100%|██████████| [02:08<00:00]
-Predicted coordinates are stored here: /path/to/predictions/tomopicker_coords.star
+Predicted coordinates are stored here: /path/to/predictions/tomocpt_coords.star
 ```
 
-The resulting star file contains particle coordinates in the format specified, ready for subsequent processing in tools like RELION.
+The resulting star file contains particle coordinates in the format specified, ready for subsequent processing in tools like Relion.
 
 ## Advanced Configuration
 
@@ -292,7 +292,7 @@ infer:
   masks_dir: null
   length: 150
   distance_threshold: 100
-  predictions_coord_filename: "tomopicker_coords.star"
+  predictions_coord_filename: "tomocpt_coords.star"
   predictions_coord_format: "relion31"
   save_prediction_confidence_map: false
   save_predicted_coords: true
@@ -338,6 +338,16 @@ tomocpt predict --config-file complete_config.yaml
    ```bash
    tomocpt train train.network.TORCH_FLOAT_PRECISION=16  # Use FP16 instead of default
    ```
+
+5. **Training with Low Memory (Gradient Accumulation)**: If you have limited GPU memory, you can use gradient accumulation to train your model with a larger effective batch size. This is done by accumulating gradients over multiple smaller batches before updating the model's weights. To enable gradient accumulation, set the `gradient_accumulation_steps` parameter in your training configuration. For example:
+
+   ```yaml
+   train:
+     batch_size: 2  # A small batch size that fits into your GPU memory
+     gradient_accumulation_steps: 8  # Accumulate gradients over 8 steps
+   ```
+
+   In this example, the effective batch size will be `2 * 8 = 16`. This allows you to train with a larger effective batch size without running out of memory.
 
 By following these steps, you'll be able to fully utilize tomoCPT for particle picking in your cryo-electron tomography workflow.
 
