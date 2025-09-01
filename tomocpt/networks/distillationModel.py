@@ -1,8 +1,8 @@
 import torch
 import torchvision
+from torch.nn import functional as F
 
 from tomocpt.networks.pickingModel import BasePickingModel
-from tomocpt.training.losses import distillation_loss
 from tomocpt.logger import get_logger
 
 logging = get_logger()
@@ -10,20 +10,19 @@ logging = get_logger()
 
 class DistillationPickingModel(BasePickingModel):
     """
-    A picking model that uses knowledge distillation for fine-tuning.
+    A picking model that uses feature-based knowledge distillation for fine-tuning.
 
     This model is trained with a combination of the standard task loss (e.g.,
-    on new labeled data) and a distillation loss. The distillation loss
-    encourages the student model's logits to match the logits of a frozen,
-    pre-trained teacher model, effectively transferring knowledge and
-    preventing catastrophic forgetting.
+    on new labeled data) and a feature-based distillation loss. The distillation
+    loss encourages the student model's intermediate feature representations to
+    match those of a frozen, pre-trained teacher model, effectively
+    transferring knowledge and preventing catastrophic forgetting.
     """
 
     def __init__(
             self,
             teacher_checkpoint_path,
-            distill_weight=0.5,
-            temperature=2.0,
+            feature_distill_weight=0.5,
             lr=None,
             model=None,
             config_dict=None,
@@ -32,8 +31,7 @@ class DistillationPickingModel(BasePickingModel):
     ):
         # Save distillation parameters before calling parent constructor
         self.teacher_checkpoint_path = teacher_checkpoint_path
-        self.distill_weight = distill_weight
-        self.temperature = temperature
+        self.feature_distill_weight = feature_distill_weight
 
         # Continue with normal initialization
         super().__init__(lr, model, config_dict, *args, **kwargs)
@@ -45,7 +43,14 @@ class DistillationPickingModel(BasePickingModel):
         self.teacher.eval()  # Set teacher to evaluation mode
 
         logging.info(
-            f"Initialized DistillationPickingModel with distill_weight={self.distill_weight}, temperature={self.temperature}")
+            f"Initialized DistillationPickingModel with feature_distill_weight={self.feature_distill_weight}")
+
+    def forward(self, x):
+        """
+        Override the parent's forward to return the full model output (tuple),
+        bypassing the logic that discards the hidden state.
+        """
+        return self.model(x)
 
     def training_step(self, batch, batch_idx):
         x, y = self.resolve_batch(batch)
@@ -53,31 +58,28 @@ class DistillationPickingModel(BasePickingModel):
         # Move teacher to the same device as student
         self.teacher.to(self.device)
 
-        # Get student predictions (logits)
-        student_logits = self(x)
+        # Get student predictions (logits and hidden state)
+        student_logits, student_hidden = self(x)
 
-        # Get teacher predictions (logits)
+        # Get teacher predictions (logits and hidden state)
         with torch.no_grad():
-            teacher_logits = self.teacher(x)
+            # We call the teacher's underlying model directly to get the tuple output
+            teacher_logits, teacher_hidden = self.teacher.model(x)
 
-        # Calculate task loss (original loss function on sigmoid output)
+        # 1. Calculate task loss (original loss function on sigmoid output)
         student_pred = torch.sigmoid(student_logits)
         task_loss = self.loss(student_pred, y)
 
-        # Calculate distillation loss on raw logits
-        distill_loss = distillation_loss(
-            student_logits,
-            teacher_logits,
-            temperature=self.temperature
-        )
+        # 2. Calculate feature-based distillation loss (MSE on hidden states)
+        feature_loss = F.mse_loss(student_hidden, teacher_hidden)
 
-        # Combined loss
-        combined_loss = (1 - self.distill_weight) * task_loss + self.distill_weight * distill_loss
+        # 3. Combined loss
+        combined_loss = (1 - self.feature_distill_weight) * task_loss + self.feature_distill_weight * feature_loss
 
         # Logging
         self.log("loss/task", task_loss, on_step=False, on_epoch=True, prog_bar=True, sync_dist=True,
                  batch_size=x.shape[0])
-        self.log("loss/distill", distill_loss, on_step=False, on_epoch=True, prog_bar=True, sync_dist=True,
+        self.log("loss/feature", feature_loss, on_step=False, on_epoch=True, prog_bar=True, sync_dist=True,
                  batch_size=x.shape[0])
         self.log("loss", combined_loss, on_step=False, on_epoch=True, prog_bar=True, sync_dist=True,
                  batch_size=x.shape[0])
