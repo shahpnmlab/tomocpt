@@ -24,34 +24,39 @@ def get_annotated_fields(config_obj: Any) -> Dict[str, Any]:
     }
 
 
-def convert_config_to_dict(config_obj: Any) -> dict:
+def convert_config_to_dict(config_obj: Any, ignore_fields: set = None) -> dict:
     """
-    Convert config object to dict, only including annotated fields
-    with proper enum handling
+    Convert config object to dict, including annotated fields and recursively
+    handling nested dataclasses.
     """
     if not is_dataclass(config_obj):
         return {}
 
     config_dict = {}
-    annotated_fields = get_annotated_fields(config_obj)
+    local_ignore_fields = ignore_fields if ignore_fields is not None else set()
 
-    for field_name in annotated_fields:
+    for field in fields(config_obj):
+        if field.name in local_ignore_fields:
+            continue
+
+        field_name = field.name
         value = getattr(config_obj, field_name)
 
-        # Handle different types of values
-        if isinstance(value, Enum):
-            config_dict[field_name] = value.name
-        elif value is NotImplemented:
-            config_dict[field_name] = MISSING
-        elif isinstance(value, Path):
-            config_dict[field_name] = str(value)
-        elif is_dataclass(value):
-            # Recursively handle nested dataclasses
+        # Recursively handle nested dataclasses (don't pass ignore_fields)
+        if is_dataclass(value):
             nested_dict = convert_config_to_dict(value)
-            if nested_dict:  # Only include if there are annotated fields
+            if nested_dict:
                 config_dict[field_name] = nested_dict
-        else:
-            config_dict[field_name] = value
+        # Only include annotated fields
+        elif is_annotated_field(field.type):
+            if isinstance(value, Enum):
+                config_dict[field_name] = value.name
+            elif value is NotImplemented or value is MISSING:
+                config_dict[field_name] = "???"
+            elif isinstance(value, Path):
+                config_dict[field_name] = str(value)
+            else:
+                config_dict[field_name] = value
 
     return config_dict
 
@@ -72,20 +77,21 @@ def init(
         output_path = Path(output_path)
 
     # Create config instances
-    from tomocpt.defaultConfigs.prepdata_config import PrepdataConfig
-    from tomocpt.defaultConfigs.infer_config import InferConfig
-    from tomocpt.defaultConfigs.train_config import TrainConfig
+    from tomocpt.mainConfig import MainConfig
 
-    prepare_conf = PrepdataConfig()
-    train_conf = TrainConfig()
-    infer_conf = InferConfig()
+    main_conf = MainConfig()
 
-    # Prepare the config dictionary with only annotated fields
-    config_dict = {
-        "prepData": convert_config_to_dict(prepare_conf),
-        "train": convert_config_to_dict(train_conf),
-        "infer": convert_config_to_dict(infer_conf),
-    }
+    # Build config dict, separating shared fields
+    main_conf_dict = {}
+    shared_fields = {f.name for f in fields(main_conf.shared)}
+
+    # Handle sections, ignoring shared fields in sub-configs
+    for config_name in ["shared", "prepData", "train", "infer"]:
+        config_obj = getattr(main_conf, config_name)
+        ignore = shared_fields if config_name != "shared" else None
+        section_dict = convert_config_to_dict(config_obj, ignore_fields=ignore)
+        if section_dict:
+            main_conf_dict[config_name] = section_dict
 
     # Create parent directories if they don't exist
     output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -93,10 +99,9 @@ def init(
     # Save using OmegaConf
     from omegaconf import OmegaConf
 
-    OmegaConf.save(config_dict, output_path)
+    OmegaConf.save(main_conf_dict, output_path)
 
     print(f"Config file created at: {output_path}")
-
 
 if __name__ == "__main__":
     init(Path("/tmp/config.yaml"))
