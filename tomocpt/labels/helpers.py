@@ -1,5 +1,6 @@
 from pathlib import Path
 from typing import Union, Dict
+from itertools import chain
 
 from tomocpt.constants import RAW_LABEL_FNAME_TEMPLATE
 from tqdm import tqdm
@@ -18,24 +19,24 @@ logging = get_logger()
 def get_tomogram_pixel_size(tomogram_path: Path) -> float:
     """
     Read pixel size from the first tomogram in the directory.
-    
+
     Args:
         tomogram_path: Path to tomogram directory
-        
+
     Returns:
         float: Pixel size in Angstroms
-        
-    Note: 
-        This function assumes all tomograms in the directory have 
+
+    Note:
+        This function assumes all tomograms in the directory have
         the same pixel size, which may not be true for all datasets.
     """
     tomo_files = list(Path(tomogram_path).glob('*.mrc'))
     if not tomo_files:
         raise FileNotFoundError(f"No .mrc files found in {tomogram_path}")
-        
+
     with mrcfile.open(tomo_files[0]) as mrc:
         tomogram_pixel_size = float(mrc.voxel_size.x)
-        
+
     return tomogram_pixel_size
 
 def match_data_to_tomograms(particle_data: Union[pd.DataFrame, dict],
@@ -345,7 +346,15 @@ def create_tracking_dataframe(vol_coord_pairs, tomo_path: Path, output_dir: Path
     tracking_data = []
 
     for tomo_name, coordinates in vol_coord_pairs.items():
-        tomo_file = next(tomo_path.glob(f"*{tomo_name}*"))
+        # Search for both .mrc and .rec files
+        tomo_file = next(chain(
+            tomo_path.glob(f"*{tomo_name}*.mrc"),
+            tomo_path.glob(f"*{tomo_name}*.rec")
+        ), None)
+
+        if tomo_file is None:
+            raise FileNotFoundError(f"No .mrc or .rec file found for tomogram: {tomo_name}")
+
         label_file = output_dir / f"class_{class_id}" / "labels" / Path(RAW_LABEL_FNAME_TEMPLATE%str(tomo_name))
 
         tracking_data.append({

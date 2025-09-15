@@ -352,6 +352,10 @@ tomocpt predict --config-file complete_config.yaml
 By following these steps, you'll be able to fully utilize tomoCPT for particle picking in your cryo-electron tomography workflow.
 
 # Changelog
+
+## 0.5.2
+- Added gradient accumulation for training on machines with lower memory.
+- Added a `shared` section in `config.yaml` to specify shared variables only once.
 # Development
 tomoCPT is jointly developed by Ruben Sanchez-Garcia and Pranav NM Shah at the University of Oxford.
 
