@@ -461,7 +461,7 @@ def _predict_single_tomogram(
             user_mask_gpu = torch.from_numpy(user_mask_np).to(device)
             if user_mask_gpu.shape != pred_mask_gpu.shape:
                 user_mask_gpu = resize_volume(user_mask_gpu, pred_mask_gpu.shape)
-            pred_mask_gpu *= user_mask_gpu
+            pred_mask_gpu *= user_mask_gpu.to(pred_mask_gpu.device)
         else:
             logger.warning(f"Mask file not found for {tomo_fname.name} at {mask_path}, proceeding without it.")
 
