@@ -170,7 +170,7 @@ tomocpt train --config-file my_config.yaml
 ```
 
 ### Training with fine-tuning from existing weights:
-You can download a pre-trained model from [here](https://zenodo.org/records/14871940)
+You can download a pre-trained model from [here]([https://zenodo.org/records/14871940](https://zenodo.org/records/17087180))
 ```bash
 tomocpt train \
   --config-file my_config.yaml \
