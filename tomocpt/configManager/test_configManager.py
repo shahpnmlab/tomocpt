@@ -1,5 +1,5 @@
 import pytest
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Annotated, Optional
 import typer
 import subprocess
@@ -19,53 +19,52 @@ class OptimizerConfig:
 class TrainConfig:
     chunks_dir: Annotated[Optional[str], typer.Option(help="Path to chunks")] = None
     model_dir: Annotated[Optional[str], typer.Option(help="Path to save model")] = None
-    optimizer: OptimizerConfig = OptimizerConfig()
+    optimizer: OptimizerConfig = field(default_factory=OptimizerConfig)
     n_epochs: Annotated[int, typer.Option(help="Number of epochs")] = 10
 
 @dataclass
 class MainConfig:
-    train: TrainConfig = TrainConfig()
+    train: TrainConfig = field(default_factory=TrainConfig)
 
 @pytest.fixture
 def script_path(tmp_path):
-    script_content = """
-from tomocpt.configManager.configManager import create_app
-from dataclasses import dataclass
-from typing import Annotated, Optional, Tuple
-import typer
-import json
-
-@dataclass
-class OptimizerConfig:
-    _target_: str = "torch.optim.Adam"
-    lr: float = 0.001
-    weight_decay: float = 0.0
-    betas: tuple = (0.9, 0.999)
-
-@dataclass
-class TrainConfig:
-    chunks_dir: Annotated[Optional[str], typer.Option(help="Path to chunks")] = None
-    model_dir: Annotated[Optional[str], typer.Option(help="Path to save model")] = None
-    optimizer: OptimizerConfig = OptimizerConfig()
-    n_epochs: Annotated[int, typer.Option(help="Number of epochs")] = 10
-
-@dataclass
-class MainConfig:
-    train: TrainConfig = TrainConfig()
-
-app = create_app()
-config = MainConfig()
-
-@app.command(config=config)
-def main():
-    # Print config as JSON for easy parsing in tests
-    from dataclasses import asdict
-    print(json.dumps(asdict(config)))
-
-if __name__ == "__main__":
-    app.run()
-"""
-    path = tmp_path / "test_script.py"
+        script_content = '''
+    from tomocpt.configManager.configManager import create_app
+    from dataclasses import dataclass, field
+    from typing import Annotated, Optional, Tuple
+    import typer
+    import json
+    
+    @dataclass
+    class OptimizerConfig:
+        _target_: str = "torch.optim.Adam"
+        lr: float = 0.001
+        weight_decay: float = 0.0
+        betas: tuple = (0.9, 0.999)
+    
+    @dataclass
+    class TrainConfig:
+        chunks_dir: Annotated[Optional[str], typer.Option(help="Path to chunks")] = None
+        model_dir: Annotated[Optional[str], typer.Option(help="Path to save model")] = None
+        optimizer: OptimizerConfig = field(default_factory=OptimizerConfig)
+        n_epochs: Annotated[int, typer.Option(help="Number of epochs")] = 10
+    
+    @dataclass
+    class MainConfig:
+        train: TrainConfig = field(default_factory=TrainConfig)
+    
+    app = create_app()
+    config = MainConfig()
+    
+    @app.command(config=config)
+    def main():
+        # Print config as JSON for easy parsing in tests
+        from dataclasses import asdict
+        print(json.dumps(asdict(config)))
+    
+    if __name__ == "__main__":
+        app.run()
+    '''     path = tmp_path / "test_script.py"
     path.write_text(script_content)
     return path
 
