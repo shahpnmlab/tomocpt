@@ -305,7 +305,7 @@ def _prune_refined_peaks_gpu(
 
 
 def _refine_peaks_subpixel_gpu(
-    pred_mask_gpu: torch.Tensor, peak_coords_gpu: torch.Tensor, patch_size: int = 1
+    pred_mask_gpu: torch.Tensor, peak_coords_gpu: torch.Tensor, patch_size: int = 3
 ) -> Tuple[torch.Tensor, torch.Tensor]:
     """Refines integer peak coordinates to sub-pixel accuracy on the GPU by fitting a 3D quadratic function."""
     if peak_coords_gpu.shape[0] == 0:
@@ -316,6 +316,15 @@ def _refine_peaks_subpixel_gpu(
     device = pred_mask_gpu.device
     num_peaks = peak_coords_gpu.shape[0]
     patch_radius = patch_size // 2
+
+    if patch_radius < 1:
+        return (
+            peak_coords_gpu.float(),
+            pred_mask_gpu[
+                peak_coords_gpu[:, 0], peak_coords_gpu[:, 1], peak_coords_gpu[:, 2]
+            ],
+        )
+
     z, y, x = torch.meshgrid(
         torch.arange(
             -patch_radius, patch_radius + 1, device=device, dtype=torch.float32
@@ -395,21 +404,39 @@ def _refine_peaks_subpixel_gpu(
         ]
     ).permute(2, 0, 1)
     grad = -torch.stack([c_z, c_y, c_x]).T
-
+    offset = torch.zeros_like(grad)
+    
     try:
-        H_inv = torch.linalg.inv(H)
-        offset = torch.bmm(H_inv, grad.unsqueeze(-1)).squeeze(-1)
+        eigenvalues = torch.linalg.eigvalsh(H)
+        is_maximum = torch.all(eigenvalues < 0, dim=1)
     except torch.linalg.LinAlgError:
-        offset = torch.zeros_like(grad)
+        is_maximum = torch.zeros(num_peaks, dtype=torch.bool, device=device)
+
+    invertible = torch.linalg.det(H).abs() > 1e-6
+    valid_for_refinement_mask = is_maximum & invertible
+
+    if valid_for_refinement_mask.any():
+        H_valid = H[valid_for_refinement_mask]
+        grad_valid = grad[valid_for_refinement_mask]
+        try:
+            offset_valid = torch.linalg.solve(
+                H_valid, grad_valid.unsqueeze(-1)
+            ).squeeze(-1)
+            offset[valid_for_refinement_mask] = offset_valid
+        except torch.linalg.LinAlgError:
+            valid_for_refinement_mask.fill_(False)
 
     refined_coords = peak_coords_gpu.float()
     refined_scores = pred_mask_gpu[
         peak_coords_gpu[:, 0], peak_coords_gpu[:, 1], peak_coords_gpu[:, 2]
     ]
+    fit_is_plausible_mask = (
+        torch.max(torch.abs(offset), dim=1).values <= 1.0
+    ) & valid_for_refinement_mask
 
-    fit_is_plausible_mask = torch.max(torch.abs(offset), dim=1).values <= 1.0
     if fit_is_plausible_mask.any():
-        plausible_offsets = offset[fit_is_plausible_mask]
+        update_indices = torch.where(fit_is_plausible_mask)[0]
+        plausible_offsets = offset[update_indices]
         off_z, off_y, off_x = plausible_offsets.T
         A_offset = torch.stack(
             [
@@ -425,18 +452,15 @@ def _refine_peaks_subpixel_gpu(
                 torch.ones_like(off_z),
             ]
         ).T
-        log_scores_plausible = torch.sum(
-            A_offset * coeffs[fit_is_plausible_mask], dim=1
-        )
+        log_scores_plausible = torch.sum(A_offset * coeffs[update_indices], dim=1)
         refined_scores_plausible = torch.exp(log_scores_plausible)
         score_is_finite_mask = torch.isfinite(refined_scores_plausible)
-        final_update_mask = fit_is_plausible_mask.clone()
-        final_update_mask[fit_is_plausible_mask] = score_is_finite_mask
-        if final_update_mask.any():
-            refined_coords[final_update_mask] += offset[final_update_mask]
-            refined_scores[final_update_mask] = refined_scores_plausible[
-                score_is_finite_mask
-            ]
+        final_update_indices = update_indices[score_is_finite_mask]
+        final_offsets = plausible_offsets[score_is_finite_mask]
+        final_scores = refined_scores_plausible[score_is_finite_mask]
+        if final_update_indices.numel() > 0:
+            refined_coords[final_update_indices] += final_offsets
+            refined_scores[final_update_indices] = final_scores
     return refined_coords, refined_scores
 
 
