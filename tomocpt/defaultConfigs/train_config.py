@@ -80,17 +80,22 @@ class TrainConfig:
     # Distillation parameters
     use_distillation: Annotated[
         bool,
-        typer.Option(help="Enable knowledge distillation when using train_continue")
+        typer.Option(help="Enable knowledge distillation when fine-tuning from a checkpoint")
     ] = False
 
     distill_weight: Annotated[
         float,
-        typer.Option(help="Weight of distillation loss (between 0 and 1)")
+        typer.Option(help="Blend factor between task loss and teacher-guided distillation (0-1)")
     ] = 0.5
+
+    feature_distill_weight: Annotated[
+        float,
+        typer.Option(help="Relative weight for feature matching inside the distillation loss")
+    ] = 1.0
 
     temperature: Annotated[
         float,
-        typer.Option(help="Temperature for softening probability distributions")
+        typer.Option(help="Softmax temperature applied to teacher/student logits during distillation")
     ] = 2.0
 
     OVERFIT_N_BATCHES: Optional[int] = None
