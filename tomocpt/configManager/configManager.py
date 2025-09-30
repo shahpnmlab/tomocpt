@@ -234,6 +234,27 @@ class ConfigurableApp:
                     config_updated_with_yaml, unmatched_yaml = merge_config(
                         yaml_config, mainConfig
                     )
+                    # Propagate values from general config to other configs
+                    if hasattr(config_updated_with_yaml, "general"):
+                        general_conf = getattr(config_updated_with_yaml, "general")
+                        for field_info in fields(config_updated_with_yaml):
+                            if field_info.name == "general":
+                                continue
+                            specific_conf = getattr(
+                                config_updated_with_yaml, field_info.name
+                            )
+                            if not is_dataclass(specific_conf):
+                                continue
+                            for general_field in fields(general_conf):
+                                if hasattr(specific_conf, general_field.name):
+                                    spec_val = getattr(
+                                        specific_conf, general_field.name
+                                    )
+                                    gen_val = getattr(general_conf, general_field.name)
+                                    if spec_val is None and gen_val is not None:
+                                        setattr(
+                                            specific_conf, general_field.name, gen_val
+                                        )
 
             # Select only the configuration that is relevant for the command
             if config_key is not None:
