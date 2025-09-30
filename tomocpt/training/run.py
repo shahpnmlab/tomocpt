@@ -230,7 +230,15 @@ def train(
             f"tensorboard --logdir {mainConfig.train.model_dir}/{mainConfig.train.experiment_name}"
         )
 
-    trainer.fit(pl_model, datamodule=data, ckpt_path=resume_from_checkpoint)
+    try:
+        trainer.fit(pl_model, datamodule=data, ckpt_path=resume_from_checkpoint)
+    except ValueError as e:
+        if resume_from_checkpoint and "loaded state dict has a different number of parameter groups" in str(e):
+            logging.warning("Could not load optimizer state from checkpoint, which is expected when "
+                            "fine-tuning with a modified optimizer. Starting training with a fresh optimizer.")
+            trainer.fit(pl_model, datamodule=data)
+        else:
+            raise
 
 
 def _copyCodeForReproducibility(logdir):

@@ -25,6 +25,9 @@ class BasePickingModel(BaseModel):
         if "config_dict" in kwargs:
             config_dict = kwargs.pop("config_dict")
 
+        if "train_continue" in kwargs:
+            kwargs.pop("train_continue")
+
         super(BasePickingModel, self).__init__(lr, *args, **kwargs)
 
         # Store config if needed
