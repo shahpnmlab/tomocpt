@@ -54,188 +54,112 @@ tomocpt init --output-path ./my_config.yaml
 
 ### Expected output:
 
+A `my_config.yaml` file will be created. Edit this file to set the paths and parameters according to your needs before proceeding. If working with multiple datasets, use comma separated values.
+
+A sample with updated training parameters:
 ```yaml
 # my_config.yaml (sample content)
 prepData:
-  raw_data_dir: ???  # Path to directory containing tomogram .mrc files (REQUIRED)
-  training_data_dir: ???  # Path where processed volume-label pairs will be stored (REQUIRED)
-  particle_length_ang: ???  # Particle diameter in Angstroms, e.g. "150" (REQUIRED)
-  coordinate_files: ???  # Path to coordinate files (.star or .mod) with particle positions (REQUIRED)
-  coordinate_file_type: star  # Format of coordinate files: "star" or "imod"
-  class_id: all  # Particle class ID to use; "all" for all classes or specific IDs like "1" or "1:2:3"
-  desired_particle_pixel_size: 20  # Target radius of particles in pixels after preprocessing
+  raw_data_dir: ???
+  training_data_dir: ???
+  particle_length_ang: ???
+  coordinate_files: ???
+  # ... other prepData fields
 train:
-  training_data_dir: null  # Optional override for prepared data location
-  chunks_dir: ???  # Directory to store preprocessed data chunks for training (REQUIRED)
-  model_dir: ???  # Directory to save model weights and training logs (REQUIRED)
-  n_epochs: 10  # Number of training epochs
-  batch_size: 2  # Number of samples per batch; increase for faster training if GPU memory allows
-  use_gpus: true  # Whether to use GPU acceleration for training
-  n_cpus_for_train: 2  # Number of CPU workers for data loading
-  experiment_name: tomocpt  # Name for this training run (affects logging directories)
-  mode: picking  # Training mode: "picking" (supervised) or "selfSupervised"
-  train_on: tomos  # How to split train/validation: by "tomos" or "chunks"
-  restore_full_state: true  # Whether to restore optimizer state when continuing training
-  optimizer:
-    lr: 0.0004  # Learning rate
-  network:
-    model_type: SwinUNETR  # Neural network architecture: "SwinUNETR" or "Unet"
-    TORCH_FLOAT_PRECISION: bf16  # Floating-point precision: "bf16", "16" or "32"
-  launch_tensorboard: true  # Whether to launch TensorBoard for monitoring training
+  chunks_dir: ???      # Directory with preprocessed data chunks (REQUIRED)
+  model_dir: ???       # Directory to save model weights and logs (REQUIRED)
+  resume_from: null    # Optional: Path to a checkpoint to RESUME a run
+  fine_tune_from: null # Optional: Path to a checkpoint to FINE-TUNE from
+  n_epochs: 10
+  batch_size: 16
+  # ... other training fields
 infer:
-  tomogram_dir: ???  # Directory containing tomograms for inference (REQUIRED)
-  predictions_dir: ???  # Directory to save prediction results (REQUIRED)
-  weights: ???  # Path to trained model weights file (.ckpt) (REQUIRED)
-  masks_dir: null  # Optional directory with masks to limit prediction to specific regions
-  length: ???  # Particle diameter in Angstroms; should match training value (REQUIRED)
-  distance_threshold: null  # Minimum distance between particles in Angstroms; null for auto
-  predictions_coord_filename: tomocpt_coords.star  # Filename for output coordinates
-  predictions_coord_format: relion  # Format for output: "relion31", "relion50", or "warp"
-  save_prediction_confidence_map: false  # Whether to save probability maps as .mrc files
-  save_predicted_coords: true  # Whether to save predicted coordinates to star file
-  confidence_threshold: 0.3  # Minimum confidence score (0-1) for particle detection
-  predictions_batch_size: 2  # Batch size for inference; adjust based on GPU memory
-  oversubscribe_factor: 1  # Number of tomograms to process in parallel per GPU
-  use_cuda: true  # Whether to use GPU acceleration for inference
-  n_cpus_per_gpu: 1  # Number of CPU workers per GPU for preprocessing
+  tomogram_dir: ???
+  predictions_dir: ???
+  weights: ???
+  # ... other inference fields
 ```
-
-Edit this file to set the paths and parameters according to your needs before proceeding to the next steps. 
-If working with multiple datasets, use comma separated values.
 
 ## 2. Generate Volume-Label Pairs
 
 This step processes your raw tomograms and coordinate files into a format suitable for training.
 
-### Command-line approach:
-
-```bash
-tomocpt prepare_data \
-  --raw-data-dir /path/to/tomograms/ \
-  --prepared-data-dir /path/to/output/ \
-  --particle-length-ang 150 \
-  --coordinate-files /path/to/coordinates.star \
-  --coordinate-file-type star \
-  --desired-particle-pixel-size 20
-```
-
 ### Config file approach:
 
 ```bash
 # After filling out the prepData section in my_config.yaml
-tomocpt prepare_data --config-file /path/to/config.yaml
+tomocpt prepare_data --config-file my_config.yaml
 ```
 
 ### Combined approach:
 
 ```bash
 # Use config file but override specific parameters
-tomocpt prepare_data ---config-file /path/to/config.yaml --particle-length-ang 200 --config_merge_preference command
-```
-
-### Expected result:
-
-This process creates a structured directory containing preprocessed tomogram data and corresponding labels. The console will show progress as it processes each tomogram:
-
-```
-2025-02-26 23:38:07 - INFO - Close match found for tomogram TS_11: TS_11_8.00Apx
-2025-02-26 23:38:07 - INFO - Close match found for tomogram TS_1: TS_1_8.00Apx
-2025-02-26 23:38:07 - INFO - Saved tracking information to /path/to/inputs/dataset_1_class_all/star_picking_tracking_all.csv
-Generating particle masks: 100%|██████████████████████████████████████| 2/2 [00:00<00:00,  5.62it/s]
-2025-02-26 23:38:07 - INFO - Successfully processed dataset 1
-2025-02-26 23:38:07 - INFO - Completed processing all datasets
+tomocpt prepare_data --config-file my_config.yaml --particle-length-ang 200
 ```
 
 ## 3. Train a Model
 
-Now train the model using the prepared data.
+This section covers the main training workflows. All parameters can be set either via the command line or in your `.yaml` configuration file.
 
-### Command-line approach:
+### Scenario 1: Training from Scratch
 
-```bash
-tomocpt train \
-  --chunks-dir /tmp/chunks/ \
-  --model-dir /path/to/where/weights/should/be/saved/weights/ \
-  --experiment-name "first_model" \
-  --n-epochs 100 \
-  --batch-size 4 \
-  --network.model_type SwinUNETR
-```
-
-### Config file approach:
+This is the most basic scenario, where you train a new model from randomly initialized weights.
 
 ```bash
-# After filling out the train section in my_config.yaml
+# Using a configuration file is recommended
 tomocpt train --config-file my_config.yaml
 ```
 
-### Training with fine-tuning from existing weights:
-You can download a pre-trained model from [here]([https://zenodo.org/records/14871940](https://zenodo.org/records/17087180))
+### Scenario 2: Resuming an Interrupted Run
+
+If your training run is aborted, you can resume it seamlessly from the last saved checkpoint. This restores the model, optimizer, and learning rate scheduler to their exact previous states.
+
+```bash
+# The command is the same as your original run, just add --resume-from
+tomocpt train --config-file my_config.yaml --resume-from /path/to/model_dir/weights.ckpt
+```
+*Alternatively, set `resume_from: /path/to/model_dir/weights.ckpt` in your `my_config.yaml`.*
+
+### Scenario 3: Fine-Tuning from a Pre-trained Model
+
+Use this to adapt a trained model to a new dataset. This loads the weights but resets the optimizer. It also automatically activates **differential learning rates**, using a much smaller learning rate for the model's core to avoid catastrophic forgetting.
+
+You can download a pre-trained model from [here](https://zenodo.org/records/17087180).
+
+```bash
+# Use --fine-tune-from to load weights and start a new training run
+tomocpt train --config-file my_config.yaml --fine-tune-from /path/to/previous_model/weights.ckpt
+```
+*Alternatively, set `fine_tune_from: /path/to/previous_model/weights.ckpt` in your `my_config.yaml`.*
+
+### Scenario 4: Fine-Tuning with Knowledge Distillation
+
+This is an advanced fine-tuning technique where a "student" model learns from a pre-trained "teacher" model.
+
 ```bash
 tomocpt train \
   --config-file my_config.yaml \
-  --train-continue /path/to/models/previous_model/weights.ckpt
+  --fine-tune-from /path/to/teacher/weights.ckpt \
+  --use-distillation True \
+  --distill-weight 0.5
 ```
+- `--fine-tune-from`: Path to the teacher model's weights.
+- `--use-distillation`: Must be set to `True`.
+- `--distill-weight`: Balances learning from new labels vs. learning from the teacher.
 
-### Fine-tuning with knowledge distillation:
+### Hydra-style Parameter Overrides
+
+You can always override any parameter from your config file directly on the command line using dot notation:
 
 ```bash
-tomocpt train \
-  --config-file my_config.yaml \
-  --checkpoint-path /path/to/teacher/weights.ckpt \
-  --use-distillation \
-  --distill-weight 0.5 \
-  --feature-distill-weight 1.0 \
-  --temperature 2.0
+# Override learning rate and precision
+tomocpt train --config-file my_config.yaml optimizer.lr=0.0001 network.TORCH_FLOAT_PRECISION=16
 ```
-
-The `distill_weight` value interpolates between the original task loss and the
-teacher-guided objective (logit + optional feature matching). Lower values favor
-the new labels, while higher values bias training towards the teacher. Use
-`feature_distill_weight=0` to disable hidden-state matching and rely purely on
-logit distillation. All parameters can also be set in your configuration file
-under the `train` section.
-
-### Hydra-style parameter overrides:
-
-```bash
-# Override nested parameters using dot notation
-tomocpt train --config-file my_config.yaml \
-  train.optimizer.lr=0.0001 \
-  train.network.TORCH_FLOAT_PRECISION=16
-```
-
-### Expected output:
-
-The training process will display progress and metrics:
-
-```
-GPU available: True, used: True
-TPU available: False, using: 0 TPU cores
-Epoch 1/100: 100%|██████████| 45/45 [01:23<00:00]
-loss: 0.427, val_loss: 0.392
-Epoch 2/100: 100%|██████████| 45/45 [01:22<00:00]
-loss: 0.315, val_loss: 0.301
-...
-```
-
-A TensorBoard instance will automatically launch (if configured) for visualizing training progress.
 
 ## 4. Run Prediction
 
 Finally, apply your trained model to new tomograms for particle detection.
-
-### Command-line approach:
-
-```bash
-tomocpt predict \
-  --tomogram-dir /path/to/new/tomograms/ \
-  --predictions-dir /path/to/predictions/ \
-  --weights /path/to/models/model1/unnamed/checkpoints/weights.ckpt \
-  --length 150 \
-  --confidence-threshold 0.35 \
-  --predictions-coord-format relion31
-```
 
 ### Config file approach:
 
@@ -244,131 +168,14 @@ tomocpt predict \
 tomocpt predict --config-file my_config.yaml
 ```
 
-### With masked regions:
-
-```bash
-tomocpt predict \
-  --config-file my_config.yaml \
-  --masks-dir /path/to/masks/
-```
-
-### Expected results:
-
-The prediction process processes each tomogram and outputs coordinates:
-
-```
-Processing tomo_01.mrc: 100%|██████████| [02:15<00:00]
-Processing tomo_02.mrc: 100%|██████████| [02:08<00:00]
-Predicted coordinates are stored here: /path/to/predictions/tomocpt_coords.star
-```
-
-The resulting star file contains particle coordinates in the format specified, ready for subsequent processing in tools like Relion.
-
-## Advanced Configuration
-
-### Creating and Using a Complete Config File
-
-Below is an example of a complete configuration file combining all parameters:
-
-```yaml
-# complete_config.yaml
-prepData:
-  raw_data_dir: "/data/tomograms/"
-  prepared_data_dir: "/data/prepared/"
-  particle_length_ang: "150"
-  coordinate_files: "/data/coordinates/particles.star"
-  coordinate_file_type: "star"
-  class_id: "all"
-  desired_particle_pixel_size: 20
-  USE_CUDA_FOR_DATA: true
-  ALPHA_FOR_DROPPING_EMPTY_CUBES: 1.0
-
-train:
-  training_data_dir: "/data/prepared/"
-  chunks_dir: "/data/chunks/"
-  model_dir: "/models/mymodel/"
-  n_epochs: 100
-  batch_size: 4
-  use_gpus: true
-  n_cpus_for_train: 4
-  experiment_name: "tomocpt_model1"
-  mode: "picking"
-  train_on: "tomos"
-  restore_full_state: true
-  launch_tensorboard: true
-  network:
-    model_type: "SwinUNETR"
-    TORCH_FLOAT_PRECISION: "bf16"
-  optimizer:
-    _target_: "torch.optim.RAdam"
-    lr: 4.0e-4
-    weight_decay: 1.0e-8
-
-infer:
-  tomogram_dir: "/data/new_tomograms/"
-  predictions_dir: "/predictions/"
-  weights: "/models/mymodel/unnamed/checkpoints/weights.ckpt"
-  masks_dir: null
-  length: 150
-  distance_threshold: 100
-  predictions_coord_filename: "tomocpt_coords.star"
-  predictions_coord_format: "relion31"
-  save_prediction_confidence_map: false
-  save_predicted_coords: true
-  confidence_threshold: 0.3
-  predictions_batch_size: 2
-  oversubscribe_factor: 1
-  use_cuda: true
-  n_cpus_per_gpu: 1
-```
-
-To use this complete configuration file:
-
-```bash
-# Run the full pipeline with a single config file
-tomocpt initialize_config --output-path complete_config.yaml
-# Edit complete_config.yaml with your specific paths and parameters
-tomocpt prepare_data --config-file complete_config.yaml
-tomocpt train --config-file complete_config.yaml
-tomocpt predict --config-file complete_config.yaml
-```
+The resulting star file contains particle coordinates, ready for subsequent processing in tools like Relion.
 
 ## Performance Tips
 
-1. **GPU Acceleration**: Enable CUDA for both training and inference for best performance:
-   ```yaml
-   train:
-     use_gpus: true
-   infer:
-     use_cuda: true
-   ```
-
-2. **Batch Size**: Adjust the batch size based on your GPU memory. Larger batch sizes can speed up training but require more memory:
-   ```bash
-   tomocpt train --batch-size 8  # Increase if you have sufficient GPU memory
-   ```
-
-3. **Parallel Processing**: For prediction, the `oversubscribe_factor` parameter controls how many tomograms are processed in parallel per GPU:
-   ```bash
-   tomocpt predict --oversubscribe-factor 2  # Process 2 tomograms per GPU simultaneously
-   ```
-
-4. **Precision**: Using lower precision can accelerate training with minimal quality loss:
-   ```bash
-   tomocpt train train.network.TORCH_FLOAT_PRECISION=16  # Use FP16 instead of default
-   ```
-
-5. **Training with Low Memory (Gradient Accumulation)**: If you have limited GPU memory, you can use gradient accumulation to train your model with a larger effective batch size. This is done by accumulating gradients over multiple smaller batches before updating the model's weights. To enable gradient accumulation, set the `gradient_accumulation_steps` parameter in your training configuration. For example:
-
-   ```yaml
-   train:
-     batch_size: 2  # A small batch size that fits into your GPU memory
-     gradient_accumulation_steps: 8  # Accumulate gradients over 8 steps
-   ```
-
-   In this example, the effective batch size will be `2 * 8 = 16`. This allows you to train with a larger effective batch size without running out of memory.
-
-By following these steps, you'll be able to fully utilize tomoCPT for particle picking in your cryo-electron tomography workflow.
+1.  **GPU Acceleration**: Enable CUDA for both training and inference for best performance.
+2.  **Batch Size**: Adjust the batch size based on your GPU memory.
+3.  **Precision**: Using lower precision (e.g., `network.TORCH_FLOAT_PRECISION=16`) can accelerate training.
+4.  **Gradient Accumulation**: If you have limited GPU memory, use `gradient_accumulation_steps` in your config to train with a larger effective batch size.
 
 # Changelog
 

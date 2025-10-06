@@ -41,7 +41,7 @@ def train(config: DictConfig = None):
     _prepare_data_if_needed(config)
 
     # 2. Create the model based on configuration
-    model, resume_from_ckpt, checkpointer = _create_model(config, checkpoint_path)
+    model, resume_from_ckpt, checkpointer = _create_model(config)
     if model is None:
         logging.error("Model initialization failed. Exiting.")
         return
