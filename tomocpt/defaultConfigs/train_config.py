@@ -61,12 +61,14 @@ class TrainConfig:
         CrossValidationLevelSplit,
         typer.Option(help="Whether to split train-val on chunks or tomograms"),
     ] = CrossValidationLevelSplit.tomos
-    restore_full_state: Annotated[
-        bool,
-        typer.Option(
-            help="If true, load the optimizer and other info on top of the weights"
-        ),
-    ] = True
+    resume_from: Annotated[
+        Optional[Path],
+        typer.Option(help="Path to a checkpoint to resume a previously interrupted training run.")
+    ] = None
+    fine_tune_from: Annotated[
+        Optional[Path],
+        typer.Option(help="Path to a checkpoint to use as a starting point for fine-tuning or distillation.")
+    ] = None
     optimizer: Annotated[OptimizerConfig, typer.Option(help="The optimizer")] = field(
         default_factory=OptimizerConfig
     )

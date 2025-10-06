@@ -24,18 +24,14 @@ warnings.filterwarnings("ignore", ".*SwinUNETR.*", FutureWarning)
 logging = get_logger()
 
 
-def train(
-        checkpoint_path: Annotated[
-            Optional[Path],
-            typer.Option(
-                help="Path to a checkpoint to resume from, fine-tune, or use as a teacher."
-            ),
-        ] = None,
-        config: DictConfig = None,
-):
+def train(config: DictConfig = None):
     """
     Trains a deep learning model for particle picking or self-supervised learning.
     """
+    # Validate that resume_from and fine_tune_from are not used at the same time
+    if config.resume_from and config.fine_tune_from:
+        raise ValueError("Cannot use --resume-from and --fine-tune-from at the same time.")
+
     # Use the config object passed in by the decorator, not the global mainConfig
     torch.set_float32_matmul_precision(config.network.TORCH_MATMUL_PRECISION)
     assert config.model_dir, "Error, you need to provide a model_dir"

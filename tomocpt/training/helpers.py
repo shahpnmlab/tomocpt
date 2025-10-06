@@ -60,25 +60,31 @@ def _prepare_data_if_needed(config: DictConfig):
     logging.info("Data preparation complete.")
 
 
-def _create_model(config: DictConfig, checkpoint_path: Optional[Path]):
+def _create_model(config: DictConfig):
     """Factory function to create the appropriate model based on the config."""
     lr = config.optimizer.lr
     model = None
-    resume_from_checkpoint = None
     checkpointer = ModelCheckpoint(monitor="val_loss", filename="weights", verbose=True)
+
+    checkpoint_path = config.resume_from or config.fine_tune_from
+    is_resuming = config.resume_from is not None
+
+    # This is the path that will be passed to trainer.fit(), telling it to resume
+    # from a checkpoint. It should only be set when explicitly resuming.
+    resume_from_ckpt = config.resume_from
 
     if config.mode == TrainingModes.picking:
         # Logic for picking mode: distillation, fine-tuning, or from scratch
         if config.use_distillation:
-            if not checkpoint_path:
+            if not config.fine_tune_from:
                 logging.warning(
-                    "use_distillation=True but no checkpoint provided. Falling back to standard fine-tuning."
+                    "use_distillation=True but no --fine-tune-from path provided. "
+                    "Distillation requires a teacher model. Falling back to standard training."
                 )
             else:
-                logging.info("Initializing Distillation model for fine-tuning.")
-                logging.info(f"Teacher checkpoint: {checkpoint_path}")
+                logging.info(f"Initializing Distillation model for fine-tuning from teacher: {config.fine_tune_from}")
                 distill_kwargs = {
-                    "teacher_checkpoint_path": checkpoint_path,
+                    "teacher_checkpoint_path": config.fine_tune_from,
                     "distill_weight": config.distill_weight,
                     "feature_distill_weight": config.feature_distill_weight,
                     "temperature": config.temperature,
@@ -86,21 +92,22 @@ def _create_model(config: DictConfig, checkpoint_path: Optional[Path]):
                 }
                 model = DistillationPickingModel(**distill_kwargs)
                 # Start a new training run, don't resume optimizer state etc. from teacher
-                resume_from_checkpoint = None
-                return model, resume_from_checkpoint, checkpointer
+                return model, None, checkpointer
 
         if checkpoint_path:
-            logging.info(f"Loading model from checkpoint for fine-tuning/resuming: {checkpoint_path}")
-            resume_from_checkpoint = checkpoint_path if config.restore_full_state else None
+            logging.info(f"Loading model from checkpoint: {checkpoint_path}")
             try:
+                # Set train_continue ONLY when fine-tuning. This hparam controls the differential LR.
+                train_continue_path = None if is_resuming else checkpoint_path
                 model = BasePickingModel.load_from_checkpoint(
-                    checkpoint_path, train_continue=checkpoint_path, lr=lr
+                    checkpoint_path, train_continue=train_continue_path, lr=lr
                 )
             except RuntimeError:
                 logging.info("Could not load as BasePickingModel, trying as SelfSupervisedModel for transfer learning.")
+                # When transfer learning, it's always a fine-tune, not a resume.
                 pretrained_model = SelfSupervisedModel.load_from_checkpoint(checkpoint_path)
                 model = BasePickingModel(train_continue=checkpoint_path, lr=lr, model=pretrained_model)
-                resume_from_checkpoint = None  # Can't resume state from a different model type
+                resume_from_ckpt = None  # Can't resume state from a different model type
         else:
             logging.info("Initializing new BasePickingModel from scratch.")
             model = BasePickingModel(train_continue=None, lr=lr)
@@ -113,10 +120,11 @@ def _create_model(config: DictConfig, checkpoint_path: Optional[Path]):
             verbose=True,
         )
         if checkpoint_path:
-            logging.info(f"Resuming self-supervised training from: {checkpoint_path}")
-            resume_from_checkpoint = checkpoint_path if config.restore_full_state else None
+            logging.info(f"Loading self-supervised model from: {checkpoint_path}")
+            # Set train_continue ONLY when fine-tuning. This hparam controls the differential LR.
+            train_continue_path = None if is_resuming else checkpoint_path
             model = SelfSupervisedModel.load_from_checkpoint(
-                checkpoint_path, train_continue=checkpoint_path, lr=lr
+                checkpoint_path, train_continue=train_continue_path, lr=lr
             )
         else:
             logging.info("Initializing new SelfSupervisedModel from scratch.")
@@ -124,7 +132,7 @@ def _create_model(config: DictConfig, checkpoint_path: Optional[Path]):
     else:
         raise ValueError(f"Error, training mode '{config.mode}' is not valid")
 
-    return model, resume_from_checkpoint, checkpointer
+    return model, resume_from_ckpt, checkpointer
 
 
 def _setup_callbacks(config: DictConfig, model: pl.LightningModule, checkpointer: ModelCheckpoint):
