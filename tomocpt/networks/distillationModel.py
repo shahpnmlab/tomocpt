@@ -174,3 +174,22 @@ class DistillationPickingModel(BasePickingModel):
                 tensorboard.add_image("teacher_prediction", grid_teacher, global_step=self.current_epoch)
 
         return combined_loss
+
+    def validation_step(self, batch, batch_idx):
+        x, y = self.resolve_batch(batch)
+        logits, _ = self(x)
+        y_pred = torch.sigmoid(logits)
+        loss = self.loss(y_pred, y)
+
+        self.log("val_loss", loss, on_step=False, on_epoch=True, prog_bar=True, sync_dist=True)
+
+        if batch_idx == 0 and self.global_rank == 0:
+            self._log_images(x, y, y_pred, "val")
+
+        return loss
+
+    def predict_step(self, batch, batch_idx, dataloader_idx=0):
+        # Assuming batch is the input tensor directly, like in parent's predict_step
+        logits, _ = self(batch)
+        y_pred = torch.sigmoid(logits)
+        return y_pred
