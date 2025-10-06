@@ -57,6 +57,7 @@ def train(
         batch_size=config.batch_size,
         workers_for_data=config.n_cpus_for_dataloading,
     )
+    data.setup()
 
     # 4. Set up callbacks
     callbacks = _setup_callbacks(config, model, checkpointer)
