@@ -7,6 +7,7 @@ import torch
 
 from tomocpt import constants
 from tomocpt.configManager.configManager import update_config, update_config_with_changed_values
+from tomocpt.defaultConfigs.train_config import TrainingModes
 from tomocpt.mainConfig import mainConfig, _mainConfigNoChanges
 
 from tomocpt.logger import get_logger
@@ -52,7 +53,10 @@ class BaseModel(pl.LightningModule):
 
     def build_model(self, **kwargs):
         network_config = self.hparams.config.train.network
-        model_name, model = network_config.build_model(img_size=self.patch_size, **kwargs)
+        require_labels = self.hparams.config.train.mode == TrainingModes.picking
+        model_name, model = network_config.build_model(
+            img_size=self.patch_size, require_labels=require_labels, **kwargs
+        )
         return model_name, model
 
     def forward_and_zero_edges(self, x):
