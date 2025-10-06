@@ -305,7 +305,7 @@ def _prune_refined_peaks_gpu(
 
 
 def _refine_peaks_subpixel_gpu(
-    pred_mask_gpu: torch.Tensor, peak_coords_gpu: torch.Tensor, patch_size: int = 3
+    pred_mask_gpu: torch.Tensor, peak_coords_gpu: torch.Tensor, patch_size: int = 9 
 ) -> Tuple[torch.Tensor, torch.Tensor]:
     """Refines integer peak coordinates to sub-pixel accuracy on the GPU by fitting a 3D quadratic function."""
     if peak_coords_gpu.shape[0] == 0:
