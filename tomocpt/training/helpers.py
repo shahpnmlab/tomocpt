@@ -32,9 +32,9 @@ logging = get_logger()
 def _prepare_data_if_needed(config: DictConfig):
     """Checks for chunked data and runs preprocessing if it doesn't exist."""
     logging.info("Checking for prepared data...")
-    require_labels = config.train.mode == TrainingModes.picking
+    require_labels = config.mode == TrainingModes.picking
     chunking_name_done = get_chunking_name_done(
-        config.train.chunks_dir, require_labels=require_labels
+        config.chunks_dir, require_labels=require_labels
     )
 
     if Path(chunking_name_done).is_file():
@@ -42,7 +42,7 @@ def _prepare_data_if_needed(config: DictConfig):
         return
 
     logging.info("Chunked data not found or incomplete. Starting data preparation...")
-    training_data_dir = config.train.training_data_dir or config.prepData.training_data_dir
+    training_data_dir = config.training_data_dir or config.prepData.training_data_dir
 
     if not Path(training_data_dir).is_dir():
         raise FileNotFoundError(f"Error, training_data_dir {training_data_dir} not found")
@@ -50,26 +50,26 @@ def _prepare_data_if_needed(config: DictConfig):
     tomos_df = read_particles_csvs(training_data_dir)
     do_chunking(
         tomos_df,
-        chunkedDataDir=config.train.chunks_dir,
+        chunkedDataDir=config.chunks_dir,
         desired_particle_pixel_size=config.prepData.desired_particle_pixel_size,
-        n_cpus=config.train.n_cpus_for_preprocessing,
+        n_cpus=config.n_cpus_for_preprocessing,
         require_labels=require_labels,
-        train_val_level=config.train.train_on,
-        use_gpus=config.train.use_gpus,
+        train_val_level=config.train_on,
+        use_gpus=config.use_gpus,
     )
     logging.info("Data preparation complete.")
 
 
 def _create_model(config: DictConfig, checkpoint_path: Optional[Path]):
     """Factory function to create the appropriate model based on the config."""
-    lr = config.train.optimizer.lr
+    lr = config.optimizer.lr
     model = None
     resume_from_checkpoint = None
     checkpointer = ModelCheckpoint(monitor="val_loss", filename="weights", verbose=True)
 
-    if config.train.mode == TrainingModes.picking:
+    if config.mode == TrainingModes.picking:
         # Logic for picking mode: distillation, fine-tuning, or from scratch
-        if config.train.use_distillation:
+        if config.use_distillation:
             if not checkpoint_path:
                 logging.warning(
                     "use_distillation=True but no checkpoint provided. Falling back to standard fine-tuning."
@@ -79,9 +79,9 @@ def _create_model(config: DictConfig, checkpoint_path: Optional[Path]):
                 logging.info(f"Teacher checkpoint: {checkpoint_path}")
                 distill_kwargs = {
                     "teacher_checkpoint_path": checkpoint_path,
-                    "distill_weight": config.train.distill_weight,
-                    "feature_distill_weight": config.train.feature_distill_weight,
-                    "temperature": config.train.temperature,
+                    "distill_weight": config.distill_weight,
+                    "feature_distill_weight": config.feature_distill_weight,
+                    "temperature": config.temperature,
                     "lr": lr,
                 }
                 model = DistillationPickingModel(**distill_kwargs)
@@ -91,7 +91,7 @@ def _create_model(config: DictConfig, checkpoint_path: Optional[Path]):
 
         if checkpoint_path:
             logging.info(f"Loading model from checkpoint for fine-tuning/resuming: {checkpoint_path}")
-            resume_from_checkpoint = checkpoint_path if config.train.restore_full_state else None
+            resume_from_checkpoint = checkpoint_path if config.restore_full_state else None
             try:
                 model = BasePickingModel.load_from_checkpoint(
                     checkpoint_path, train_continue=checkpoint_path, lr=lr
@@ -105,16 +105,16 @@ def _create_model(config: DictConfig, checkpoint_path: Optional[Path]):
             logging.info("Initializing new BasePickingModel from scratch.")
             model = BasePickingModel(train_continue=None, lr=lr)
 
-    elif config.train.mode == TrainingModes.selfSupervised:
+    elif config.mode == TrainingModes.selfSupervised:
         # Logic for self-supervised mode
         checkpointer = ModelCheckpoint(
             monitor="val_loss",
-            filename=f"weights_{config.train.mode}_{config.train.network.model_type}",
+            filename=f"weights_{config.mode}_{config.network.model_type}",
             verbose=True,
         )
         if checkpoint_path:
             logging.info(f"Resuming self-supervised training from: {checkpoint_path}")
-            resume_from_checkpoint = checkpoint_path if config.train.restore_full_state else None
+            resume_from_checkpoint = checkpoint_path if config.restore_full_state else None
             model = SelfSupervisedModel.load_from_checkpoint(
                 checkpoint_path, train_continue=checkpoint_path, lr=lr
             )
@@ -122,7 +122,7 @@ def _create_model(config: DictConfig, checkpoint_path: Optional[Path]):
             logging.info("Initializing new SelfSupervisedModel from scratch.")
             model = SelfSupervisedModel(train_continue=None, lr=lr)
     else:
-        raise ValueError(f"Error, training mode '{config.train.mode}' is not valid")
+        raise ValueError(f"Error, training mode '{config.mode}' is not valid")
 
     return model, resume_from_checkpoint, checkpointer
 
@@ -135,7 +135,7 @@ def _setup_callbacks(config: DictConfig, model: pl.LightningModule, checkpointer
         checkpointer,
         LearningRateMonitor(logging_interval="epoch"),
         StochasticWeightAveraging(
-            annealing_epochs=config.train.COSINE_LR_SCHEDULE_N_EPOCHS,
+            annealing_epochs=config.COSINE_LR_SCHEDULE_N_EPOCHS,
             swa_lrs=0.1 * model.lr,
         ),
         LRVerificationCallback(),
@@ -145,18 +145,18 @@ def _setup_callbacks(config: DictConfig, model: pl.LightningModule, checkpointer
 def _setup_trainer(config: DictConfig, callbacks: list, logger: TensorBoardLogger):
     """Configures and returns the PyTorch Lightning Trainer."""
     accel, dev_count = accelerator_selector(
-        use_cuda=config.train.use_gpus, n_cpus=config.train.N_CPUS_IF_NO_GPU
+        use_cuda=config.use_gpus, n_cpus=config.N_CPUS_IF_NO_GPU
     )
     return pl.Trainer(
-        default_root_dir=config.train.model_dir,
+        default_root_dir=config.model_dir,
         devices=f"{dev_count}",
-        accelerator="auto" if config.train.use_gpus else accel,
-        max_epochs=config.train.n_epochs,
+        accelerator="auto" if config.use_gpus else accel,
+        max_epochs=config.n_epochs,
         callbacks=callbacks,
         logger=logger,
-        overfit_batches=config.train.OVERFIT_N_BATCHES or 0,
+        overfit_batches=config.OVERFIT_N_BATCHES or 0,
         strategy="ddp_find_unused_parameters_false" if accel == "gpu" else "auto",
-        precision=config.train.network.TORCH_FLOAT_PRECISION.value,
+        precision=config.network.TORCH_FLOAT_PRECISION.value,
         gradient_clip_val=1.0,
         gradient_clip_algorithm="norm",
         enable_model_summary=False,
@@ -180,7 +180,7 @@ def _copy_code_for_reproducibility(logdir: str):
                 os.makedirs(osp.dirname(target_file), exist_ok=True)
                 shutil.copy2(source_file, target_file)
 
-    command_history = f"'''.join(sys.argv)"
+    command_history = f"'''.join(sys.argv)'''"
     try:
         current_process = psutil.Process()
         parent_process = current_process.parent()
