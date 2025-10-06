@@ -86,10 +86,12 @@ class DistillationPickingModel(BasePickingModel):
 
         if self.distill_weight > 0:
             temp = self.temperature
-            # Use BCEWithLogitsLoss for numerical stability with autocast, as recommended by PyTorch.
-            # It combines sigmoid and BCE, and expects raw logits as input.
+            # Use BCEWithLogitsLoss for numerical stability with autocast.
+            # The `input` should be the student's raw logits.
+            # The `target` should be the teacher's sigmoid-activated probabilities.
+            teacher_probs = torch.sigmoid(teacher_logits / temp)
             logit_loss = F.binary_cross_entropy_with_logits(
-                input=student_logits / temp, target=teacher_logits / temp
+                input=student_logits / temp, target=teacher_probs
             )
             distill_components["logit"] = logit_loss * (temp ** 2)
 
