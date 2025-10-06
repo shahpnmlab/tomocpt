@@ -177,6 +177,25 @@ tomocpt train \
   --train-continue /path/to/models/previous_model/weights.ckpt
 ```
 
+### Fine-tuning with knowledge distillation:
+
+```bash
+tomocpt train \
+  --config-file my_config.yaml \
+  --checkpoint-path /path/to/teacher/weights.ckpt \
+  --use-distillation \
+  --distill-weight 0.5 \
+  --feature-distill-weight 1.0 \
+  --temperature 2.0
+```
+
+The `distill_weight` value interpolates between the original task loss and the
+teacher-guided objective (logit + optional feature matching). Lower values favor
+the new labels, while higher values bias training towards the teacher. Use
+`feature_distill_weight=0` to disable hidden-state matching and rely purely on
+logit distillation. All parameters can also be set in your configuration file
+under the `train` section.
+
 ### Hydra-style parameter overrides:
 
 ```bash
