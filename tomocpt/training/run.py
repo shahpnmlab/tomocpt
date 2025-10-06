@@ -37,9 +37,9 @@ def train(
     Trains a deep learning model for particle picking or self-supervised learning.
     """
     # Use the config object passed in by the decorator, not the global mainConfig
-    torch.set_float32_matmul_precision(config.train.network.TORCH_MATMUL_PRECISION)
-    assert config.train.model_dir, "Error, you need to provide a model_dir"
-    assert config.train.chunks_dir, "Error, you need to provide a chunks_dir"
+    torch.set_float32_matmul_precision(config.network.TORCH_MATMUL_PRECISION)
+    assert config.model_dir, "Error, you need to provide a model_dir"
+    assert config.chunks_dir, "Error, you need to provide a chunks_dir"
 
     # 1. Prepare data if needed
     _prepare_data_if_needed(config)
@@ -52,10 +52,10 @@ def train(
 
     # 3. Set up data loaders
     data = Data(
-        data_dir=config.train.chunks_dir,
-        return_labels=(config.train.mode == "picking"),
-        batch_size=config.train.batch_size,
-        workers_for_data=config.train.n_cpus_for_dataloading,
+        data_dir=config.chunks_dir,
+        return_labels=(config.mode == "picking"),
+        batch_size=config.batch_size,
+        workers_for_data=config.n_cpus_for_dataloading,
     )
 
     # 4. Set up callbacks
@@ -67,7 +67,7 @@ def train(
 
     # 5. Set up logger and trainer
     tb_logger = TensorBoardLogger(
-        save_dir=f"{config.train.model_dir}/{config.train.experiment_name}",
+        save_dir=f"{config.model_dir}/{config.experiment_name}",
         name="",
         version="",
     )
@@ -76,7 +76,7 @@ def train(
     # 6. Save code for reproducibility and launch TensorBoard
     if trainer.is_global_zero:
         _copy_code_for_reproducibility(trainer.log_dir)
-        if config.train.launch_tensorboard:
+        if config.launch_tensorboard:
             subprocess.Popen(
                 ["tensorboard", "--logdir", trainer.logger.log_dir],
             )
