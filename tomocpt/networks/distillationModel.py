@@ -86,9 +86,11 @@ class DistillationPickingModel(BasePickingModel):
 
         if self.distill_weight > 0:
             temp = self.temperature
-            student_soft = torch.sigmoid(student_logits / temp).clamp(min=eps, max=1 - eps)
-            teacher_soft = torch.sigmoid(teacher_logits / temp).clamp(min=eps, max=1 - eps)
-            logit_loss = F.binary_cross_entropy(student_soft, teacher_soft)
+            # Use BCEWithLogitsLoss for numerical stability with autocast, as recommended by PyTorch.
+            # It combines sigmoid and BCE, and expects raw logits as input.
+            logit_loss = F.binary_cross_entropy_with_logits(
+                input=student_logits / temp, target=teacher_logits / temp
+            )
             distill_components["logit"] = logit_loss * (temp ** 2)
 
             if self.feature_distill_weight > 0:
