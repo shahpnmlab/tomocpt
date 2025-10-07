@@ -701,8 +701,19 @@ def infer_tomos(
         device = torch.device("cpu")
 
     try:
+        # Check if the model is a distillation model by inspecting checkpoint keys
+        checkpoint = torch.load(model_fname, map_location="cpu")
+        has_teacher = any(k.startswith("teacher.") for k in checkpoint["state_dict"])
+        del checkpoint
+
+        strict_loading = not has_teacher
+        if not strict_loading:
+            logger.info(
+                "Distillation model detected. Loading student weights for inference (strict=False)."
+            )
+
         model = BasePickingModel.load_from_checkpoint(
-            model_fname, map_location=device
+            model_fname, map_location=device, strict=strict_loading
         ).eval()
         logger.info(
             f"PickingModel using {type(model.model).__name__} loaded on {device} (Worker {gpu_id})"
