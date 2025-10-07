@@ -678,6 +678,7 @@ def _predict_single_tomogram(
 def infer_tomos(
     tomo_fnames: List[Path],
     gpu_id: Optional[int],
+    worker_id: int,
     model_fname: str,
     infer_config: InferConfig,
 ) -> List[Dict[str, Any]]:
@@ -706,10 +707,10 @@ def infer_tomos(
             model_fname, map_location=device, strict=True
         ).eval()
         logger.info(
-            f"PickingModel using {type(model.model).__name__} loaded on {device} (Worker {gpu_id})"
+            f"PickingModel using {type(model.model).__name__} loaded on {device} (Worker {worker_id})"
         )
     except Exception as e:
-        logger.error(f"Failed to load model on worker {gpu_id}: {e}")
+        logger.error(f"Failed to load model on worker {worker_id}: {e}")
         return []
 
     try:
@@ -723,9 +724,9 @@ def infer_tomos(
     results_aggregator = []
     # Create one pbar for the entire life of this worker function.
     # leave=True ensures it remains visible after this function returns.
-    worker_desc = f"GPU-{gpu_id}" if gpu_id is not None else "CPU"
+    worker_desc = f"GPU-{gpu_id}" if gpu_id is not None else f"CPU-{worker_id}"
     with tqdm(
-        total=1, desc=f"{worker_desc} | Waiting...", position=gpu_id or 0, leave=True
+        total=1, desc=f"{worker_desc} | Waiting...", position=worker_id, leave=True
     ) as pbar:
         for tomo_fname in tomo_fnames:
             try:
@@ -743,7 +744,7 @@ def infer_tomos(
                     results_aggregator.append(result)
             except Exception as e:
                 logger.error(
-                    f"Error processing {tomo_fname.name} on worker {gpu_id}: {e}",
+                    f"Error processing {tomo_fname.name} on worker {worker_id}: {e}",
                     exc_info=True,
                 )
             finally:

@@ -69,19 +69,19 @@ def predict(
         if tasks_per_worker[i]:
             # Each future represents one worker processing its batch of files
             gpu_id = i if n_gpus > 0 else None
-            future = client.submit(infer_tomos, tasks_per_worker[i], gpu_id, infer_config.weights, infer_config)
+            # Pass the unique worker_id (i) to the infer_tomos function for positioning the progress bar
+            future = client.submit(infer_tomos, tasks_per_worker[i], gpu_id, i, infer_config.weights, infer_config)
             futures.append(future)
 
-    # This main progress bar tracks the completion of entire worker batches.
-    # The detailed per-patch progress bars will be displayed by the workers themselves.
+    # The main progress bar is removed to reduce clutter.
+    # Progress is now shown by the individual worker progress bars.
     results = []
-    with tqdm(total=len(futures), desc="Processing Tomogram Batches") as pbar:
-        for future in as_completed(futures):
-            # as_completed yields futures as they complete
-            worker_result_list = future.result()
-            if worker_result_list:
-                results.extend(worker_result_list)
-            pbar.update(1)
+    logger.info(f"Waiting for {len(futures)} worker batches to complete...")
+    for future in as_completed(futures):
+        worker_result_list = future.result()
+        if worker_result_list:
+            results.extend(worker_result_list)
+    logger.info("All worker batches completed.")
 
     client.close()
     cluster.close()
