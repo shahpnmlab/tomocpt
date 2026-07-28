@@ -3,7 +3,6 @@ import os.path as osp
 import shutil
 import sys
 import psutil
-from typing import Optional
 
 import pytorch_lightning as pl
 from omegaconf import DictConfig
@@ -25,6 +24,7 @@ from tomocpt.networks.distillationModel import DistillationPickingModel
 from tomocpt.networks.selfSupervisedModel import SelfSupervisedModel
 from tomocpt.training.callbacks import LRVerificationCallback
 from tomocpt.logger import get_logger
+from tomocpt.mainConfig import mainConfig
 
 logging = get_logger()
 
@@ -42,16 +42,20 @@ def _prepare_data_if_needed(config: DictConfig):
         return
 
     logging.info("Chunked data not found or incomplete. Starting data preparation...")
-    training_data_dir = config.training_data_dir or config.prepData.training_data_dir
+    training_data_dir = (
+        config.training_data_dir or mainConfig.prepData.training_data_dir
+    )
 
     if not Path(training_data_dir).is_dir():
-        raise FileNotFoundError(f"Error, training_data_dir {training_data_dir} not found")
+        raise FileNotFoundError(
+            f"Error, training_data_dir {training_data_dir} not found"
+        )
 
     tomos_df = read_particles_csvs(training_data_dir)
     do_chunking(
         tomos_df,
         chunkedDataDir=config.chunks_dir,
-        desired_particle_pixel_size=config.prepData.desired_particle_pixel_size,
+        desired_particle_pixel_size=mainConfig.prepData.desired_particle_pixel_size,
         n_cpus=config.n_cpus_for_preprocessing,
         require_labels=require_labels,
         train_val_level=config.train_on,
@@ -82,7 +86,9 @@ def _create_model(config: DictConfig):
                     "Distillation requires a teacher model. Falling back to standard training."
                 )
             else:
-                logging.info(f"Initializing Distillation model for fine-tuning from teacher: {config.fine_tune_from}")
+                logging.info(
+                    f"Initializing Distillation model for fine-tuning from teacher: {config.fine_tune_from}"
+                )
                 distill_kwargs = {
                     "teacher_checkpoint_path": config.fine_tune_from,
                     "distill_weight": config.distill_weight,
@@ -103,11 +109,19 @@ def _create_model(config: DictConfig):
                     checkpoint_path, train_continue=train_continue_path, lr=lr
                 )
             except RuntimeError:
-                logging.info("Could not load as BasePickingModel, trying as SelfSupervisedModel for transfer learning.")
+                logging.info(
+                    "Could not load as BasePickingModel, trying as SelfSupervisedModel for transfer learning."
+                )
                 # When transfer learning, it's always a fine-tune, not a resume.
-                pretrained_model = SelfSupervisedModel.load_from_checkpoint(checkpoint_path)
-                model = BasePickingModel(train_continue=checkpoint_path, lr=lr, model=pretrained_model)
-                resume_from_ckpt = None  # Can't resume state from a different model type
+                pretrained_model = SelfSupervisedModel.load_from_checkpoint(
+                    checkpoint_path
+                )
+                model = BasePickingModel(
+                    train_continue=checkpoint_path, lr=lr, model=pretrained_model
+                )
+                resume_from_ckpt = (
+                    None  # Can't resume state from a different model type
+                )
         else:
             logging.info("Initializing new BasePickingModel from scratch.")
             model = BasePickingModel(train_continue=None, lr=lr)
@@ -135,11 +149,15 @@ def _create_model(config: DictConfig):
     return model, resume_from_ckpt, checkpointer
 
 
-def _setup_callbacks(config: DictConfig, model: pl.LightningModule, checkpointer: ModelCheckpoint):
+def _setup_callbacks(
+    config: DictConfig, model: pl.LightningModule, checkpointer: ModelCheckpoint
+):
     """Creates and returns a list of PyTorch Lightning callbacks."""
     return [
         TQDMProgressBar(refresh_rate=10),
-        EarlyStopping(monitor="val_loss_smooth", patience=10, min_delta=0.005, verbose=True),
+        EarlyStopping(
+            monitor="val_loss_smooth", patience=10, min_delta=0.005, verbose=True
+        ),
         checkpointer,
         LearningRateMonitor(logging_interval="epoch"),
         StochasticWeightAveraging(
@@ -193,7 +211,10 @@ def _copy_code_for_reproducibility(logdir: str):
         current_process = psutil.Process()
         parent_process = current_process.parent()
         parent_command = " ".join(
-            ["'" + x + "'" if x.startswith('{') else x for x in parent_process.cmdline()]
+            [
+                "'" + x + "'" if x.startswith("{") else x
+                for x in parent_process.cmdline()
+            ]
         )
         command_history += f"Parent command: {parent_command}"
     except (psutil.NoSuchProcess, psutil.AccessDenied):
