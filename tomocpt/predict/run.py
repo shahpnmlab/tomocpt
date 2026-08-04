@@ -9,22 +9,19 @@ from dask_cuda import LocalCUDACluster
 from omegaconf import DictConfig
 from tqdm import tqdm
 
-from tomocpt.predict.helpers import infer_tomos, process_extracted_coordinates
+from tomocpt.predict.helpers import (
+    extract_peaks_from_confidence_maps,
+    infer_tomos,
+    process_extracted_coordinates,
+)
 from tomocpt.logger import get_logger
 from tomocpt.mainConfig import mainConfig
 
 logger = get_logger()
 
 
-def predict(
-    plot: Annotated[bool, typer.Option(help="Plotting not implemented")] = False,
-    config: DictConfig = None,
-):
-    """
-    Performs parallel inference on tomogram data using a trained model.
-    """
-    infer_config = mainConfig.infer
-
+def _collect_tomograms(infer_config) -> List[Path]:
+    """Resolves the list of tomograms to run inference on."""
     data_fnames: List[Path] = []
     if infer_config.tomogram_file:
         file_path = Path(infer_config.tomogram_file).resolve()
@@ -37,13 +34,79 @@ def predict(
         data_fnames.extend(sorted(dir_path.glob("*.rec")))
     else:
         raise ValueError("Must specify either `tomogram_file` or `tomogram_dir` for inference.")
+    return data_fnames
 
-    if not data_fnames:
-        logger.warning("No tomogram files to process.")
-        return
+
+def _collect_confidence_maps(infer_config) -> List[Path]:
+    """
+    Resolves the confidence maps to extract peaks from when inference is skipped.
+
+    If a tomogram file/directory is given, only the maps matching those tomograms
+    are used; otherwise every MRC file in `predictions_dir` is taken as a map.
+    """
+    predictions_dir = Path(infer_config.predictions_dir).resolve()
+    if not predictions_dir.is_dir():
+        raise NotADirectoryError(
+            f"Predictions directory not found: {predictions_dir}. "
+            "It must contain the confidence maps from a previous run."
+        )
+
+    if infer_config.tomogram_file or infer_config.tomogram_dir:
+        map_fnames = []
+        for tomo_fname in _collect_tomograms(infer_config):
+            map_path = predictions_dir / f"{tomo_fname.stem}.mrc"
+            if map_path.is_file():
+                map_fnames.append(map_path)
+            else:
+                logger.warning(
+                    f"No confidence map found for {tomo_fname.name} at {map_path}, skipping."
+                )
+        return map_fnames
+
+    return sorted(predictions_dir.glob("*.mrc"))
+
+
+def predict(
+    plot: Annotated[bool, typer.Option(help="Plotting not implemented")] = False,
+    config: DictConfig = None,
+):
+    """
+    Performs parallel inference on tomogram data using a trained model.
+    """
+    infer_config = mainConfig.infer
+    skip_inference = getattr(infer_config, "skip_inference", False)
+
+    if skip_inference:
+        if not infer_config.save_predicted_coords:
+            raise ValueError(
+                "`skip_inference` requires `save_predicted_coords` to be enabled, "
+                "otherwise there is nothing left to do."
+            )
+        data_fnames = _collect_confidence_maps(infer_config)
+        if not data_fnames:
+            logger.warning(
+                f"No confidence maps found in {infer_config.predictions_dir}. "
+                "They are only written when a previous run had "
+                "`save_prediction_confidence_map` enabled."
+            )
+            return
+        logger.info(
+            f"Skipping inference. Extracting peaks from {len(data_fnames)} existing "
+            f"confidence map(s) in {infer_config.predictions_dir}."
+        )
+    else:
+        if not infer_config.weights:
+            raise ValueError(
+                "Must specify `weights` for inference (or use `skip_inference` to "
+                "extract peaks from existing confidence maps)."
+            )
+        data_fnames = _collect_tomograms(infer_config)
+        if not data_fnames:
+            logger.warning("No tomogram files to process.")
+            return
 
     Path(infer_config.predictions_dir).mkdir(parents=True, exist_ok=True)
-    
+
     n_gpus = torch.cuda.device_count() if infer_config.use_cuda and torch.cuda.is_available() else 0
 
     if n_gpus > 0:
@@ -69,8 +132,11 @@ def predict(
         if tasks_per_worker[i]:
             # Each future represents one worker processing its batch of files
             gpu_id = i if n_gpus > 0 else None
-            # Pass the unique worker_id (i) to the infer_tomos function for positioning the progress bar
-            future = client.submit(infer_tomos, tasks_per_worker[i], gpu_id, i, infer_config.weights, infer_config)
+            # Pass the unique worker_id (i) to the worker function for positioning the progress bar
+            if skip_inference:
+                future = client.submit(extract_peaks_from_confidence_maps, tasks_per_worker[i], gpu_id, i, infer_config)
+            else:
+                future = client.submit(infer_tomos, tasks_per_worker[i], gpu_id, i, infer_config.weights, infer_config)
             futures.append(future)
 
     # The main progress bar is removed to reduce clutter.

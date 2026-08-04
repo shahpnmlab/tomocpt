@@ -170,6 +170,21 @@ tomocpt predict --config-file my_config.yaml
 
 The resulting star file contains particle coordinates, ready for subsequent processing in tools like Relion.
 
+### Re-picking without re-running inference
+
+If a previous run was made with `save_prediction_confidence_map: true`, the confidence maps
+are stored as MRC files in `predictions_dir`. Use `--skip-inference` to reuse them and only
+redo peak extraction — useful for tuning `confidence_threshold` or `distance_threshold`
+without paying for inference again:
+
+```bash
+tomocpt predict --config-file my_config.yaml --skip-inference --confidence-threshold 0.5
+```
+
+In this mode `weights` is not required. Every MRC file in `predictions_dir` is treated as a
+confidence map, unless `tomogram_dir`/`tomogram_file` is set, in which case only the maps
+matching those tomogram names are used.
+
 ## Performance Tips
 
 1.  **GPU Acceleration**: Enable CUDA for both training and inference for best performance.
@@ -178,6 +193,24 @@ The resulting star file contains particle coordinates, ready for subsequent proc
 4.  **Gradient Accumulation**: If you have limited GPU memory, use `gradient_accumulation_steps` in your config to train with a larger effective batch size.
 
 # Changelog
+
+## 0.6.0
+- Added `--skip-inference` to `tomocpt predict`, which reuses the confidence maps saved by a
+  previous run and only redoes peak extraction. Useful for tuning `confidence_threshold` or
+  `distance_threshold` without paying for inference again. `weights` is no longer required
+  when this flag is used.
+- Fixed border exclusion silently discarding every peak. The excluded border was the full
+  particle diameter in pixels, so on volumes thinner than twice that — routine for binned
+  tomograms in Z — the whole volume was masked and no particles were picked. The border is
+  now clamped per axis, with a warning when it is reduced.
+- Fixed peak positions on saturated, flat-topped blobs. Every voxel of a plateau compares
+  equal to its neighbourhood, so an arbitrary member was reported, up to several voxels off
+  centre, and sub-pixel refinement could not recover it. Plateaus now collapse to their
+  centroid.
+- Improved sub-pixel accuracy by scaling the fitting patch to the particle radius instead of
+  fixing it at 9 voxels. The old width overran the particle for small radii, pulling the
+  background floor into the fit. Coordinates change slightly for all users; the improvement
+  is largest for heavily binned data, where the error drops by up to a factor of 13.
 
 ## 0.5.2
 - Added gradient accumulation for training on machines with lower memory.

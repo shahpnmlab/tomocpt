@@ -191,13 +191,29 @@ def peak_local_max_torch(
     all_peaks = local_maxima & (image > threshold_abs)
 
     if exclude_border:
-        b = min_distance
-        all_peaks[:b, :, :] = False
-        all_peaks[-b:, :, :] = False
-        all_peaks[:, :b, :] = False
-        all_peaks[:, -b:, :] = False
-        all_peaks[:, :, :b] = False
-        all_peaks[:, :, -b:] = False
+        requested_border = int(min_distance)
+        for axis, dim in enumerate(image.shape):
+            # Clamp per axis: a border of dim // 2 or more would mask the whole
+            # volume along this axis and silently yield no peaks at all. This
+            # happens routinely on binned tomograms, where the particle diameter
+            # in pixels can exceed half the thickness in Z.
+            border = min(requested_border, max(0, (dim - 1) // 2))
+            if border < requested_border:
+                logger.warning(
+                    f"Border exclusion of {requested_border} px is too large for axis "
+                    f"{axis} of size {dim}; reduced to {border} px. Peaks close to the "
+                    "edge of this axis will be kept."
+                )
+            if border == 0:
+                # A zero border must be skipped explicitly: `all_peaks[-0:]` is
+                # the entire array, which would discard every peak.
+                continue
+            lower = [slice(None)] * 3
+            upper = [slice(None)] * 3
+            lower[axis] = slice(None, border)
+            upper[axis] = slice(-border, None)
+            all_peaks[tuple(lower)] = False
+            all_peaks[tuple(upper)] = False
 
     candidates = all_peaks.nonzero(as_tuple=False)
     if candidates.shape[0] == 0:
@@ -206,6 +222,25 @@ def peak_local_max_torch(
     candidate_values = image[candidates[:, 0], candidates[:, 1], candidates[:, 2]]
     sorted_indices = torch.argsort(candidate_values, descending=True)
     candidates = candidates[sorted_indices]
+    sorted_values = candidate_values[sorted_indices]
+
+    # Every voxel of a saturated, flat-topped blob compares equal to its
+    # max-pooled neighbourhood, so all of them become candidates. Taking an
+    # arbitrary member puts the peak somewhere on the plateau instead of at its
+    # centre, and sub-pixel refinement cannot recover it because a flat top has
+    # no curvature. Group tied candidates so that each plateau collapses to its
+    # centroid; ties are contiguous here because the candidates are value-sorted.
+    tie_counts = torch.unique_consecutive(sorted_values, return_counts=True)[1]
+    any_ties = bool((tie_counts > 1).any())
+    if any_ties:
+        tie_ends = torch.cumsum(tie_counts, dim=0)
+        tie_starts = tie_ends - tie_counts
+        tie_of_candidate = torch.repeat_interleave(
+            torch.arange(tie_counts.shape[0], device=device), tie_counts
+        )
+        start_of_candidate = tie_starts[tie_of_candidate].tolist()
+        end_of_candidate = tie_ends[tie_of_candidate].tolist()
+        is_tied = (tie_counts > 1)[tie_of_candidate].tolist()
 
     suppress_grid = torch.zeros_like(image, dtype=torch.bool)
     final_peaks = []
@@ -222,6 +257,17 @@ def peak_local_max_torch(
         coord = candidates[i]
         if suppress_grid[coord[0], coord[1], coord[2]]:
             continue
+        if any_ties and is_tied[i]:
+            # Replace this arbitrary plateau member with the centroid of the
+            # tied voxels belonging to the same particle. Restricting to the
+            # suppression radius keeps two equally saturated particles apart.
+            tied = candidates[start_of_candidate[i] : end_of_candidate[i]]
+            # Two passes: the arbitrary starting member can sit on the rim of the
+            # plateau, where the inclusion sphere clips off the far side and
+            # biases the centroid towards that rim.
+            for _ in range(2):
+                same_blob = ((tied - coord) ** 2).sum(dim=1) <= dist**2
+                coord = tied[same_blob].float().mean(dim=0).round().long()
         final_peaks.append(coord)
         z_min, z_max = max(0, coord[0] - dist), min(image.shape[0], coord[0] + dist + 1)
         y_min, y_max = max(0, coord[1] - dist), min(image.shape[1], coord[1] + dist + 1)
@@ -304,8 +350,29 @@ def _prune_refined_peaks_gpu(
     return final_coords, final_scores
 
 
+def _patch_size_for_particle(radius_px: float) -> int:
+    """
+    Chooses the sub-pixel fitting patch size for a particle of a given radius.
+
+    The fit takes the log of the confidence map and solves for a 3D quadratic,
+    which is exact for the Gaussian labels the network is trained against. Two
+    things bound how wide the patch may usefully be:
+
+    * The labels are hard-zeroed beyond the particle radius, so a patch reaching
+      past it pulls the `log(clamp(..., 1e-6))` floor into the least-squares fit.
+    * The label is a *sum* of two Gaussians, so its log is only locally
+      quadratic; a wide patch fits a shape that is not quite a paraboloid.
+
+    Too narrow is not free either, as fewer voxels means more sensitivity to
+    noise. Half the particle radius, rounded to an odd size and clamped to
+    [3, 7], tracks the measured optimum across radii and noise levels.
+    """
+    patch = int(round((radius_px / 2 - 1) / 2)) * 2 + 1
+    return max(3, min(7, patch))
+
+
 def _refine_peaks_subpixel_gpu(
-    pred_mask_gpu: torch.Tensor, peak_coords_gpu: torch.Tensor, patch_size: int = 9 
+    pred_mask_gpu: torch.Tensor, peak_coords_gpu: torch.Tensor, patch_size: int = 5
 ) -> Tuple[torch.Tensor, torch.Tensor]:
     """Refines integer peak coordinates to sub-pixel accuracy on the GPU by fitting a 3D quadratic function."""
     if peak_coords_gpu.shape[0] == 0:
@@ -521,6 +588,64 @@ def process_extracted_coordinates(
         raise ValueError(f"Unsupported output format: {output_format}")
 
 
+def _extract_peaks_from_mask(
+    pred_mask_gpu: torch.Tensor,
+    tomo_name: str,
+    voxel_size: float,
+    infer_config: InferConfig,
+) -> Optional[Dict[str, Any]]:
+    """
+    Extracts particle centroids from a prediction confidence map.
+
+    Peaks are found with a non-maximum suppression, refined to sub-pixel accuracy
+    and pruned again to enforce the minimum distance after refinement.
+    """
+    # Calculate min_distance in pixels as a float for precision
+    min_dist_px = (
+        infer_config.distance_threshold or infer_config.length
+    ) / voxel_size
+
+    # peak_local_max_torch requires an integer distance; use ceiling for safety
+    int_coords_gpu = peak_local_max_torch(
+        image=pred_mask_gpu,
+        min_distance=int(np.ceil(min_dist_px)),
+        threshold_abs=infer_config.confidence_threshold,
+        exclude_border=True,
+    )
+    if int_coords_gpu.shape[0] == 0:
+        return None
+
+    # The particle radius, in the pixels of the map being searched. `length` is
+    # the diameter in Angstroms; `distance_threshold` is deliberately not used
+    # here, as it is a picking constraint rather than the size of the blob.
+    radius_px = infer_config.length / (2.0 * voxel_size)
+    refined_coords_gpu, refined_scores_gpu = _refine_peaks_subpixel_gpu(
+        pred_mask_gpu, int_coords_gpu, patch_size=_patch_size_for_particle(radius_px)
+    )
+
+    # Prune the refined coordinates to enforce the minimum distance constraint again
+    final_coords_gpu, final_scores_gpu = _prune_refined_peaks_gpu(
+        refined_coords_gpu,
+        refined_scores_gpu,
+        min_distance=min_dist_px,  # Use the precise float value for pruning
+    )
+
+    if final_coords_gpu.shape[0] == 0:
+        return None
+
+    centroids_with_scores = (
+        torch.hstack([final_coords_gpu, final_scores_gpu.unsqueeze(-1)])
+        .cpu()
+        .numpy()
+        .tolist()
+    )
+    return {
+        "name": tomo_name,
+        "coords": centroids_with_scores,
+        "voxel_size": voxel_size,
+    }
+
+
 def _get_prediction_mask_with_tta(
     model,
     padded_vol: torch.Tensor,
@@ -636,43 +761,65 @@ def _predict_single_tomogram(
         )
 
     if infer_config.save_predicted_coords:
-        # Calculate min_distance in pixels as a float for precision
-        min_dist_px = (
-            infer_config.distance_threshold or infer_config.length
-        ) / original_voxel_size
-
-        # peak_local_max_torch requires an integer distance; use ceiling for safety
-        int_coords_gpu = peak_local_max_torch(
-            image=pred_mask_gpu,
-            min_distance=int(np.ceil(min_dist_px)),
-            threshold_abs=infer_config.confidence_threshold,
-            exclude_border=True,
+        return _extract_peaks_from_mask(
+            pred_mask_gpu=pred_mask_gpu,
+            tomo_name=tomo_fname.stem,
+            voxel_size=original_voxel_size,
+            infer_config=infer_config,
         )
-        if int_coords_gpu.shape[0] > 0:
-            refined_coords_gpu, refined_scores_gpu = _refine_peaks_subpixel_gpu(
-                pred_mask_gpu, int_coords_gpu
-            )
-
-            # Prune the refined coordinates to enforce the minimum distance constraint again
-            final_coords_gpu, final_scores_gpu = _prune_refined_peaks_gpu(
-                refined_coords_gpu,
-                refined_scores_gpu,
-                min_distance=min_dist_px,  # Use the precise float value for pruning
-            )
-
-            if final_coords_gpu.shape[0] > 0:
-                centroids_with_scores = (
-                    torch.hstack([final_coords_gpu, final_scores_gpu.unsqueeze(-1)])
-                    .cpu()
-                    .numpy()
-                    .tolist()
-                )
-                return {
-                    "name": tomo_fname.stem,
-                    "coords": centroids_with_scores,
-                    "voxel_size": original_voxel_size,
-                }
     return None
+
+
+def extract_peaks_from_confidence_maps(
+    map_fnames: List[Path],
+    gpu_id: Optional[int],
+    worker_id: int,
+    infer_config: InferConfig,
+) -> List[Dict[str, Any]]:
+    """
+    Worker function for Dask. Skips inference entirely and extracts coordinates
+    from confidence maps that were saved by a previous run.
+    """
+    if gpu_id is not None and torch.cuda.is_available():
+        device = torch.device("cuda")
+    else:
+        device = torch.device("cpu")
+
+    results_aggregator = []
+    worker_desc = f"GPU-{gpu_id}" if gpu_id is not None else f"CPU-{worker_id}"
+    with tqdm(
+        total=len(map_fnames),
+        desc=f"{worker_desc} | Extracting peaks",
+        position=worker_id,
+        leave=True,
+    ) as pbar:
+        for map_fname in map_fnames:
+            try:
+                pbar.set_description(f"{worker_desc} | {map_fname.name}")
+                pred_mask_np, voxel_size = load_mrc(
+                    str(map_fname), normalize=False, return_voxel_size=True
+                )
+                pred_mask_gpu = torch.from_numpy(pred_mask_np).to(device).float()
+                result = _extract_peaks_from_mask(
+                    pred_mask_gpu=pred_mask_gpu,
+                    tomo_name=map_fname.stem,
+                    voxel_size=voxel_size,
+                    infer_config=infer_config,
+                )
+                if result:
+                    results_aggregator.append(result)
+            except Exception as e:
+                logger.error(
+                    f"Error processing confidence map {map_fname.name} on worker {worker_id}: {e}",
+                    exc_info=True,
+                )
+            finally:
+                pbar.update(1)
+                gc.collect()
+                if device.type == "cuda":
+                    torch.cuda.empty_cache()
+
+    return results_aggregator
 
 
 def infer_tomos(
