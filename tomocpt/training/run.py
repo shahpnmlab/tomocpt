@@ -52,6 +52,7 @@ def train(config: DictConfig = None):
         return_labels=(config.mode == "picking"),
         batch_size=config.batch_size,
         workers_for_data=config.n_cpus_for_dataloading,
+        augmentation=config.augmentation,
     )
     data.setup()
 
