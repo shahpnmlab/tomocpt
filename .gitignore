@@ -172,3 +172,4 @@ test.tomcat
 
 # Local agent notes, not part of the project
 AGENTS.md
+augmentation_dump/
