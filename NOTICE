@@ -1,0 +1,20 @@
+# Third-party attributions
+
+tomocpt is licensed under the GNU Affero General Public License v3 (see `LICENSE`).
+The following files incorporate third-party code under their own licenses.
+
+## `tomocpt/dataManager/filter_utils.py` — Apache License 2.0
+
+`hypotenuse_ndim` and `rotational_kernel` are copied verbatim from membrain-seg
+(`src/membrain_seg/tomo_preprocessing/matching_utils/filter_utils.py`), which itself
+derives them from DeePiCt.
+
+- Repository: https://github.com/ZauggGroup/DeePiCt
+- Original file: https://github.com/ZauggGroup/DeePiCt/blob/main/spectrum_filter/FilterUtils.py
+- Copyright (C) 2022 ZauggGroup
+- Original author(s): de Teresa, I.*, Goetz S.K.*, Mattausch, A., Stojanovska, F.,
+  Zimmerli C., Toro-Nahuelpan M., Cheng, D.W.C., Tollervey, F., Pape, C.,
+  Beck, M., Diz-Muñoz, A., Kreshuk, A., Mahamid, J. and Zaugg, J.
+- License: Apache License 2.0 — http://www.apache.org/licenses/LICENSE-2.0
+
+The Apache-2.0 header is preserved intact at the top of the vendored file.

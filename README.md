@@ -222,3 +222,8 @@ tomoCPT is jointly developed by Ruben Sanchez-Garcia and Pranav NM Shah at the U
 [TomoCPT: a generalizable model for 3D particle detection and localization in cryo-electron tomograms](https://doi.org/10.1107/S2059798325000865)
 
 Shah PNM, Sanchez-Garcia R, Stuart DI. *Acta Crystallographica Section D: Structural Biology*, 81(2):63-76, 2025.
+## License
+
+tomocpt is distributed under the GNU Affero General Public License v3 (see
+[LICENSE](LICENSE)). Some vendored components carry their own licenses; see
+[NOTICE](NOTICE) for attributions.
