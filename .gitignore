@@ -169,3 +169,6 @@ membrain-seg/
 .DS_Store
 *.DS_Store
 test.tomcat
+
+# Local agent notes, not part of the project
+AGENTS.md

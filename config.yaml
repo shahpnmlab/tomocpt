@@ -1,0 +1,46 @@
+prepData:
+  raw_data_dir: ???
+  training_data_dir: ???
+  particle_length_ang: ???
+  coordinate_files: ???
+  coordinate_file_type: star
+  class_id: all
+  desired_particle_pixel_size: 20
+train:
+  training_data_dir: null
+  chunks_dir: ???
+  model_dir: ???
+  n_epochs: 10
+  batch_size: 2
+  use_gpus: true
+  n_cpus_for_train: 2
+  experiment_name: tomocpt
+  mode: picking
+  train_on: tomos
+  restore_full_state: true
+  optimizer:
+    lr: 0.0004
+  network:
+    model_type: SwinUNETR
+    TORCH_FLOAT_PRECISION: bf16
+  launch_tensorboard: true
+  use_distillation: false
+  distill_weight: 0.5
+  feature_distill_weight: 1.0
+  temperature: 2.0
+infer:
+  tomogram_dir: ???
+  predictions_dir: ???
+  weights: ???
+  masks_dir: null
+  length: ???
+  distance_threshold: null
+  predictions_coord_filename: tomopicker_coords.star
+  predictions_coord_format: relion
+  save_prediction_confidence_map: false
+  save_predicted_coords: true
+  confidence_threshold: 0.3
+  predictions_batch_size: 2
+  oversubscribe_factor: 1
+  use_cuda: true
+  n_cpus_per_gpu: 1
