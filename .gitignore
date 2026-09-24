@@ -160,3 +160,12 @@ cython_debug/
 #  and can be added to the global gitignore or merged into this file.  For vol more nuclear
 #  option (not recommended) you can uncomment the following to ignore the entire idea folder.
 #.idea/
+
+# Reference-only clone of membrain-seg (FourierAugmentations branch).
+# Downloaded for porting reference; must never be committed.
+membrain-seg/
+
+# macOS / local scratch
+.DS_Store
+*.DS_Store
+test.tomcat
