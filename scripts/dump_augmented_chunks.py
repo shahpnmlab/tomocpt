@@ -207,12 +207,6 @@ def main() -> int:
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--taper-width", type=float, default=0.0, help="Wedge boundary taper in degrees")
     parser.add_argument("--keep-angle", type=float, default=45.0, help="Half-opening angle of the retained wedge")
-    parser.add_argument(
-        "--contrast-inversion-p",
-        type=float,
-        default=0.0,
-        help="Probability of flipping contrast polarity; 0.5 gives an even mix",
-    )
     parser.add_argument("--no-labels", action="store_true", help="Load selfSup labels instead of supervised")
     parser.add_argument("--report", action="store_true", help="Also print numeric measurements of (a)-(c)")
     parser.add_argument(
@@ -236,7 +230,6 @@ def main() -> int:
         taper_width=args.taper_width,
         keep_angle_min=args.keep_angle,
         keep_angle_max=args.keep_angle,
-        contrast_inversion_p=args.contrast_inversion_p,
     )
     pipeline = build_training_transforms(cfg)
 

@@ -25,6 +25,12 @@ from tomocpt.logger import get_logger
 
 logging = get_logger()
 
+#: Probability of flipping contrast polarity. Fixed rather than exposed through
+#: config: invariance to whether particles are dark on light or light on dark is
+#: wanted in every run, not something to tune per experiment.
+CONTRAST_INVERSION_PROB = 0.8
+
+
 def build_training_transforms(cfg: Optional[AugmentationConfig] = None) -> tio.Compose:
     """Compose the training-time augmentation pipeline.
 
@@ -41,12 +47,17 @@ def build_training_transforms(cfg: Optional[AugmentationConfig] = None) -> tio.C
 
     Notes
     -----
+    Note that the returned pipeline is **not** identical to tomocpt's historical
+    one even at default settings: contrast inversion is baked in unconditionally.
+    Every other augmentation added here is off by default.
+
     Ordering matters and follows the reference pipeline:
 
     1. ``tio.RandomAffine`` - image and label rotated together.
     2. ``tio.OneOf({RandomElasticDeformation, RandomBlur})``.
     3. :class:`RandomFourierDegradation` - **after all spatial transforms**.
-    4. Intensity transforms, contrast inversion first.
+    4. Intensity transforms, contrast inversion first. Contrast inversion is
+       always applied at :data:`CONTRAST_INVERSION_PROB` and is not configurable.
 
     Step 3's position is the entire point of the augmentation: running after the
     rotations makes the missing wedge land at a random orientation relative to
@@ -82,12 +93,12 @@ def build_training_transforms(cfg: Optional[AugmentationConfig] = None) -> tio.C
         )
 
     # --- Intensity transforms ---
-    # Contrast inversion goes first: it represents the tomogram's polarity
-    # convention, so everything downstream then acts on the data in the
-    # convention the network will actually see. It also matters that it precedes
-    # RandomLocalGamma, which is not symmetric about the mean.
-    if cfg.contrast_inversion_p > 0:
-        transforms.append(RandomContrastInversion(p=cfg.contrast_inversion_p))
+    # Contrast inversion is always on, deliberately not configurable: tomogram
+    # polarity is a property of the data rather than a tuning knob, and a picker
+    # that is invariant to it is wanted in every run. It goes first because
+    # polarity is established before any acquisition effect, and because
+    # RandomLocalGamma is not symmetric about the mean.
+    transforms.append(RandomContrastInversion(p=CONTRAST_INVERSION_PROB))
     if cfg.brightness_gradient_p > 0:
         transforms.append(RandomBrightnessGradient(p=cfg.brightness_gradient_p))
     if cfg.local_gamma_p > 0:

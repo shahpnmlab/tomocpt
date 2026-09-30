@@ -121,13 +121,6 @@ class AugmentationConfig:
     ] = 3.0
 
     # --- Intensity augmentations (all off by default) ---
-    contrast_inversion_p: Annotated[
-        float,
-        typer.Option(
-            help="Probability of flipping contrast polarity (dark-on-light vs light-on-dark). "
-                 "Use 0.5 for an even mix, making the picker invariant to tomogram contrast type."
-        ),
-    ] = 0.0
     brightness_gradient_p: Annotated[
         float, typer.Option(help="Probability of adding a localized Gaussian brightness blob")
     ] = 0.0

@@ -23,6 +23,7 @@ from tomocpt.dataManager.fourier_augmentations import (
 )
 from tomocpt.dataManager.intensity_augmentations import (
     RandomBrightness,
+    RandomContrastInversion,
     RandomBrightnessGradient,
     RandomContrast,
     RandomLocalGamma,
@@ -444,10 +445,20 @@ def test_different_seeds_give_different_output(image_tensor):
 # --------------------------------------------------------------------------
 
 
-def test_defaults_reproduce_the_historical_pipeline():
-    """Default config must not change any existing run.
+def test_defaults_change_only_by_contrast_inversion():
+    """Default config differs from the historical pipeline by exactly one transform.
 
-    Compared against a verbatim copy of the pre-change hardcoded pipeline.
+    The original goal was that defaults reproduce the old pipeline exactly, so
+    existing runs were untouched. That no longer holds: contrast inversion is
+    baked in unconditionally, by deliberate choice, because polarity invariance
+    is wanted in every run rather than tuned per experiment.
+
+    The invariant is therefore narrowed rather than dropped - the spatial
+    transforms must still match the old pipeline exactly, and contrast inversion
+    must be the *only* addition. Any other drift is still a bug.
+
+    Consequence: a training run on this branch is not numerically comparable to
+    a pre-branch baseline, even with every configurable augmentation off.
     """
     historical = tio.Compose(
         [
@@ -460,25 +471,26 @@ def test_defaults_reproduce_the_historical_pipeline():
     )
     built = build_training_transforms(AugmentationConfig())
 
-    assert [type(t) for t in built.transforms] == [type(t) for t in historical.transforms]
-    assert [t.probability for t in built.transforms] == [
+    extra = [t for t in built.transforms if isinstance(t, RandomContrastInversion)]
+    assert len(extra) == 1, "contrast inversion should be the one baked-in addition"
+
+    spatial = [t for t in built.transforms if not isinstance(t, RandomContrastInversion)]
+    assert [type(t) for t in spatial] == [type(t) for t in historical.transforms]
+    assert [t.probability for t in spatial] == [
         t.probability for t in historical.transforms
     ]
-    assert built.transforms[0].degrees == historical.transforms[0].degrees
-    assert (
-        built.transforms[0].default_pad_value
-        == historical.transforms[0].default_pad_value
-    )
+    assert spatial[0].degrees == historical.transforms[0].degrees
+    assert spatial[0].default_pad_value == historical.transforms[0].default_pad_value
 
     def by_type(one_of, cls):
         return next(k for k in one_of.transforms_dict if isinstance(k, cls))
 
     assert (
-        by_type(built.transforms[1], tio.RandomBlur).std_ranges
+        by_type(spatial[1], tio.RandomBlur).std_ranges
         == by_type(historical.transforms[1], tio.RandomBlur).std_ranges
     )
     assert (
-        by_type(built.transforms[1], tio.RandomElasticDeformation).max_displacement
+        by_type(spatial[1], tio.RandomElasticDeformation).max_displacement
         == by_type(historical.transforms[1], tio.RandomElasticDeformation).max_displacement
     )
 

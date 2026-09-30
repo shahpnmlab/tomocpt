@@ -13,7 +13,10 @@ import torchio as tio
 
 from conftest import CHUNK_SHAPE
 
-from tomocpt.dataManager.dataloading import build_training_transforms
+from tomocpt.dataManager.dataloading import (
+    CONTRAST_INVERSION_PROB,
+    build_training_transforms,
+)
 from tomocpt.dataManager.intensity_augmentations import RandomContrastInversion
 from tomocpt.defaultConfigs.train_config import AugmentationConfig
 
@@ -116,13 +119,19 @@ def test_probability_is_respected(image_tensor):
     assert 70 < inverted < 130, f"{inverted}/200 inverted, expected roughly half"
 
 
-def test_absent_from_the_pipeline_by_default():
-    """Off by default, so existing runs are unchanged."""
-    names = [
-        type(t).__name__
-        for t in build_training_transforms(AugmentationConfig()).transforms
-    ]
-    assert "RandomContrastInversion" not in names
+def test_always_present_in_the_pipeline():
+    """Baked in unconditionally - deliberately not a config knob.
+
+    Polarity invariance is wanted in every run, so this is fixed at
+    ``CONTRAST_INVERSION_PROB`` rather than exposed for tuning. That makes the
+    default pipeline differ from tomocpt's historical one; see
+    ``test_defaults_change_only_by_contrast_inversion``.
+    """
+    pipeline = build_training_transforms(AugmentationConfig())
+    inversion = [t for t in pipeline.transforms if isinstance(t, RandomContrastInversion)]
+
+    assert len(inversion) == 1
+    assert inversion[0].probability == CONTRAST_INVERSION_PROB == 0.8
 
 
 def test_inversion_precedes_the_other_intensity_transforms():
@@ -134,7 +143,6 @@ def test_inversion_precedes_the_other_intensity_transforms():
     gamma response on the wrong polarity.
     """
     cfg = AugmentationConfig(
-        contrast_inversion_p=0.5,
         brightness_gradient_p=0.3,
         local_gamma_p=0.3,
         brightness_p=0.3,
@@ -149,9 +157,7 @@ def test_inversion_precedes_the_other_intensity_transforms():
 
 def test_inversion_runs_after_the_fourier_degradation():
     """Still downstream of every spatial transform and of the wedge."""
-    cfg = AugmentationConfig(
-        contrast_inversion_p=0.5, use_mw_aug=True, use_fourier_aug=True
-    )
+    cfg = AugmentationConfig(use_mw_aug=True, use_fourier_aug=True)
     names = [type(t).__name__ for t in build_training_transforms(cfg).transforms]
     assert names.index("RandomContrastInversion") > names.index("RandomFourierDegradation")
 
@@ -161,7 +167,6 @@ def test_full_pipeline_with_inversion_preserves_the_label(image_tensor, label_te
     cfg = AugmentationConfig(
         affine_p=0.0,
         elastic_blur_p=0.0,
-        contrast_inversion_p=1.0,
         use_mw_aug=True,
         use_fourier_aug=True,
         missing_wedge_prob=1.0,

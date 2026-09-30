@@ -245,9 +245,26 @@ tomogram rather than an acquisition effect, and because `RandomLocalGamma` is no
 about the mean — applying gamma before the inversion would model a gamma response on the
 wrong polarity. Pinned by `test_inversion_precedes_the_other_intensity_transforms`.
 
-Off by default (`contrast_inversion_p=0.0`). Use `0.5` for an even mix. Note this buys
-polarity invariance at some cost in specificity, so it is only worth enabling if the data
-actually spans both conventions.
+**Baked in at `p=0.8`, deliberately not configurable** (`CONTRAST_INVERSION_PROB` in
+`dataloading.py`). Polarity invariance is wanted in every run rather than tuned per
+experiment, so there is no CLI flag and no `config.yaml` key.
+
+**This breaks the "defaults reproduce today's behaviour" invariant in C2, on purpose.** It is
+the one augmentation that is on unconditionally; everything else added by this branch remains
+off by default. Two consequences:
+
+- **Gate F step 2 no longer works as written.** A run on this branch is not numerically
+  comparable to a pre-branch baseline even with every configurable augmentation off, because
+  8 out of 10 samples arrive with flipped polarity. To still check the refactor is
+  behaviour-preserving, temporarily set `CONTRAST_INVERSION_PROB = 0.0`, compare against the
+  baseline, then restore it. Without that step the refactor is unverified.
+- Polarity invariance costs some specificity — the network is being asked to ignore a
+  genuinely informative feature. At `p=0.8` the inverted convention is also seen *more* often
+  than the original, which is fine for invariance but is worth knowing.
+
+`test_defaults_change_only_by_contrast_inversion` narrows the old invariant rather than
+dropping it: the spatial transforms must still match the historical pipeline exactly, and
+contrast inversion must be the only addition.
 
 ### C2. Config
 
@@ -263,6 +280,9 @@ probabilities and ranges from Gate B, and the existing affine/elastic/blur proba
 Defaults must **reproduce today's behaviour** for the three existing transforms
 (`affine_p=0.8`, `affine_degrees=45`, elastic/blur under a `OneOf` at 0.75), with all new
 augmentations **off by default**, so existing runs are not silently changed.
+
+**Amended:** this now holds for every augmentation *except* contrast inversion, which is
+baked in unconditionally at `p=0.8` — see C1b.
 
 Add the matching block to `config.yaml`, which has no augmentation section today. Also fix
 the stale `train.n_cpus_for_train` key there — `TrainConfig` defines
@@ -482,9 +502,13 @@ mismatch in item 1, and it is a macOS-only problem — it should not affect the 
 
 1. `pytest tests/ -v` — everything except the port-equivalence test.
 2. Short training run with augmentation **off** — confirm the loss curve matches a
-   pre-change baseline, proving the refactor is behaviour-preserving. Defaults were verified
-   transform-wise identical to the old pipeline in Gate C, so any divergence here is a real
-   finding.
+   pre-change baseline, proving the refactor is behaviour-preserving.
+
+   **Requires one temporary edit.** Contrast inversion is baked in at `p=0.8` (C1b), so the
+   default pipeline is *not* the historical one and the curves will not match. Set
+   `CONTRAST_INVERSION_PROB = 0.0` in `dataloading.py` for this run only, then restore it.
+   Everything else was verified transform-wise identical to the old pipeline in Gate C, so
+   any remaining divergence is a real finding.
 3. Short training run with `use_mw_aug=True, use_fourier_aug=True, missing_wedge_prob=1.0` —
    confirm it starts, loss decreases, step time has not regressed.
 4. Run `tomocpt train --help` and confirm the `augmentation__*` options appear. This could
@@ -514,3 +538,4 @@ Deliberately left open, each pinned by a test that will fail if it is changed si
 | `infer.predictions_coord_format` | Invalid enum value, unfixed | Gate C |
 | `scipy` / `numpy` pins | Mismatched against the repaired env | Gate F |
 | Intensity-augmentation ranges | membrain-seg values, exceed ±3, all off by default | Gate C |
+| Contrast inversion probability | Hardcoded at 0.8, no config knob | Gate C1b |
