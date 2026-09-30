@@ -226,6 +226,29 @@ end-to-end:
 - Smooth multiplicative field → `tio.RandomBiasField` (complementary to the *additive*
   `RandomBrightnessGradient`, not redundant with it)
 
+### C1b. Contrast inversion (added after the original plan)
+
+Not in the reference pipeline as a standalone transform, and not in the original plan, but
+requested and worth having: `RandomContrastInversion`. Tomograms come with particles either
+dark on light or light on dark depending on CTF handling and reconstruction convention, and a
+picker trained on one polarity learns the sign of the density as a feature.
+
+The image is reflected about its own mean rather than negated. This preserves mean and
+standard deviation exactly and is an involution, so it stays symmetric at any probability -
+unlike membrain-seg's `RandAdjustContrastWithInversionAndStats`, which always inverts and
+relies on being applied exactly twice to balance out. The trade is that the range shifts by
+exactly `2 * mean`; for tomocpt's zero-centred inputs that is ~1e-4 past the ±3 clip, too
+small to justify a re-clip that would cost involutivity.
+
+It runs **first among the intensity transforms**, because polarity is a property of the
+tomogram rather than an acquisition effect, and because `RandomLocalGamma` is not symmetric
+about the mean — applying gamma before the inversion would model a gamma response on the
+wrong polarity. Pinned by `test_inversion_precedes_the_other_intensity_transforms`.
+
+Off by default (`contrast_inversion_p=0.0`). Use `0.5` for an even mix. Note this buys
+polarity invariance at some cost in specificity, so it is only worth enabling if the data
+actually spans both conventions.
+
 ### C2. Config
 
 Add an `AugmentationConfig` dataclass to `tomocpt/defaultConfigs/train_config.py`, mirroring

@@ -16,6 +16,7 @@ from tomocpt.dataManager.intensity_augmentations import (
     RandomBrightness,
     RandomBrightnessGradient,
     RandomContrast,
+    RandomContrastInversion,
     RandomLocalGamma,
 )
 from tomocpt.defaultConfigs.train_config import AugmentationConfig
@@ -45,7 +46,7 @@ def build_training_transforms(cfg: Optional[AugmentationConfig] = None) -> tio.C
     1. ``tio.RandomAffine`` - image and label rotated together.
     2. ``tio.OneOf({RandomElasticDeformation, RandomBlur})``.
     3. :class:`RandomFourierDegradation` - **after all spatial transforms**.
-    4. Intensity transforms.
+    4. Intensity transforms, contrast inversion first.
 
     Step 3's position is the entire point of the augmentation: running after the
     rotations makes the missing wedge land at a random orientation relative to
@@ -81,6 +82,12 @@ def build_training_transforms(cfg: Optional[AugmentationConfig] = None) -> tio.C
         )
 
     # --- Intensity transforms ---
+    # Contrast inversion goes first: it represents the tomogram's polarity
+    # convention, so everything downstream then acts on the data in the
+    # convention the network will actually see. It also matters that it precedes
+    # RandomLocalGamma, which is not symmetric about the mean.
+    if cfg.contrast_inversion_p > 0:
+        transforms.append(RandomContrastInversion(p=cfg.contrast_inversion_p))
     if cfg.brightness_gradient_p > 0:
         transforms.append(RandomBrightnessGradient(p=cfg.brightness_gradient_p))
     if cfg.local_gamma_p > 0:

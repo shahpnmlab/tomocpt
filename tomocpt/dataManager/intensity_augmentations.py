@@ -40,6 +40,7 @@ from tomocpt.dataManager.fourier_augmentations import (
 )
 
 __all__ = [
+    "RandomContrastInversion",
     "RandomBrightnessGradient",
     "RandomLocalGamma",
     "RandomBrightness",
@@ -73,6 +74,55 @@ def _default_gamma() -> float:
     if np.random.uniform() < 0.5:
         return float(np.random.uniform(0.01, 0.8))
     return float(np.random.uniform(1.5, 4))
+
+
+class RandomContrastInversion(tio.IntensityTransform):
+    """Randomly flip the contrast polarity of the image.
+
+    Tomograms come in both conventions - particles dark on a light background
+    and light on a dark one - depending on CTF handling and reconstruction
+    convention. A picker trained on one polarity learns the sign of the density
+    as a feature and transfers badly to the other. Applying this makes the
+    network invariant to the convention instead.
+
+    The label is deliberately left alone, so the network must locate the same
+    particles whichever way the density runs.
+
+    The image is reflected about its own mean rather than simply negated. For
+    tomocpt's zero-centred inputs the two are equivalent, but reflecting is
+    correct for any input whose mean is not already zero, and it leaves the mean
+    untouched. Reflection is its own inverse, so applying it twice is a no-op and
+    the augmentation stays symmetric at any probability - unlike the reference's
+    ``RandAdjustContrastWithInversionAndStats``, which always inverts and relies
+    on being applied exactly twice to balance out.
+
+    Parameters
+    ----------
+    **kwargs
+        Forwarded to :class:`torchio.IntensityTransform`, including ``p``, which
+        is the probability of inverting. ``p=0.5`` gives an even mix of both
+        polarities.
+
+    Notes
+    -----
+    Reflection preserves the mean and standard deviation exactly, and shifts the
+    range by exactly ``2 * mean``: a ``+/- 3`` clipped input comes back in
+    ``[2 * mean - 3, 2 * mean + 3]``. tomocpt's inputs are zero-centred by
+    ``robust_normalization``, so in practice that overshoot is on the order of
+    1e-4 and no re-clipping is applied - clipping would cost the involution
+    property, which is worth more than four decimal places of range.
+
+    Plain negation would instead preserve the range exactly and flip the sign of
+    the mean. The two differ only by ``2 * mean``; preserving the distribution's
+    shape is the more useful guarantee.
+    """
+
+    def apply_transform(self, subject: tio.Subject) -> tio.Subject:
+        """Invert every scalar image about its mean; skip every label map."""
+        for image in self.get_images(subject):
+            data = image.data
+            image.set_data(2.0 * data.mean() - data)
+        return subject
 
 
 class RandomBrightnessGradient(tio.IntensityTransform):

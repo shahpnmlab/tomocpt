@@ -52,6 +52,9 @@ train:
     reclip: true
     clip_value: 3.0
     # Intensity augmentations, all off by default.
+    # contrast_inversion_p: 0.5 gives an even mix of dark-on-light and
+    # light-on-dark, making the picker invariant to tomogram contrast type.
+    contrast_inversion_p: 0.0
     brightness_gradient_p: 0.0
     local_gamma_p: 0.0
     brightness_p: 0.0
