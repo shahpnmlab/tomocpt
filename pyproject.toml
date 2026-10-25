@@ -49,6 +49,11 @@ dependencies = [
 dev = [
     "pytest>=7.0",
 ]
+# Only needed for scripts/download_portal_data.py
+portal = [
+    "cryoet-data-portal>=4,<5",
+    "requests>=2,<3",
+]
 
 [project.urls]
 Homepage = "https://github.com/shahpnmlab/tomocpt"

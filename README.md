@@ -185,6 +185,30 @@ In this mode `weights` is not required. Every MRC file in `predictions_dir` is t
 confidence map, unless `tomogram_dir`/`tomogram_file` is set, in which case only the maps
 matching those tomogram names are used.
 
+## Downloading data from the CryoET Data Portal
+
+`scripts/download_portal_data.py` downloads tomograms and point annotations from the
+[CryoET Data Portal](https://cryoetdataportal.czscience.com) and writes STAR files and a
+`prepData` block that `tomocpt prepare_data` can use directly.
+
+```bash
+pip install -e '.[portal]'
+
+# See what a dataset has, without downloading
+python scripts/download_portal_data.py --dataset-id 10440 --out data/czii --list
+
+# CZII object-identification training data at 10.012 A/px
+python scripts/download_portal_data.py --dataset-id 10440 --out data/czii \
+    --voxel-spacing 10.012 --processing denoised --diameters ribosome=300
+```
+
+It writes `tomograms/<run>.mrc`, one STAR file per object in `coords/`, `coords/all_objects.star`
+(one class number per object), `manifest.json`, and `prepdata_snippet.yaml`. Objects without a
+`--diameters` value get `???` in the snippet. Fill those in before `prepare_data`.
+Downloads resume after an interruption and are checked against the portal's file size.
+The script stops if annotation points fall outside the tomogram, which usually means a unit
+or alignment mismatch.
+
 ## Performance Tips
 
 1.  **GPU Acceleration**: Enable CUDA for both training and inference for best performance.
