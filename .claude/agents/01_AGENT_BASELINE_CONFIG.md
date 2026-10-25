@@ -81,6 +81,12 @@ class SSLConfig:
     even_odd_suffixes: Optional[Tuple[str, str]] = None
     wedge_task: bool = False
     tilt_range_deg: float = 60.0
+    use_mw_aug: bool = True              # used only when version == 2
+    use_fourier_aug: bool = True         # used only when version == 2
+    degradation_p: float = 0.8
+    keep_angle_min: float = 30.0
+    keep_angle_max: float = 60.0
+    inversion_p: float = 0.5
 ```
 
 `defaultConfigs/moe_config.py`
@@ -89,22 +95,35 @@ class SSLConfig:
 class MoEConfig:
     enabled: bool = False
     stages: Tuple[str, ...] = ("layers2", "layers3")
-    experts: Tuple[str, ...] = ("mlp", "dw_d1", "dw_d2", "dw_d3")
+    experts: Tuple[str, ...] = ("mlp", "dw_d1", "dw_d2", "dw_d3", "line", "sheet", "smooth")
     cond_dim: int = 64
     balance_weight: float = 0.01
     z_loss_weight: float = 1e-3
     router_temperature: float = 1.0
+    route_supervision_weight: float = 0.0
+```
+
+`defaultConfigs/tasks_config.py`
+```python
+@dataclass
+class TasksConfig:
+    classes: Tuple[str, ...] = ()        # subset of ("membrane", "filament", "organelle", "void")
+    class_weights: Tuple[float, ...] = ()
+    context_apix: float = 40.0
+    context_classes: Tuple[str, ...] = ("organelle", "void")
+    fine_apix: Optional[float] = None    # None: use the particle band rule
 ```
 
 Add fields (CLAUDE.md Section 6):
 - `PrepdataConfig`: `label_border_policy: str = "skip"`, `write_coordinates: bool = True`,
   `apix_override: Optional[float] = None`.
 - `TrainConfig`: `data_pipeline_version: int = 1`, `scale: ScaleConfig`, `pu: PUConfig`,
-  `ssl: SSLConfig`.
+  `ssl: SSLConfig`, `tasks: TasksConfig`.
 - `NetworkConfig`: `size_conditioning: bool = False`, `moe: MoEConfig`.
 - `AugmentationConfig` (existing, `train_config.py`): `label_interpolation: str = "nearest"`,
   `rotation_mode: str = "affine"`, `flip_p: float = 0.0`, `contrast_inversion_p: float = 0.8`.
-- `InferConfig`: `lengths: Optional[str] = None`, `apix_override: Optional[float] = None`.
+- `InferConfig`: `lengths: Optional[str] = None`, `apix_override: Optional[float] = None`,
+  `export_structures: bool = False`.
 
 Expose the new top-level scalar fields (`data_pipeline_version`, `label_border_policy`,
 `write_coordinates`, `apix_override`, `size_conditioning`, `lengths`) to the CLI with
@@ -123,6 +142,7 @@ Typer `Annotated` help text, like the existing fields. `tomocpt init` writes onl
 - `tomocpt.defaultConfigs.pu_config.{PUConfig, PUMode}`
 - `tomocpt.defaultConfigs.ssl_config.SSLConfig`
 - `tomocpt.defaultConfigs.moe_config.MoEConfig`
+- `tomocpt.defaultConfigs.tasks_config.TasksConfig`
 
 ## Pass criteria
 - **G1-C1** Gaussian target golden: `generate_gaussian_sphere(R, 2R+1)` for R in

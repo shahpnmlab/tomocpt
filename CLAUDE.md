@@ -183,19 +183,24 @@ Huber delta is 1.0. The second term is the full Hessian, not a Laplacian.
 
 ## 2. Goal and non-goals
 
-**Goal.** Remove the requirement that every particle is rescaled to one size.
-The network must pick particles whose diameter varies within a band of voxel sizes,
-given the target diameter as an input. One backbone pass must serve several target
-sizes. Legacy behaviour and legacy checkpoints must keep working unchanged.
+**Goal, stage 1 (Gates 1–5).** Remove the requirement that every particle is rescaled
+to one size. The network must pick particles whose diameter varies within a band of
+voxel sizes, given the target diameter as an input. One backbone pass must serve several
+target sizes. Wedge-aware self-supervised pretraining supports this.
 
-**Main hypothesis.** Size conditioning (FiLM) plus multi-scale training data gives
-most of the benefit. A scale-routed mixture of experts (Gate 6) is an experiment.
-It ships only if it beats two controls (Gate 6 spec).
+**Goal, stage 2 (Gates 6–7).** One model, one inference run: particle centroids plus
+probability maps for membranes, filaments, organelles and void. Trained from partial
+labels (Gate 6). A mixture of experts with structure- and scale-specific operators
+(Gate 7) is an experiment; it ships only if it beats two controls.
 
-**Non-goals for this programme.** Emergent membrane or filament segmentation from
-router maps. "Discover all species" picking. Shape-named experts. Use external
-segmentation (for example MemBrain-seg) through the existing `infer.masks_dir` if
-you need membrane masks.
+Legacy behaviour and legacy checkpoints must keep working unchanged throughout.
+
+**Main hypothesis.** Size conditioning plus multi-scale data gives most of the picking
+benefit. Labelled multi-task heads give the segmentation. MoE may add capacity where the
+tasks compete.
+
+**Non-goals.** Segmentation that "emerges" from router maps without labels.
+"Discover all species" picking.
 
 ---
 
@@ -243,7 +248,8 @@ groups (`dataManager.scaling.group_lengths`) and process each group separately.
    append to Python lists or change state that depends on how many times it runs.
    Overwrite per-forward statistics. Collect them right after `swinViT` returns.
 7. **Output contract.** Model `forward` returns `(logits, hidden_states_out[4])`.
-   `logits` are pre-sigmoid.
+   `logits` are pre-sigmoid. Channel 0 is always the centroid heatmap; Gate 6 adds
+   structure channels after it, in `train.tasks.classes` order.
 8. **Dependencies.** Use only the packages pinned in `pyproject.toml`
    (torch 2.5.1, MONAI 1.4.0, Kornia 0.7.4, TorchIO 0.20.2, Lightning 2.4.0,
    einops 0.8.0, and the others). Add nothing that needs compilation. Any new
@@ -280,6 +286,10 @@ Do not rename `input_data` or `target_data`.
   plus `encode(x) -> hidden_states` and `decode(x, hidden_states, d_vox) -> logits`.
   `d_vox=None` gives exactly the legacy computation.
 - Size embedding input: `t = log(d_vox / 20.0)`. At `d_vox = 20`, `t = 0`.
+- Gate 6: `MultiStructureSwinUNETR.forward(x, d_vox=None, apix=None) -> (logits, hidden4)`,
+  `logits [B, 1+K, D, H, W]`; conditioning `ConditionEmbedding(d_vox, apix)` with
+  `t_apix = log(apix / 10.0)`. Multi-structure batches add `seg_target [B,K,D,H,W]` float32
+  and `seg_available [B,K]` bool.
 
 ### 5.3 Picking loss in pipeline v2
 Same as Section 1.5, except the Hessian is scale-normalised per sample before the
@@ -303,7 +313,9 @@ Pipeline v1 uses Section 1.5 unchanged.
 | `train.pu` | `PUConfig` (file `defaultConfigs/pu_config.py`) | 3 |
 | `train.ssl` | `SSLConfig` (file `defaultConfigs/ssl_config.py`) | 5 |
 | `train.network.size_conditioning` | bool = `False` | 3 |
-| `train.network.moe` | `MoEConfig` (file `defaultConfigs/moe_config.py`) | 6 |
+| `train.tasks` | `TasksConfig` (file `defaultConfigs/tasks_config.py`) | 6 |
+| `train.network.moe` | `MoEConfig` (file `defaultConfigs/moe_config.py`) | 7 |
+| `infer.export_structures` | bool = `False` | 6 |
 | `infer.lengths` | Optional[str] = `None` (comma-separated Å) | 4 |
 | `infer.apix_override` | Optional[float] = `None` | 4 |
 
@@ -320,7 +332,8 @@ Field details are in each gate spec. All defaults reproduce v1.
 | 3 | `03_AGENT_SIZE_CONDITIONED_MODEL.md` | FiLM size conditioning, v2 loss, optional PU | `tomocpt/networks/{swinunetr,conditioning,pickingModel,distillationModel,inference,baseModel}.py`, `tomocpt/training/**`, `tomocpt/defaultConfigs/{network_config,pu_config}.py` |
 | 4 | `04_AGENT_INFER_BENCHMARK.md` | v2 inference, multi-length picking, benchmark harness | `tomocpt/predict/**`, `tomocpt/defaultConfigs/infer_config.py`, `benchmarks/**`, `README.md` |
 | 5 | `05_AGENT_SSL_WEDGE.md` | Wedge-aware SSL v2 with relative-scale task | `tomocpt/networks/selfSupervisedModel.py`, `tomocpt/networks/ssl/**`, `tomocpt/dataManager/ssl_views.py`, `tomocpt/defaultConfigs/ssl_config.py`, `tomocpt/training/helpers.py` (self-supervised branches only) |
-| 6 | `06_AGENT_SCALE_MOE.md` | Scale-expert soft MoE experiment and decision | `tomocpt/networks/moe.py`, `tomocpt/defaultConfigs/moe_config.py`, `benchmarks/moe_ablation.py`; one call in `NetworkConfig.build_model`; auxiliary-loss lines in `pickingModel.py` and `distillationModel.py` |
+| 6 | `06_AGENT_MULTI_STRUCTURE.md` | Particles + membrane, filament, organelle, void in one model; partial labels; two-resolution inference | see the spec (heads, seg losses, segmentation labels, chunk targets, predict outputs, portal masks) |
+| 7 | `07_AGENT_MOE.md` | Structure- and scale-expert soft MoE experiment and decision | `tomocpt/networks/moe.py`, `tomocpt/defaultConfigs/moe_config.py`, `benchmarks/moe_ablation.py`; one call in `NetworkConfig.build_model`; auxiliary-loss lines in `pickingModel.py` and `distillationModel.py` |
 
 Every gate also writes `.claude/reports/gate_0N_report.json`.
 Tests live in `tests/gateN/` and are written by the Test Author

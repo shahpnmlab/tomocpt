@@ -40,10 +40,37 @@ keep SSL → picking transfer working.
 - **Noise equalisation.** Estimate the noise std of each view from the Fourier shell
   0.8–0.9 Nyquist. Add white noise to the quieter view until both match. Then robust-
   normalise each view. This removes the "noise level tells the scale" shortcut.
-- **Wedge-preserving augmentation `G`** (per view): optionally the existing
-  `RandomFourierDegradation` (its oriented wedge agrees with real data), random flips of each axis,
-  intensity `a·x + b` with `a ∈ [0.8, 1.2]`, `b ∈ [-0.1, 0.1]`, Gaussian noise
-  `σ ∈ [0, 0.1]`. No rotations except those that flips produce (180° about an axis).
+- **Wedge-preserving spatial augmentation** (per view): random flips of each axis. No
+  rotations except those that flips produce (180° about an axis). The same flips are
+  applied to the view and to its reconstruction target.
+- **Degradation augmentation `D`** (per view, independent parameters; on by default in v2).
+  This is where the Fourier augmentations go. `D` changes only the **network input**;
+  the reconstruction target is the same view **without** `D`.
+  1. `RandomFourierDegradation` with `missing_wedge_aug` and `amplitude_aug` on
+     (`ssl.use_mw_aug`, `ssl.use_fourier_aug`, `ssl.degradation_p`, default 0.8).
+     Missing wedge: `keep_angle` in `[30°, 60°]` (models tilt ranges narrower than the
+     data's), oriented for `(z, y, x)`. Amplitude: models different defocus, CTF handling
+     and dose filtering. Local blend as in the transform.
+  2. Intensity `a·x + b` with `a ∈ [0.8, 1.2]`, `b ∈ [-0.1, 0.1]`; Gaussian noise
+     `σ ∈ [0, 0.1]`.
+  Why this helps each task:
+  - *Reconstruction* becomes "restore the clean view from a degraded one", which is
+    IsoNet-style de-wedging and denoising. The network learns to infer structure in
+    wedge-affected regions, which is what picking needs.
+  - *Contrastive*: views A and B get different degradations, so the embedding learns to
+    ignore CTF, dose and wedge differences between datasets. This is the main benefit
+    for transfer to new datasets.
+  - *Relative scale*: random amplitude spectra hide the radial power-spectrum shape,
+    which is the main shortcut for guessing scale. (G5-C13 checks this with `D` on.)
+  Do not apply `D` to the target. A degraded target teaches the network to reproduce the
+  artefacts.
+- **Polarity.** Contrast inversion with `ssl.inversion_p` (default 0.5), drawn per view
+  and applied to the view **and** its target together, so reconstruction stays possible
+  and the two contrastive views can have opposite polarity.
+- **Order per view:** crop and Fourier-resample → noise equalisation (both views) →
+  flips (view and target) → polarity (view and target) → `D` (view only) → masking
+  (view only) → robust normalisation of the input (the target uses the same affine
+  normalisation, so its values are comparable).
 - **Tasks.**
   1. *Masked reconstruction*: blocks of 8–16 voxels, mask ratio `U(0.15, 0.4)`, fill
      value 0. Loss `L1(masked) + recon_visible_weight · L1(visible)` (v2 default 0.1).
@@ -57,7 +84,9 @@ keep SSL → picking transfer working.
      antisymmetric by construction. Smooth-L1 loss.
      The contrastive projection absorbs scale invariance; the scale head reads the
      un-projected features.
-  4. *Wedge task* (optional, `wedge_task = True`, off by default; experimental):
+  4. *Wedge task* (optional, `wedge_task = True`, off by default; experimental). The
+     degradation augmentation only adds extra wedge in the data's own orientation. This
+     task trains filling of the real wedge direction:
      rotate a view by a random 3D rotation `R`, apply the canonical missing-wedge mask
      (`dataManager.fourier_augmentations.oriented_wedge_mask`, `array_order="zyx"`)
      in Fourier space, and train the decoder to restore `R·x` on the Fourier
@@ -83,7 +112,11 @@ keep SSL → picking transfer working.
   `dataManager/ssl_views.py`. Write `chunk_format.json` with `"kind": "ssl"`.
 - **T5.3** `tomocpt.networks.ssl.views`: `make_scale_pair(source, centre, s_a, s_b,
   apix_ref, rng) -> (view_a, view_b, target_log2)`, `equalise_noise(view_a, view_b)`,
-  `wedge_preserving_augment(view, rng)`.
+  `wedge_preserving_augment(view, target, rng) -> (view, target)` (flips and polarity,
+  applied to both), `degrade(view, ssl_cfg, rng) -> view` (the augmentation `D`; reuses
+  `RandomFourierDegradation._degrade_patch`, no copy of its numerics).
+  `make_training_pair(...) -> dict(input_a, target_a, mask_a, input_b, target_b, mask_b, target_log2)`
+  runs the full order above.
 - **T5.4** `tomocpt.networks.ssl.losses`: `masked_l1(pred, target, mask, visible_weight)`,
   `nt_xent(z_a, z_b, temperature, l1_weight)`.
 - **T5.5** `tomocpt.networks.ssl.heads`: `ProjectionHead`, `RelativeScaleHead`.
@@ -107,7 +140,8 @@ keep SSL → picking transfer working.
   `wedge_power_fraction` (canonical orientation) above 0.2; rot180 about Z and every
   axis flip keep it below 0.02.
 - **G5-C4** `wedge_preserving_augment` and `make_scale_pair` keep
-  `wedge_power_fraction` < 0.02 (50 draws).
+  `wedge_power_fraction` < 0.02 (50 draws). `degrade` with only the wedge on also keeps
+  it < 0.02 (its wedge is oriented like the data's).
 - **G5-C5** `masked_l1`: with equal residuals, the gradient at a visible voxel is
   `visible_weight ×` the gradient at a masked voxel; masked input voxels are exactly 0.
 - **G5-C6** `make_scale_pair`: target equals `log2(s_a/s_b)`; on a one-blob volume the
@@ -121,8 +155,17 @@ keep SSL → picking transfer working.
   conditioned) loads; only SSL heads are dropped and only `cond.*` is missing.
 - **G5-C12** (slow) Scale learning: structured phantoms (blobs, sheets, tubes, wedge,
   noise); held-out MAE of `log2` ratio < 0.15.
-- **G5-C13** (slow) Shortcut control: same pipeline on pure-noise volumes; the absolute
+- **G5-C15** Target is clean: in `make_training_pair`, `target_a` equals the view after
+  flips and polarity only (bitwise, for a fixed seed), even with `degradation_p = 1`;
+  `input_a` differs from `target_a` outside the mask.
+- **G5-C16** Polarity is consistent: with `inversion_p = 1`, `target_a` is the inverted
+  view and the masked-region L1 between a perfect predictor and the target is 0.
+- **G5-C17** `degrade` keeps the view's mean and standard deviation (rtol 0.02).
+- **G5-C13** (slow) Shortcut control (run with `D` on): same pipeline on pure-noise volumes; the absolute
   Pearson correlation between predicted and true ratio < 0.2.
+- **G5-C18** (slow, report only) Degradation ablation: SSL v2 with `D` on vs off; then
+  picking fine-tune on a synthetic set whose test tomograms use a different amplitude
+  spectrum and tilt range from training. Report F1 for both.
 - **G5-C14** (slow, report only) Picking fine-tune from SSL v2 vs from scratch on the
   Gate 3 G3-C12 task: report steps to reach F1 0.7. Not a pass condition.
 

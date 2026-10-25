@@ -49,7 +49,12 @@ Create `tests/utils/` with:
   hollow spheres with dark contrast (density negative, as in cryo-ET), placed
   without overlap and away from borders unless `allow_border=True`. Sheets are
   bilayers (two parallel dark planes, 40 Å apart, random orientation). Tubes are
-  hollow cylinders (diameter 250 Å). Apply the wedge, then add white Gaussian noise
+  hollow cylinders (diameter 250 Å; `tube_diameter_ang` sets it, e.g. 70 for actin).
+  Extra keyword arguments for Gate 6: `vesicles=0` (large closed bilayer shells,
+  diameter 600–1500 Å, interior slightly denser than cytosol = organelle lumen) and
+  `void_slab=False` (an empty, noise-only slab at one Z face, as outside a lamella).
+  `make_phantom` also returns `masks: dict[str, np.ndarray]` with the exact membrane,
+  filament, organelle and void masks at the phantom's voxel size. Apply the wedge, then add white Gaussian noise
   for the requested SNR. Coordinates are `(x, y, z)` in voxels, matching RELION order.
 - `write_mrc(path, vol, apix)` and `write_star(path, coords_xyz, tomo_name, apix)`
   (RELION 3.1 style, `rlnCoordinateX/Y/Z`, `rlnMicrographName`).
