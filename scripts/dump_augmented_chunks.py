@@ -49,7 +49,7 @@ import torchio as tio
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from tomocpt.dataManager.dataloading import VolumeDatsetIO, build_training_transforms
-from tomocpt.dataManager.fourier_augmentations import wedge_mask
+from tomocpt.dataManager.fourier_augmentations import oriented_wedge_mask
 from tomocpt.defaultConfigs.train_config import AugmentationConfig
 
 
@@ -122,7 +122,7 @@ def wedge_residual_power(augmented: np.ndarray, keep: np.ndarray) -> float:
     augmented : np.ndarray
         The augmented volume.
     keep : np.ndarray
-        The keep mask the transform applies, from :func:`wedge_mask`.
+        The keep mask the transform applies, from :func:`oriented_wedge_mask`.
 
     Returns
     -------
@@ -268,7 +268,7 @@ def main() -> int:
         if args.png:
             montage.append((stem, orig_np, aug_np))
         if args.report:
-            keep = wedge_mask(orig_np.shape, args.keep_angle, taper_width=args.taper_width)
+            keep = oriented_wedge_mask(orig_np.shape, args.keep_angle, taper_width=args.taper_width)
             rows.append(
                 (
                     stem,

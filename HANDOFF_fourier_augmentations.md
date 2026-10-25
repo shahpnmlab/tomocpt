@@ -10,6 +10,26 @@
 > backwards. Gate B's open question about the angle convention is resolved and marked
 > **[RESOLVED]**. Read those before acting on the surrounding text.
 
+
+> **Review fixes (2026-10-25), read before Gate F.** Two defects were found in review and fixed;
+> both are covered by `tests/test_fourier_orientation_and_scale.py`.
+>
+> 1. **Wedge orientation.** membrain-seg transposes tomograms to `(x, y, z)` on load
+>    (`data_utils.load_tomogram`); tomocpt keeps mrcfile's `(z, y, x)`. The faithfully
+>    ported `wedge_mask` therefore kept the wedge around **kZ** and removed the region
+>    around **kX** — the frequencies a real tomogram measures. Measured on a 64³ grid:
+>    the unmodified mask kept only 31 % of the coefficients a ±60° tomogram measures;
+>    the oriented mask keeps 71 %. `wedge_mask` itself is unchanged (port equivalence
+>    still holds); the transform now uses `oriented_wedge_mask(..., array_order="zyx")`.
+>    The Gate E tests could not catch this: they measure the wedge against the same mask
+>    the transform applies, not against a real tomogram's wedge.
+> 2. **Output scale.** The reference returns zero mean and unit standard deviation.
+>    tomocpt chunks have a standard deviation of about 0.30 after `robust_normalization`,
+>    so every degraded chunk came back 3.3x larger in amplitude than every clean chunk
+>    (measured: 0.304 → 0.997). The network could tell augmented samples apart by scale
+>    alone. The transform now restores the input patch's mean and standard deviation
+>    (`match_input_stats=True`, default); `False` gives the reference behaviour.
+
 ---
 
 ## Context

@@ -37,6 +37,7 @@ __all__ = [
     "sample_scalar",
     "generate_gaussian_kernel",
     "wedge_mask",
+    "oriented_wedge_mask",
     "get_line_plot",
     "normalize_and_fft_patch",
     "fft_patch_to_real",
@@ -218,6 +219,55 @@ def wedge_mask(
     return ~removal_mask
 
 
+ARRAY_ORDERS = ("zyx", "xyz")
+
+
+def oriented_wedge_mask(
+    shape: Tuple[int, int, int],
+    angle: float,
+    array_order: str = "zyx",
+    taper_width: float = 0.0,
+    zero_dc: bool = True,
+) -> np.ndarray:
+    """Return a keep mask whose retained wedge lies around the X frequency axis.
+
+    :func:`wedge_mask` is a faithful copy of membrain-seg, which works on arrays
+    in ``(x, y, z)`` order (its ``load_tomogram`` transposes the MRC data). There,
+    the retained wedge sits around axis 0, which is X, and the removed wedge
+    around axis 2, which is Z (the beam). That matches a real tomogram with the
+    tilt axis along Y.
+
+    tomocpt keeps mrcfile's ``(z, y, x)`` order. Used unchanged, the reference
+    mask keeps the wedge around Z and removes the frequencies that a real
+    tomogram measures. This wrapper builds the reference mask on the reversed
+    shape and transposes it back, so the retained wedge lies around X in either
+    order.
+
+    Parameters
+    ----------
+    shape : Tuple[int, int, int]
+        Shape of the spectrum, in ``array_order``.
+    angle : float
+        Half-opening in degrees of the retained wedge, measured from the X axis
+        in the X-Z plane (that is, the maximum tilt angle). See :func:`wedge_mask`.
+    array_order : str, optional
+        ``"zyx"`` (tomocpt, the default) or ``"xyz"`` (membrain-seg).
+    taper_width, zero_dc
+        Forwarded to :func:`wedge_mask`.
+
+    Returns
+    -------
+    np.ndarray
+        Keep mask of shape ``shape``.
+    """
+    if array_order == "xyz":
+        return wedge_mask(shape, angle, taper_width=taper_width, zero_dc=zero_dc)
+    if array_order == "zyx":
+        mask = wedge_mask(tuple(shape)[::-1], angle, taper_width=taper_width, zero_dc=zero_dc)
+        return np.ascontiguousarray(mask.transpose(2, 1, 0))
+    raise ValueError(f"array_order must be one of {ARRAY_ORDERS}, got {array_order!r}")
+
+
 def get_line_plot(
     n_points: int, smooth_sigma: float, step_sigma: float, offset: float
 ) -> Tuple[np.ndarray, np.ndarray]:
@@ -389,6 +439,18 @@ class RandomFourierDegradation(tio.IntensityTransform):
         ``robust_normalization`` feeds in.
     clip_value : float, optional
         Clip bound used when ``reclip`` is set.
+    array_order : str, optional
+        Axis order of the patch: ``"zyx"`` (tomocpt, the default) or ``"xyz"``
+        (membrain-seg). It decides where the wedge goes; see
+        :func:`oriented_wedge_mask`. With the wrong order the wedge is rotated
+        by 90 degrees and removes the frequencies a real tomogram measures.
+    match_input_stats : bool, optional
+        Give the output the mean and standard deviation of the input patch
+        (default). The reference returns zero mean and unit standard deviation,
+        which suits membrain-seg's inputs. tomocpt's ``robust_normalization``
+        gives chunks a standard deviation of about 0.3, so without this every
+        degraded chunk would be about 3x larger in amplitude than every clean one,
+        and the network could tell them apart by scale alone.
     **kwargs
         Forwarded to :class:`torchio.IntensityTransform`.
 
@@ -414,9 +476,15 @@ class RandomFourierDegradation(tio.IntensityTransform):
         taper_width: float = 0.0,
         reclip: bool = True,
         clip_value: float = 3.0,
+        array_order: str = "zyx",
+        match_input_stats: bool = True,
         **kwargs,
     ):
         super().__init__(**kwargs)
+        if array_order not in ARRAY_ORDERS:
+            raise ValueError(f"array_order must be one of {ARRAY_ORDERS}, got {array_order!r}")
+        self.array_order = array_order
+        self.match_input_stats = match_input_stats
         self.amplitude_aug = amplitude_aug
         self.missing_wedge_aug = missing_wedge_aug
         self.smooth_sigma_range = smooth_sigma_range
@@ -495,8 +563,11 @@ class RandomFourierDegradation(tio.IntensityTransform):
             fft_patch = fft_patch * rotational_kernel(fake_spectrum, patch.shape)
 
         if self.missing_wedge_aug and params["do_mw"]:
-            keep = wedge_mask(
-                patch.shape, params["keep_angle"], taper_width=self.taper_width
+            keep = oriented_wedge_mask(
+                patch.shape,
+                params["keep_angle"],
+                array_order=self.array_order,
+                taper_width=self.taper_width,
             )
             if keep.dtype == bool:
                 fft_patch[~keep] = 0.0
@@ -510,6 +581,13 @@ class RandomFourierDegradation(tio.IntensityTransform):
             real_patch = run_interpolation(_standardize(patch), real_patch, kernel)
 
         real_patch = _standardize(real_patch)
+        if self.match_input_stats:
+            # Return to the input's own scale and offset (see the class docstring).
+            # A constant input (for example a fully padded chunk) has std 0; it
+            # comes back as that constant.
+            mean_in = float(np.mean(patch, dtype=np.float64))
+            std_in = float(np.std(patch, dtype=np.float64))
+            real_patch = real_patch * std_in + mean_in
         if self.reclip:
             real_patch = np.clip(real_patch, -self.clip_value, self.clip_value)
         return np.ascontiguousarray(real_patch, dtype=np.float32)
