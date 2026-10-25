@@ -40,7 +40,8 @@ keep SSL → picking transfer working.
 - **Noise equalisation.** Estimate the noise std of each view from the Fourier shell
   0.8–0.9 Nyquist. Add white noise to the quieter view until both match. Then robust-
   normalise each view. This removes the "noise level tells the scale" shortcut.
-- **Wedge-preserving augmentation `G`** (per view): random flips of each axis,
+- **Wedge-preserving augmentation `G`** (per view): optionally the existing
+  `RandomFourierDegradation` (its oriented wedge agrees with real data), random flips of each axis,
   intensity `a·x + b` with `a ∈ [0.8, 1.2]`, `b ∈ [-0.1, 0.1]`, Gaussian noise
   `σ ∈ [0, 0.1]`. No rotations except those that flips produce (180° about an axis).
 - **Tasks.**
@@ -58,6 +59,7 @@ keep SSL → picking transfer working.
      un-projected features.
   4. *Wedge task* (optional, `wedge_task = True`, off by default; experimental):
      rotate a view by a random 3D rotation `R`, apply the canonical missing-wedge mask
+     (`dataManager.fourier_augmentations.oriented_wedge_mask`, `array_order="zyx"`)
      in Fourier space, and train the decoder to restore `R·x` on the Fourier
      coefficients that `R·x` measured but the input lacks. This follows the idea of
      DeepDeWedge (Wiedemann & Heckel, Nat. Commun. 2024).

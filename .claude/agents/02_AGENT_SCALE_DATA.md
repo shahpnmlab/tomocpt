@@ -88,14 +88,21 @@ def write_chunk_format(chunks_dir, info: dict) / read_chunk_format(chunks_dir) -
 ```
 
 ### T2.4 Dataset and augmentation v2 (`dataManager/dataloading.py`)
-- `build_transforms(scale_cfg, pipeline_version, is_training) -> Optional[tio.Compose]`.
-  v1 returns the existing pipeline unchanged.
-  v2: the target is a `tio.ScalarImage` (linear interpolation). `rotation_aug`:
-  `legacy` keeps `RandomAffine(degrees=45)`; `wedge_preserving` uses only
-  `RandomFlip(axes=(0,1,2))` (axis flips keep the missing wedge in place). Keep the
-  `OneOf(elastic, blur)` block.
+- Extend the existing `build_training_transforms(cfg: AugmentationConfig)`. Keep its
+  order (spatial → Fourier → intensity) and its defaults (v1 pipeline unchanged).
+  - `label_interpolation="linear"` passes `label_interpolation="linear"` to
+    `RandomAffine` and `RandomElasticDeformation`. The target **stays a `tio.LabelMap`**
+    (CLAUDE.md invariant 11): the Fourier and intensity transforms must keep skipping it.
+  - `rotation_mode="flips"` replaces `RandomAffine` with
+    `RandomFlip(axes=(0,1,2), flip_probability=flip_p)`. Axis flips keep the real missing
+    wedge where it is, so the network never sees a wedge orientation that real data do
+    not have. `RandomFourierDegradation` then adds its (oriented) wedge as before.
+  - Recommended v2 settings (not defaults): `label_interpolation="linear"`,
+    `rotation_mode="flips"`, `flip_p=0.5`.
 - Zoom augmentation (v2, `zoom_aug_max > 1`): draw `s ~ U(1, zoom_aug_max)`, zoom both
-  volume and target by `s` (trilinear), crop a random 64³, return `d_vox * s`.
+  volume and target by `s` (trilinear), crop a random 64³, return `d_vox * s`. Zoom is a
+  spatial step: apply it **before** `build_training_transforms` runs, so the Fourier
+  degradation still comes after every spatial change.
 - `VolumeDatsetIO` v2 returns the batch in CLAUDE.md Section 5.1. v1 output unchanged.
 - `size_balanced_sampling`: sample weights `∝ 1 / count(bin)` with 8 bins of
   `log(d_vox)` over the band. Lightning wraps the sampler for DDP.
@@ -104,7 +111,7 @@ def write_chunk_format(chunks_dir, info: dict) / read_chunk_format(chunks_dir) -
 `tomocpt.dataManager.scaling.{read_apix, choose_working_apix, group_lengths, working_shape, resample_volume}`,
 `tomocpt.dataManager.metadata.{ChunkMeta, write_chunk_meta, read_chunk_meta, write_chunk_format, read_chunk_format, CHUNK_FORMAT_FILE, CHUNK_META_FILE}`,
 `tomocpt.labels.helpers.render_targets`,
-`tomocpt.dataManager.dataloading.{build_transforms, VolumeDatsetIO}`,
+`tomocpt.dataManager.dataloading.{build_training_transforms, VolumeDatsetIO}`,
 `tomocpt.dataManager.chunking.do_chunking` (new kwargs).
 
 ## Pass criteria
@@ -125,8 +132,14 @@ def write_chunk_format(chunks_dir, info: dict) / read_chunk_format(chunks_dir) -
   (matches v1) and partly drawn with `clip`.
 - **G2-C8** Format guard errors in both directions.
 - **G2-C9** Wedge preservation: on a wedged noise volume, `wedge_power_fraction`
-  stays < 0.02 for 50 draws of the `wedge_preserving` transforms.
-- **G2-C10** v2 subject target is `tio.ScalarImage`; v1 target is `tio.LabelMap`.
+  stays < 0.02 for 50 draws of the spatial part of the pipeline with
+  `rotation_mode="flips"`, and also with `use_mw_aug=True` added (the oriented
+  Fourier wedge must agree with the real one).
+- **G2-C10** The target is a `tio.LabelMap` in v1 and v2. With
+  `label_interpolation="linear"`, a rotated target has no nearest-neighbour plateaus
+  (its maximum stays within 1 % of the analytic peak after a 30° rotation), and the
+  full pipeline with every intensity and Fourier augmentation at `p=1` leaves the
+  target unchanged except for the spatial transforms.
 - **G2-C11** Zoom: with a fixed `s`, returned `d_vox` equals input × `s` (rtol 1e-6)
   and the target radius grows by `s` (± 1 voxel).
 - **G2-C12** `scales_per_tomogram=3`: three directories, distinct `apix_work`,

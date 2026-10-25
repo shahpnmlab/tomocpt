@@ -5,7 +5,9 @@ scale-free upgrade. Read all of it before you write code.
 
 Precedence when two sources disagree:
 1. A human instruction in the conversation.
-2. The legacy code at tag `gate-0-base` (commit `0402392`) for **legacy behaviour**.
+2. The legacy code at tag `gate-0-base` for **legacy behaviour**. `gate-0-base` is
+   `main` after `feat/fourier-augmentations` is merged; the orchestrator records the
+   commit in `.claude/state/gate_status.json`.
    Section 1 records that behaviour. If Section 1 and the code disagree, the code
    is correct. Stop and write an escalation report (see Section 8).
 3. This file.
@@ -56,9 +58,22 @@ Precedence when two sources disagree:
    tomograms (default). **One tomogram gives an empty train set and an error.**
 6. `dataManager/dataloading.VolumeDatsetIO` returns
    `{"input_data": [1,64,64,64], "target_data": [1,64,64,64]}`.
-   Training augmentation: `RandomAffine(degrees=45, p=0.8)` plus
-   `OneOf(RandomElasticDeformation, RandomBlur)`. The target is a `tio.LabelMap`, so
-   TorchIO resamples the soft target with **nearest-neighbour** interpolation.
+7. Training augmentation is built by
+   `dataManager/dataloading.build_training_transforms(cfg: AugmentationConfig)`
+   (config `train.augmentation`, in `defaultConfigs/train_config.py`), in this order:
+   1. `RandomAffine(degrees=45, p=0.8)` and `OneOf(RandomElasticDeformation, RandomBlur)`
+      (the historical pipeline);
+   2. `RandomFourierDegradation` (`dataManager/fourier_augmentations.py`): missing wedge,
+      amplitude-spectrum randomisation, local blend. Off by default
+      (`use_mw_aug`, `use_fourier_aug`). It must run after every spatial transform.
+      It orients the wedge for `(z, y, x)` arrays and keeps the input mean and std;
+   3. `RandomContrastInversion` at a fixed `p = 0.8` (`CONTRAST_INVERSION_PROB`,
+      **always on, not configurable**), then optional intensity transforms
+      (`dataManager/intensity_augmentations.py`), all off by default.
+   Validation uses no transform. The target is a `tio.LabelMap`: spatial transforms
+   resample it with **nearest-neighbour** interpolation, and every
+   `tio.IntensityTransform` skips it. That second property is what keeps the
+   Fourier and intensity augmentations off the target (see invariant 11).
 
 ### 1.3 Target
 `labels/helpers.generate_gaussian_sphere(radius_px, grid)`:
@@ -126,6 +141,8 @@ Huber delta is 1.0. The second term is the full Hessian, not a Laplacian.
   (NT-Xent, temperature 0.1, plus L1 = `1e-4 · Σ|z|`).
 - Reconstruction: the decoder output, L1 over the **whole** volume, weight 10.
 - Picking can start from an SSL checkpoint (`training/helpers._create_model`).
+- SSL training uses the same `Data` module, so the training augmentation in Section 1.2
+  (including contrast inversion at `p = 0.8`) also runs on SSL inputs.
 
 ### 1.8 Inference (`predict/run.py`, `predict/helpers.py`)
 - Dask cluster, one worker per GPU. `InferenceModel.load_from_checkpoint(strict=True)`.
@@ -139,16 +156,18 @@ Huber delta is 1.0. The second term is the full Hessian, not a Laplacian.
 
 ### 1.9 Checkpoints
 - Lightning saves the full `MainConfig` dataclass (pickled) in `hyper_parameters`.
-- `BaseModel.__init__` merges it with `update_config(mainConfig.train, source=ckpt_cfg.train)`.
-  That function calls `getattr(source, name)` for every field of the **current**
-  dataclass. A new nested field built with `default_factory` has no class attribute,
-  so loading any older checkpoint raises `AttributeError`. Gate 1 fixes this.
+- `BaseModel.__init__` first calls `configManager.backfill_missing_fields(config,
+  _mainConfigNoChanges)`, which adds current defaults for fields that an older
+  checkpoint lacks, then merges with `update_config(...)`, which skips fields missing
+  on the source. Without this, a new nested field built with `default_factory` would
+  make every older checkpoint raise `AttributeError` (dataclass unpickling does not
+  run `__init__`). Gate 1 adds tests that load a real older checkpoint.
 
 ### 1.10 Known legacy defects (do not "fix" them outside the named gate)
 | Defect | Fixed in |
 |---|---|
 | `prepare_picking_imod` uses undefined `class_id` (NameError) | Gate 1 |
-| Old checkpoints fail to load once new nested config fields exist | Gate 1 |
+| Old checkpoints failed to load once new nested config fields existed | Fixed on `feat/fourier-augmentations`; Gate 1 adds tests |
 | Help text says `desired_particle_pixel_size` is a radius; code uses diameter | Gate 1 (text only) |
 | Border particles are skipped and become negatives | Gate 2 (flag) |
 | Soft targets resampled with nearest-neighbour in augmentation | Gate 2 (pipeline v2 only) |
@@ -156,6 +175,9 @@ Huber delta is 1.0. The second term is the full Hessian, not a Laplacian.
 | Fine-tune parameter groups (`swinunetr._get_model_parameters_for_optimizer`) put only `swinViT`, `encoder*`, `decoder*` into the optimizer; `out.*` is in no group, so the output layer is frozen during fine-tuning | Gate 3 (v2 and conditioned models; v1 needs a human decision) |
 | SSL TensorBoard "recons" panel logs the input, not the reconstruction | Gate 5 |
 | SSL 4-way rotation task is ill-posed with a missing wedge (see Gate 5 spec) | Gate 5 (SSL v2) |
+| `config.yaml` has `infer.predictions_coord_format: relion`, which is not a valid enum value, so the file does not load | Human decision (`relion_31` or `relion_50`) |
+| `pyproject.toml` pins `numpy==1.26.4`, `scipy==1.14.1`; the Fourier branch was developed on newer versions | Gate 1 (run the suite on the pins) |
+| Contrast inversion is always on at `p = 0.8`, so inverted polarity is the majority | Human decision; Gate 1 makes the probability a config field with default 0.8 |
 
 ---
 
@@ -230,6 +252,12 @@ groups (`dataManager.scaling.group_lengths`) and process each group separately.
    conditioning start at zero, so a new model loaded from a legacy checkpoint gives
    the legacy output.
 10. **Tests are frozen.** You never edit a test file that the orchestrator froze.
+    The tests that exist at `gate-0-base` (`tests/test_*.py`) are frozen from the start
+    and run in every gate.
+11. **Targets stay `tio.LabelMap`.** Intensity and Fourier augmentations rely on TorchIO
+    skipping label maps. To get smooth target resampling in pipeline v2, set
+    `label_interpolation="linear"` on the spatial transforms; never turn the target
+    into a `tio.ScalarImage`.
 
 ---
 
@@ -269,6 +297,9 @@ Pipeline v1 uses Section 1.5 unchanged.
 | `prepData.apix_override` | Optional[float] = `None` | 2 |
 | `train.data_pipeline_version` | int = `1` | 2 |
 | `train.scale` | `ScaleConfig` (file `defaultConfigs/scale_config.py`) | 2 |
+| `train.augmentation.label_interpolation` | `nearest` \| `linear` = `nearest` | 2 |
+| `train.augmentation.rotation_mode` | `affine` \| `flips` = `affine` | 2 |
+| `train.augmentation.contrast_inversion_p` | float = `0.8` (replaces the constant) | 1 |
 | `train.pu` | `PUConfig` (file `defaultConfigs/pu_config.py`) | 3 |
 | `train.ssl` | `SSLConfig` (file `defaultConfigs/ssl_config.py`) | 5 |
 | `train.network.size_conditioning` | bool = `False` | 3 |
@@ -284,8 +315,8 @@ Field details are in each gate spec. All defaults reproduce v1.
 
 | Gate | Agent spec | Purpose | May write (plus its own tests are written by TA) |
 |---|---|---|---|
-| 1 | `01_AGENT_BASELINE_CONFIG.md` | Lock legacy, safe config loading, inert config schema | `tomocpt/configManager/configManager.py`, `tomocpt/defaultConfigs/**`, `tomocpt/labels/helpers.py` (IMOD fix only), `pyproject.toml` (pytest section), `.gitignore` |
-| 2 | `02_AGENT_SCALE_DATA.md` | Pipeline v2: band scale policy, metadata, multi-scale chunks, augmentation | `tomocpt/dataManager/**`, `tomocpt/labels/**`, `tomocpt/defaultConfigs/scale_config.py`, `tomocpt/defaultConfigs/prepdata_config.py` (own fields), `tomocpt/training/helpers.py` (`_prepare_data_if_needed` only) |
+| 1 | `01_AGENT_BASELINE_CONFIG.md` | Lock legacy, safe config loading, inert config schema | `tomocpt/configManager/configManager.py`, `tomocpt/defaultConfigs/**`, `tomocpt/labels/helpers.py` (IMOD fix only), `tomocpt/dataManager/dataloading.py` (contrast-inversion probability from config only), `pyproject.toml` (pytest section), `.gitignore` |
+| 2 | `02_AGENT_SCALE_DATA.md` | Pipeline v2: band scale policy, metadata, multi-scale chunks, augmentation | `tomocpt/dataManager/**`, `tomocpt/labels/**`, `tomocpt/defaultConfigs/scale_config.py`, `tomocpt/defaultConfigs/prepdata_config.py` (own fields), `tomocpt/defaultConfigs/train_config.py` (`AugmentationConfig` fields only), `tomocpt/training/helpers.py` (`_prepare_data_if_needed` only) |
 | 3 | `03_AGENT_SIZE_CONDITIONED_MODEL.md` | FiLM size conditioning, v2 loss, optional PU | `tomocpt/networks/{swinunetr,conditioning,pickingModel,distillationModel,inference,baseModel}.py`, `tomocpt/training/**`, `tomocpt/defaultConfigs/{network_config,pu_config}.py` |
 | 4 | `04_AGENT_INFER_BENCHMARK.md` | v2 inference, multi-length picking, benchmark harness | `tomocpt/predict/**`, `tomocpt/defaultConfigs/infer_config.py`, `benchmarks/**`, `README.md` |
 | 5 | `05_AGENT_SSL_WEDGE.md` | Wedge-aware SSL v2 with relative-scale task | `tomocpt/networks/selfSupervisedModel.py`, `tomocpt/networks/ssl/**`, `tomocpt/dataManager/ssl_views.py`, `tomocpt/defaultConfigs/ssl_config.py`, `tomocpt/training/helpers.py` (self-supervised branches only) |

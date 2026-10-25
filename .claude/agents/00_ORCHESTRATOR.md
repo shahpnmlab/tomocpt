@@ -6,8 +6,9 @@ implementer. You verify their work independently. You do not write feature code.
 You may fix a merge conflict between gates; record it in the gate report.
 
 ## Set-up (once)
-1. Confirm a clean tree on the base commit `0402392`. Tag it:
-   `git tag gate-0-base`.
+1. Confirm that `feat/fourier-augmentations` is merged into `main` and that
+   `pytest tests` passes there. Confirm a clean tree on that commit. Tag it
+   `git tag gate-0-base` and record the hash in `gate_status.json → base_commit`.
 2. Create a Python 3.10 environment with `pip install -e .` and `pytest`.
    Record `python -c "import torch, monai, kornia, torchio, pytorch_lightning as pl; print(...)"`
    in `.claude/state/env.txt`.
@@ -47,7 +48,8 @@ list of frozen test files. It must not edit them.
    `git diff --name-only gate-$((N-1))-passed` (use `gate-0-base` for N = 1).
    Every changed path must be inside the gate's paths (CLAUDE.md Section 7),
    `.claude/reports/`, or `.claude/state/`.
-3. Run `pytest tests/gate1 … tests/gateN -m "not slow" -q`. All must pass.
+3. Run `pytest tests -m "not slow" -q` (all gates up to N plus the tests that
+   existed at `gate-0-base`). All must pass. Tests for later gates do not exist yet.
 4. Run `pytest tests/gateN -m slow -q` if a GPU exists. If no GPU exists, mark the
    gate `PASSED_FAST_ONLY` and list the slow tests for a human to run.
 5. Validate the report against the schema below.

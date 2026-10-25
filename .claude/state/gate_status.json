@@ -1,6 +1,7 @@
 {
   "base_ref": "gate-0-base",
-  "base_commit": "04023929b3e707dc18b74378cfa587099c39e5bb",
+  "base_commit": null,
+  "base_note": "main after merging feat/fourier-augmentations; set by the orchestrator",
   "current_gate": 1,
   "gpu_available": null,
   "gates": {

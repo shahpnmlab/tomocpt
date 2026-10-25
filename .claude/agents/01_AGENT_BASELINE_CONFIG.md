@@ -15,13 +15,23 @@ No numerical behaviour changes in this gate.
 
 ## Tasks
 
-### T1.1 Safe config merge (fixes the checkpoint-compatibility defect)
-Change `update_config(target, source)` so that a field missing on `source` keeps the
-target value and logs one `INFO` line per missing path. Do the same in
-`compare_dataclasses` and `update_config_with_changed_values` if they read fields that
-can be missing. Keep all other behaviour.
+### T1.1 Safe config merge (mostly done at `gate-0-base`)
+`backfill_missing_fields` and the skip in `update_config` already exist (from
+`feat/fourier-augmentations`). Check `compare_dataclasses` and
+`update_config_with_changed_values` for bare `getattr` on fields that can be missing,
+and guard them the same way. Keep all other behaviour.
 
 Export `tomocpt.configManager.configManager.safe_getattr(obj, name, default)`.
+
+### T1.1b Contrast-inversion probability in config
+Add `AugmentationConfig.contrast_inversion_p: float = 0.8` and read it in
+`build_training_transforms` instead of the module constant. Keep the constant as the
+default value. Behaviour does not change. (The value is a human decision; see
+CLAUDE.md Section 1.10.)
+
+### T1.1c Dependency pins
+Run the fast suite on the pinned `numpy==1.26.4` and `scipy==1.14.1`. Report any
+failure; do not change the pins without a human decision.
 
 ### T1.2 Inert config schema
 Add these dataclasses. Every default must reproduce v1 behaviour. Use `str` Enums
@@ -31,7 +41,6 @@ Add these dataclasses. Every default must reproduce v1 behaviour. Use `str` Enum
 ```python
 class ScalePolicy(str, Enum): fixed_particle = "fixed_particle"; band = "band"
 class ResampleMethod(str, Enum): trilinear = "trilinear"; fourier = "fourier"
-class RotationAug(str, Enum): legacy = "legacy"; wedge_preserving = "wedge_preserving"
 @dataclass
 class ScaleConfig:
     policy: ScalePolicy = ScalePolicy.fixed_particle
@@ -39,7 +48,6 @@ class ScaleConfig:
     band_max_vox: float = 32.0
     scales_per_tomogram: int = 1
     resample: ResampleMethod = ResampleMethod.trilinear
-    rotation_aug: RotationAug = RotationAug.legacy
     zoom_aug_max: float = 1.0          # 1.0 = off; v2 suggestion 1.25
     size_balanced_sampling: bool = False
 ```
@@ -94,6 +102,8 @@ Add fields (CLAUDE.md Section 6):
 - `TrainConfig`: `data_pipeline_version: int = 1`, `scale: ScaleConfig`, `pu: PUConfig`,
   `ssl: SSLConfig`.
 - `NetworkConfig`: `size_conditioning: bool = False`, `moe: MoEConfig`.
+- `AugmentationConfig` (existing, `train_config.py`): `label_interpolation: str = "nearest"`,
+  `rotation_mode: str = "affine"`, `flip_p: float = 0.0`, `contrast_inversion_p: float = 0.8`.
 - `InferConfig`: `lengths: Optional[str] = None`, `apix_override: Optional[float] = None`.
 
 Expose the new top-level scalar fields (`data_pipeline_version`, `label_border_policy`,
@@ -109,7 +119,7 @@ Typer `Annotated` help text, like the existing fields. `tomocpt init` writes onl
 
 ## Public names (tests import these)
 - `tomocpt.configManager.configManager.update_config`, `safe_getattr`
-- `tomocpt.defaultConfigs.scale_config.{ScaleConfig, ScalePolicy, ResampleMethod, RotationAug}`
+- `tomocpt.defaultConfigs.scale_config.{ScaleConfig, ScalePolicy, ResampleMethod}`
 - `tomocpt.defaultConfigs.pu_config.{PUConfig, PUMode}`
 - `tomocpt.defaultConfigs.ssl_config.SSLConfig`
 - `tomocpt.defaultConfigs.moe_config.MoEConfig`
@@ -130,7 +140,11 @@ Typer `Annotated` help text, like the existing fields. `tomocpt init` writes onl
   Also for `legacy_ssl_checkpoint()` with `SelfSupervisedModel`.
 - **G1-C6** Distillation with a legacy teacher constructs and runs one training
   step on CPU.
-- **G1-C7** `update_config` keeps target defaults for fields missing on the source.
+- **G1-C7** `update_config` keeps target defaults for fields missing on the source, and
+  `backfill_missing_fields` adds every field that a legacy checkpoint lacks.
+- **G1-C11** `build_training_transforms(AugmentationConfig())` is transform-wise
+  identical to the `gate-0-base` pipeline, and `contrast_inversion_p=0.0` removes the
+  inversion transform (or makes it a no-op).
 - **G1-C8** IMOD path: `prepare_picking_imod` runs on a tiny `.mod` fixture (built
   with `imodmodel`) without NameError and writes the tracking CSV.
 - **G1-C9** `tomocpt init --output-path x.yaml` writes the new `Annotated` scalar fields
