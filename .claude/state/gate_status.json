@@ -1,0 +1,14 @@
+{
+  "base_ref": "gate-0-base",
+  "base_commit": "04023929b3e707dc18b74378cfa587099c39e5bb",
+  "current_gate": 1,
+  "gpu_available": null,
+  "gates": {
+    "1": {"status": "PENDING", "agent": "01_AGENT_BASELINE_CONFIG", "attempts": 0, "test_hashes": {}, "path_exceptions": [], "notes": [], "report_path": ".claude/reports/gate_01_report.json"},
+    "2": {"status": "LOCKED", "agent": "02_AGENT_SCALE_DATA", "attempts": 0, "test_hashes": {}, "path_exceptions": ["tomocpt/training/helpers.py::_prepare_data_if_needed"], "notes": [], "report_path": ".claude/reports/gate_02_report.json"},
+    "3": {"status": "LOCKED", "agent": "03_AGENT_SIZE_CONDITIONED_MODEL", "attempts": 0, "test_hashes": {}, "path_exceptions": [], "notes": [], "report_path": ".claude/reports/gate_03_report.json"},
+    "4": {"status": "LOCKED", "agent": "04_AGENT_INFER_BENCHMARK", "attempts": 0, "test_hashes": {}, "path_exceptions": [], "notes": [], "report_path": ".claude/reports/gate_04_report.json"},
+    "5": {"status": "LOCKED", "agent": "05_AGENT_SSL_WEDGE", "attempts": 0, "test_hashes": {}, "path_exceptions": ["tomocpt/training/helpers.py::self-supervised branches"], "notes": [], "report_path": ".claude/reports/gate_05_report.json"},
+    "6": {"status": "LOCKED", "agent": "06_AGENT_SCALE_MOE", "attempts": 0, "test_hashes": {}, "path_exceptions": ["tomocpt/defaultConfigs/network_config.py::build_model (one call)", "tomocpt/networks/pickingModel.py::training_step (aux loss)", "tomocpt/networks/distillationModel.py::training_step (aux loss)"], "notes": [], "report_path": ".claude/reports/gate_06_report.json"}
+  }
+}
