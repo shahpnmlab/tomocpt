@@ -1,4 +1,5 @@
 import gc
+import json
 import os
 import random
 import shutil
@@ -6,7 +7,7 @@ import traceback
 import warnings
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Tuple
 
 import pandas as pd
 import torch
@@ -14,7 +15,7 @@ import torchio as tio
 from dask.distributed import Client, as_completed
 from dask_cuda import LocalCUDACluster
 from monai.data import PersistentDataset
-from sklearn.model_selection import train_test_split
+from sklearn.model_selection import GroupShuffleSplit, train_test_split
 from tqdm import tqdm
 
 from tomocpt import constants
@@ -33,6 +34,87 @@ warnings.filterwarnings("ignore", ".*You are using `torch.load` with `weights_on
 def get_chunking_name_done(chunkedDataDir: str, require_labels: bool) -> str:
     """Returns the conventional path for the 'done' file."""
     return f"{chunkedDataDir}/done_labels_{require_labels}.txt"
+
+
+def get_chunk_layout_path(chunkedDataDir: str) -> str:
+    """Returns the conventional path for the chunk layout manifest."""
+    return f"{chunkedDataDir}/chunk_layout.json"
+
+
+def assign_chunk_dir_names(tomos_df: pd.DataFrame) -> pd.Series:
+    """Directory name for each row of the tracking table.
+
+    The tomogram stem when every stem is unique (legacy layout). Otherwise
+    "<dataset_dir>__<stem>" for every row, where <dataset_dir> is the name of the
+    prepare_data dataset directory (Path(label_path).parents[2].name, e.g.
+    "dataset_3_class_all"). Raises ValueError if names are still not unique.
+    """
+    stems = tomos_df["tomogram_path"].map(lambda p: Path(str(p)).stem)
+
+    if stems.is_unique:
+        return stems
+
+    def _dataset_prefix(row) -> str:
+        label_path = row.get("label_path")
+        if label_path and not pd.isna(label_path) and str(label_path) != str(row["tomogram_path"]):
+            try:
+                return Path(str(label_path)).parents[2].name
+            except IndexError:
+                pass
+        return f"csv{row.name}"
+
+    dataset_prefixes = tomos_df.apply(_dataset_prefix, axis=1)
+    names = dataset_prefixes.str.cat(stems, sep="__")
+
+    n_renamed = int((names != stems).sum())
+    logging.info(
+        f"{n_renamed} of {len(names)} rows have a tomogram stem shared with another row; "
+        "prefixing all chunk directory names with their dataset directory."
+    )
+
+    if not names.is_unique:
+        dupes = names[names.duplicated()].unique().tolist()
+        raise ValueError(
+            "Cannot build unique chunk directory names: the following (dataset, tomogram) "
+            f"names still collide after prefixing: {dupes}"
+        )
+
+    return names
+
+
+def split_rows_by_tomogram(
+    tomos_df: pd.DataFrame, test_size: float = constants.PERCENT_TO_VALIDATE, seed: int = 42
+) -> Tuple[pd.DataFrame, pd.DataFrame]:
+    """Train/validation split that keeps all rows of one tomogram together.
+
+    Legacy path: if every tomogram stem is unique, return exactly
+    train_test_split(tomos_df, test_size=test_size, random_state=seed).
+    Otherwise use GroupShuffleSplit(n_splits=1, test_size=test_size,
+    random_state=seed) with groups = tomogram stem.
+    Raises ValueError with a clear message if there are fewer than 2 distinct
+    tomograms (the legacy code fails later with an empty train set).
+    """
+    stems = tomos_df["tomogram_path"].map(lambda p: Path(str(p)).stem)
+    n_distinct = stems.nunique()
+    if n_distinct < 2:
+        raise ValueError(
+            f"Cannot split into train/validation: only {n_distinct} distinct tomogram(s) "
+            "found. At least 2 distinct tomograms are required."
+        )
+
+    if stems.is_unique:
+        return train_test_split(tomos_df, test_size=test_size, random_state=seed)
+
+    dup_stems = stems[stems.duplicated()].unique().tolist()
+    if dup_stems:
+        logging.warning(
+            f"{len(dup_stems)} tomogram stem(s) are shared across datasets and will be "
+            f"grouped together for the train/validation split: {dup_stems}"
+        )
+
+    splitter = GroupShuffleSplit(n_splits=1, test_size=test_size, random_state=seed)
+    train_idx, val_idx = next(splitter.split(tomos_df, groups=stems))
+    return tomos_df.iloc[train_idx], tomos_df.iloc[val_idx]
 
 
 def _save_chunk(tensor: torch.Tensor, path: str):
@@ -67,7 +149,7 @@ def process_single_tomo_task(task: Dict[str, Any]) -> tuple:
         label_tensor_cpu = preprocessed_data["label"]
         del preprocessed_data
 
-        bn = Path(tomo_path_str).stem
+        bn = task.get("chunk_dir_name") or Path(tomo_path_str).stem
         tomo_out_dir = Path(outpath) / bn
         vol_dir = tomo_out_dir / constants.VOLUMES_DIR_NAME_PREFIX
         labels_dir_name = constants.LABELS_DIR_NAME_PREFIX % ('_supervised' if require_labels else '_selfSup')
@@ -149,10 +231,25 @@ def do_chunking(tomosDf: pd.DataFrame, chunkedDataDir: str, desired_particle_pix
                 n_cpus: int, require_labels: bool = True,
                 train_val_level: CrossValidationLevelSplit = CrossValidationLevelSplit.tomos, use_gpus: bool = True):
     try:
+        tomosDf = tomosDf.reset_index(drop=True)
+        chunk_dir_names = assign_chunk_dir_names(tomosDf)
+        dir_names_layout = "unique" if (tomosDf["tomogram_path"].map(lambda p: Path(str(p)).stem)).is_unique else "prefixed"
+
         if train_val_level == CrossValidationLevelSplit.tomos:
-            df_train, df_val = train_test_split(tomosDf, test_size=constants.PERCENT_TO_VALIDATE, random_state=42)
+            df_train, df_val = split_rows_by_tomogram(tomosDf, test_size=constants.PERCENT_TO_VALIDATE, seed=42)
+            split_layout = "rows" if dir_names_layout == "unique" else "grouped"
+            logging.info(
+                f"Train split: {sorted(df_train['tomogram_path'].map(lambda p: Path(str(p)).stem).unique().tolist())} "
+                f"({len(df_train)} rows). Validation split: "
+                f"{sorted(df_val['tomogram_path'].map(lambda p: Path(str(p)).stem).unique().tolist())} ({len(df_val)} rows)."
+            )
         else:
             df_train, df_val = tomosDf, None
+            split_layout = "rows"
+            logging.info(
+                "train_on=chunks moves whole (dataset, tomogram) directories between train and "
+                "validation after chunking; the same tomogram can end up in both splits by design."
+            )
 
         train_outDir, val_outDir = Path(chunkedDataDir) / "train", Path(chunkedDataDir) / "val"
         if train_outDir.exists(): shutil.rmtree(train_outDir)
@@ -169,10 +266,11 @@ def do_chunking(tomosDf: pd.DataFrame, chunkedDataDir: str, desired_particle_pix
         for split, df in datasets.items():
             if df is None: continue
             outpath = train_outDir if split == 'train' else val_outDir
-            for _, row in df.iterrows():
+            for idx, row in df.iterrows():
                 all_tasks.append({"tomo_info": row, "outpath": str(outpath), "cache_dir": cache_dir,
                                   "require_labels": require_labels,
-                                  "desired_particle_pixel_size": desired_particle_pixel_size})
+                                  "desired_particle_pixel_size": desired_particle_pixel_size,
+                                  "chunk_dir_name": chunk_dir_names.loc[idx]})
 
         if not all_tasks:
             logging.warning("No tomograms found to process. Stopping data preparation.")
@@ -222,6 +320,8 @@ def do_chunking(tomosDf: pd.DataFrame, chunkedDataDir: str, desired_particle_pix
             for d in val_dirs: shutil.move(str(d), val_outDir)
 
         logging.info(f"Chunking finished. Data saved at: {train_outDir} and {val_outDir}")
+        with open(get_chunk_layout_path(chunkedDataDir), "w") as f:
+            json.dump({"layout": 2, "dir_names": dir_names_layout, "split": split_layout}, f)
         with open(get_chunking_name_done(chunkedDataDir, require_labels), "w") as f:
             f.write("done")
 

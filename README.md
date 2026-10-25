@@ -218,6 +218,17 @@ or alignment mismatch.
 
 # Changelog
 
+## Unreleased
+- Fixed multi-species chunking: when `training_data_dir` contains several `prepare_data`
+  datasets that share the same tomograms (e.g. several particle species from the same raw
+  tomograms), chunk directories used to collide on the tomogram filename, so a concurrent
+  Dask worker could overwrite another species' chunk files, and `train_test_split` could put
+  the same tomogram in both the train and validation split. Chunk directories are now named
+  per (dataset, tomogram) whenever a stem repeats, and the train/validation split keeps all
+  rows of a tomogram together. **If you have existing chunk directories built with an older
+  version and several datasets share tomograms, delete `<chunks_dir>/done_labels_*.txt` to
+  force a rebuild** — training now refuses to reuse chunks built before this fix.
+
 ## 0.6.0
 - Added `--skip-inference` to `tomocpt predict`, which reuses the confidence maps saved by a
   previous run and only redoes peak extraction. Useful for tuning `confidence_threshold` or
