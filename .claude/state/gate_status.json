@@ -2,11 +2,11 @@
   "base_ref": "v2-gate-0-base",
   "base_commit": "ce6f7b0ce856f19556266e7ad3143bfb66cdb7e2",
   "base_note": "first commit of branch v2-dev (released main + fix/v1-patches + plan); set by the orchestrator",
-  "current_gate": 1,
+  "current_gate": 2,
   "gpu_available": true,
   "gates": {
     "1": {
-      "status": "TESTS_FROZEN",
+      "status": "PASSED",
       "agent": "01_AGENT_BASELINE",
       "attempts": 0,
       "test_hashes": {
@@ -36,12 +36,13 @@
         "Legacy base tests tests/test_*.py are frozen per CLAUDE.md invariant 9 (unchanged since v2-gate-0-base).",
         "Spec/README says `tomocpt init --output-path` / `--config-file`; legacy CLI only accepts --output_path / --config_file. C9 test uses underscores. Spec wording needs a human.",
         "make_phantom returns Phantom(volume, coords, polylines, masks) (4 fields). Each tests/gateN/ needs __init__.py; import helpers as utils.<module>.",
-        "Legacy checkpoints are built with a TensorBoardLogger (legacy training_step needs self.logger.experiment), not logger=False as TA spec says."
+        "Legacy checkpoints are built with a TensorBoardLogger (legacy training_step needs self.logger.experiment), not logger=False as TA spec says.",
+        "Verified by orchestrator: hashes unchanged; ownership OK; fast 141 passed/27 skipped; slow 1 passed (RTX A6000). Open item (not fixed, outside T1.1): backfill_missing_fields uses hasattr, so simple-default fields missing on an old checkpoint instance are not backfilled; plain getattr still sees the class default, safe_getattr returns the caller's default."
       ],
       "report_path": ".claude/reports/gate_01_report.json"
     },
     "2": {
-      "status": "LOCKED",
+      "status": "PENDING",
       "agent": "02_AGENT_SCALE_DATA",
       "attempts": 0,
       "test_hashes": {},

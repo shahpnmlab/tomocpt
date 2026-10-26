@@ -173,3 +173,7 @@ test.tomcat
 # Local agent notes, not part of the project
 AGENTS.md
 augmentation_dump/
+
+# TomoCPT v2 test cache and benchmark outputs
+tests/.cache/
+benchmarks/out/

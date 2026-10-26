@@ -64,6 +64,9 @@ tomocpt = "tomocpt.main:main"
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["."]
+markers = [
+    "slow: GPU or learning tests (run with -m slow)",
+]
 
 [tool.setuptools]
 packages = ["tomocpt"]

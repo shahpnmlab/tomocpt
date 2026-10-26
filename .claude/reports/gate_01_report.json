@@ -1,0 +1,51 @@
+{
+  "gate_id": 1,
+  "agent_name": "01_AGENT_BASELINE",
+  "status": "READY_FOR_REVIEW",
+  "base_ref": "v2-gate-0-base",
+  "files_created": [
+    "tomocpt/metrics.py",
+    "benchmarks/__init__.py",
+    ".claude/reports/gate_01_report.json"
+  ],
+  "files_modified": [
+    "tomocpt/configManager/configManager.py",
+    "pyproject.toml",
+    ".gitignore"
+  ],
+  "exported_symbols": {
+    "tomocpt.configManager.configManager": ["safe_getattr"],
+    "tomocpt.metrics": ["match_points", "prf_beta", "score_classes"]
+  },
+  "config_fields_added": [],
+  "legacy_equivalence": {
+    "G1_C1_gaussian_sphere_R5_10_17": {"max_abs_diff": 0.0, "tolerance": 1e-7, "tolerance_kind": "atol"},
+    "G1_C2_loss": {"max_abs_diff": null, "tolerance": 1e-6, "tolerance_kind": "rtol", "result": "pass (test_G1_C2_loss_golden)"},
+    "G1_C3_tiny_forward_logits": {"max_abs_diff": 0.0, "tolerance": 1e-5, "tolerance_kind": "atol"},
+    "G1_C3_tiny_forward_hidden4": {"max_abs_diff": 0.0, "tolerance": 1e-5, "tolerance_kind": "atol"},
+    "G1_C8_default_augmentation_pipeline": {"max_abs_diff": null, "tolerance": "exact (types, order, parameters)", "result": "pass (test_G1_C8_default_augmentation_pipeline_unchanged)"},
+    "statement": "No numerical code changed in this gate. Only configManager.py (safe_getattr guards on code paths that previously raised AttributeError) and new files were touched."
+  },
+  "metrics": {},
+  "pytest_fast": {
+    "command": "pytest tests -m 'not slow' -q",
+    "exit_code": 0,
+    "result": "141 passed, 27 skipped, 1 deselected",
+    "environment": "numpy 1.26.4, scipy 1.14.1 (pinned versions, T1.2)",
+    "gate1_only": "32 passed, 1 skipped (G1-C11, TOMOCPT_ZENODO_CKPT not set), 1 deselected"
+  },
+  "pytest_slow": {
+    "command": "pytest tests/gate1 -m slow -q",
+    "exit_code": 0,
+    "ran": true,
+    "result": "1 passed, 33 deselected",
+    "reason": ""
+  },
+  "benchmarks": {},
+  "known_limitations": [
+    "safe_getattr on a dataclass field reads only the instance __dict__, so a field absent from an unpickled checkpoint config returns the caller's default, not the class-level default that plain getattr falls back to. test_G1_C7_safe_getattr requires this. Other attributes (properties, non-dataclass objects) use getattr(obj, name, default).",
+    "compare_dataclasses skips fields absent on both sides; a field absent on one side is reported as a difference with an internal sentinel, which update_config_with_changed_values never applies. update_config_with_changed_values also skips a difference whose parent section is absent on the target. Both cases raised AttributeError before; paths that already worked are unchanged.",
+    "backfill_missing_fields (unchanged) uses hasattr, so it does not backfill simple-default fields absent from an instance __dict__ (the class attribute makes hasattr true); reads of those still get the class default through plain getattr. Not changed here (outside T1.1 scope)."
+  ],
+  "notes_for_next_agent": "No numerical code changed in Gate 1. Goldens (made at v2-gate-0-base ce6f7b0 by tests/golden/make_goldens_gate1.py, inputs built by tests/golden/gate1_common.py): tests/golden/gate1_spheres.npz (C1 Gaussian spheres R=5,10,17), tests/golden/gate1_forward.npz (C3 tiny MySwinUNETR logits + hidden[4]), tests/golden/gate1_goldens.json (C2 loss value and input sums, C8 default augmentation pipeline description, provenance). Legacy picking and SSL checkpoints are built on demand by tests/fixtures/make_legacy_ckpt.py in the ../tomocpt-base worktree and cached in tests/.cache/legacy/ (now also git-ignored explicitly). Use tomocpt.configManager.configManager.safe_getattr(cfg_section, 'new_field', default) to read checkpoint configs that predate a field. tomocpt.metrics: match_points returns (tp_pairs int64 [K,2] of (pred_idx, true_idx), fp_idx int64, fn_idx int64), greedy by increasing distance, inclusive of the radius (cKDTree.sparse_distance_matrix). score_classes returns {'per_class': {name: {precision, recall, f1, fbeta, tp, fp, fn}}, 'macro': {precision, recall, f1, fbeta}}; match radius = match_radius_frac * radii[name]; class with truth but missing from pred = all FN; class only in pred = all FP; weights give a weighted macro mean (classes missing from weights weigh 1.0). The pytest marker 'slow' is registered in pyproject.toml."
+}

@@ -583,6 +583,24 @@ def merge_config(yaml_config: DictConfig, config: Any) -> Tuple[Any, Dict]:
     return config, unmatched
 
 
+_ABSENT = object()
+
+
+def safe_getattr(obj: Any, name: str, default: Any = None) -> Any:
+    """Return ``getattr(obj, name)``, or ``default`` if the attribute is absent.
+
+    Use it to read config objects unpickled from checkpoints that predate a field
+    (see ``backfill_missing_fields``). For a dataclass field, only the instance's
+    own value counts: a field absent from the instance returns ``default``, not the
+    class-level default that plain ``getattr`` would fall back to.
+    """
+    if is_dataclass(obj) and not isinstance(obj, type):
+        instance_dict = getattr(obj, "__dict__", None)
+        if instance_dict is not None and name in {f.name for f in fields(obj)}:
+            return instance_dict.get(name, default)
+    return getattr(obj, name, default)
+
+
 def backfill_missing_fields(target: Any, defaults: Any) -> Any:
     """Add fields present on ``defaults`` but absent from ``target``, recursively.
 
@@ -682,8 +700,10 @@ def compare_dataclasses(
 
     for field in fields(obj1):
         field_name = field.name
-        value1 = getattr(obj1, field_name)
-        value2 = getattr(obj2, field_name)
+        value1 = safe_getattr(obj1, field_name, _ABSENT)
+        value2 = safe_getattr(obj2, field_name, _ABSENT)
+        if value1 is _ABSENT and value2 is _ABSENT:
+            continue
 
         current_path = f"{path}.{field_name}" if path else field_name
 
@@ -731,6 +751,9 @@ def update_config_with_changed_values(
     result = copy.deepcopy(target)
 
     for path, _, new_value in differences:
+        if new_value is _ABSENT:
+            # The field is absent from configAfterCli (an older config): nothing to apply.
+            continue
         # Split the path into parts
         parts = path.split(".")
 
@@ -745,10 +768,17 @@ def update_config_with_changed_values(
 
                 # Get the array/list
                 if name:  # If there's a name before the index
-                    current_obj = getattr(current_obj, name)
+                    current_obj = safe_getattr(current_obj, name, _ABSENT)
+                    if current_obj is _ABSENT:
+                        break
                 current_obj = current_obj[idx]
             else:
-                current_obj = getattr(current_obj, part)
+                current_obj = safe_getattr(current_obj, part, _ABSENT)
+                if current_obj is _ABSENT:
+                    break
+        if current_obj is _ABSENT:
+            # The target predates this section: there is no object to update.
+            continue
 
         # Handle the final part
         last_part = parts[-1]
@@ -756,7 +786,9 @@ def update_config_with_changed_values(
             name, idx = last_part.split("[")
             idx = int(idx.rstrip("]"))
             if name:
-                current_obj = getattr(current_obj, name)
+                current_obj = safe_getattr(current_obj, name, _ABSENT)
+                if current_obj is _ABSENT:
+                    continue
             current_obj[idx] = new_value
         else:
             setattr(current_obj, last_part, new_value)
