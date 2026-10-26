@@ -79,7 +79,7 @@ infer:
   length: ???
   distance_threshold: null
   predictions_coord_filename: tomopicker_coords.star
-  predictions_coord_format: relion
+  predictions_coord_format: relion_31
   save_prediction_confidence_map: false
   save_predicted_coords: true
   confidence_threshold: 0.3

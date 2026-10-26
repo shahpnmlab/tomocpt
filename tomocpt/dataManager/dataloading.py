@@ -25,11 +25,6 @@ from tomocpt.logger import get_logger
 
 logging = get_logger()
 
-#: Probability of flipping contrast polarity. Fixed rather than exposed through
-#: config: invariance to whether particles are dark on light or light on dark is
-#: wanted in every run, not something to tune per experiment.
-CONTRAST_INVERSION_PROB = 0.8
-
 
 def build_training_transforms(cfg: Optional[AugmentationConfig] = None) -> tio.Compose:
     """Compose the training-time augmentation pipeline.
@@ -57,7 +52,7 @@ def build_training_transforms(cfg: Optional[AugmentationConfig] = None) -> tio.C
     2. ``tio.OneOf({RandomElasticDeformation, RandomBlur})``.
     3. :class:`RandomFourierDegradation` - **after all spatial transforms**.
     4. Intensity transforms, contrast inversion first. Contrast inversion is
-       always applied at :data:`CONTRAST_INVERSION_PROB` and is not configurable.
+       always applied at :data:`tomocpt.constants.CONTRAST_INVERSION_PROB` and is not configurable.
 
     Step 3's position is the entire point of the augmentation: running after the
     rotations makes the missing wedge land at a random orientation relative to
@@ -98,7 +93,7 @@ def build_training_transforms(cfg: Optional[AugmentationConfig] = None) -> tio.C
     # that is invariant to it is wanted in every run. It goes first because
     # polarity is established before any acquisition effect, and because
     # RandomLocalGamma is not symmetric about the mean.
-    transforms.append(RandomContrastInversion(p=CONTRAST_INVERSION_PROB))
+    transforms.append(RandomContrastInversion(p=constants.CONTRAST_INVERSION_PROB))
     if cfg.brightness_gradient_p > 0:
         transforms.append(RandomBrightnessGradient(p=cfg.brightness_gradient_p))
     if cfg.local_gamma_p > 0:

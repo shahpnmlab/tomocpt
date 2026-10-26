@@ -13,10 +13,8 @@ import torchio as tio
 
 from conftest import CHUNK_SHAPE
 
-from tomocpt.dataManager.dataloading import (
-    CONTRAST_INVERSION_PROB,
-    build_training_transforms,
-)
+from tomocpt.constants import CONTRAST_INVERSION_PROB
+from tomocpt.dataManager.dataloading import build_training_transforms
 from tomocpt.dataManager.intensity_augmentations import RandomContrastInversion
 from tomocpt.defaultConfigs.train_config import AugmentationConfig
 
@@ -131,7 +129,7 @@ def test_always_present_in_the_pipeline():
     inversion = [t for t in pipeline.transforms if isinstance(t, RandomContrastInversion)]
 
     assert len(inversion) == 1
-    assert inversion[0].probability == CONTRAST_INVERSION_PROB == 0.8
+    assert inversion[0].probability == CONTRAST_INVERSION_PROB == 0.5
 
 
 def test_inversion_precedes_the_other_intensity_transforms():
