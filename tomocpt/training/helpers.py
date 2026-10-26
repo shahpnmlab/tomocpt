@@ -16,7 +16,7 @@ from pytorch_lightning.callbacks import (
 )
 from pytorch_lightning.loggers import TensorBoardLogger
 
-from tomocpt.dataManager.chunking import do_chunking, get_chunking_name_done
+from tomocpt.dataManager.chunking import do_chunking, get_chunking_name_done, get_chunk_layout_path
 from tomocpt.utils import read_particles_csvs, accelerator_selector
 from tomocpt.defaultConfigs.train_config import TrainingModes
 from tomocpt.networks.pickingModel import BasePickingModel
@@ -39,6 +39,17 @@ def _prepare_data_if_needed(config: DictConfig):
 
     if Path(chunking_name_done).is_file():
         logging.info("Found existing chunked data. Skipping data preparation.")
+        training_data_dir = (
+            config.training_data_dir or mainConfig.prepData.training_data_dir
+        )
+        if Path(training_data_dir).is_dir() and not Path(get_chunk_layout_path(config.chunks_dir)).is_file():
+            tomos_df = read_particles_csvs(training_data_dir)
+            stems = tomos_df["tomogram_path"].map(lambda p: Path(str(p)).stem)
+            if not stems.is_unique:
+                raise RuntimeError(
+                    f"chunks_dir was built by a version with the chunk-collision bug (several "
+                    f"datasets share tomograms). Delete {chunking_name_done} to rebuild the chunks."
+                )
         return
 
     logging.info("Chunked data not found or incomplete. Starting data preparation...")

@@ -583,6 +583,47 @@ def merge_config(yaml_config: DictConfig, config: Any) -> Tuple[Any, Dict]:
     return config, unmatched
 
 
+def backfill_missing_fields(target: Any, defaults: Any) -> Any:
+    """Add fields present on ``defaults`` but absent from ``target``, recursively.
+
+    Checkpoints pickle the whole config object. When a config field is added
+    later, unpickling an older checkpoint produces an instance of the *current*
+    dataclass that is simply missing that attribute - dataclass unpickling
+    restores ``__dict__`` and never runs ``__init__``, so no default is applied.
+    Anything that then walks the field list with a bare ``getattr`` raises
+    ``AttributeError``.
+
+    A checkpoint written before a field existed has no opinion about it, so the
+    current default is the correct value to fill in. This keeps old checkpoints
+    loadable as config grows, rather than only fixing the one field that
+    happened to be added most recently.
+
+    Parameters
+    ----------
+    target : Any
+        Dataclass instance to backfill, modified in place.
+    defaults : Any
+        Dataclass instance of the same type supplying default values.
+
+    Returns
+    -------
+    Any
+        ``target``, for convenience.
+    """
+    if not (is_dataclass(target) and is_dataclass(defaults)):
+        return target
+
+    for field in fields(type(defaults)):
+        default_value = getattr(defaults, field.name, None)
+        if not hasattr(target, field.name):
+            setattr(target, field.name, copy.deepcopy(default_value))
+        else:
+            existing = getattr(target, field.name)
+            if is_dataclass(existing) and is_dataclass(default_value):
+                backfill_missing_fields(existing, default_value)
+    return target
+
+
 def update_config(target: Any, source: Any):
     """
     Recursively updates the fields of a target dataclass with values from the source dataclass.
@@ -596,6 +637,10 @@ def update_config(target: Any, source: Any):
     for field in fields(target):
         field_name = field.name
         target_value = getattr(target, field_name)
+        if not hasattr(source, field_name):
+            # Source predates this field (e.g. an older checkpoint's config) and
+            # so has no opinion on it. Keep the target's value.
+            continue
         source_value = getattr(source, field_name)
 
         # Handle MISSING values

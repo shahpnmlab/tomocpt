@@ -185,6 +185,30 @@ In this mode `weights` is not required. Every MRC file in `predictions_dir` is t
 confidence map, unless `tomogram_dir`/`tomogram_file` is set, in which case only the maps
 matching those tomogram names are used.
 
+## Downloading data from the CryoET Data Portal
+
+`scripts/download_portal_data.py` downloads tomograms and point annotations from the
+[CryoET Data Portal](https://cryoetdataportal.czscience.com) and writes STAR files and a
+`prepData` block that `tomocpt prepare_data` can use directly.
+
+```bash
+pip install -e '.[portal]'
+
+# See what a dataset has, without downloading
+python scripts/download_portal_data.py --dataset-id 10440 --out data/czii --list
+
+# CZII object-identification training data at 10.012 A/px
+python scripts/download_portal_data.py --dataset-id 10440 --out data/czii \
+    --voxel-spacing 10.012 --processing denoised --diameters ribosome=300
+```
+
+It writes `tomograms/<run>.mrc`, one STAR file per object in `coords/`, `coords/all_objects.star`
+(one class number per object), `manifest.json`, and `prepdata_snippet.yaml`. Objects without a
+`--diameters` value get `???` in the snippet. Fill those in before `prepare_data`.
+Downloads resume after an interruption and are checked against the portal's file size.
+The script stops if annotation points fall outside the tomogram, which usually means a unit
+or alignment mismatch.
+
 ## Performance Tips
 
 1.  **GPU Acceleration**: Enable CUDA for both training and inference for best performance.
@@ -193,6 +217,17 @@ matching those tomogram names are used.
 4.  **Gradient Accumulation**: If you have limited GPU memory, use `gradient_accumulation_steps` in your config to train with a larger effective batch size.
 
 # Changelog
+
+## Unreleased
+- Fixed multi-species chunking: when `training_data_dir` contains several `prepare_data`
+  datasets that share the same tomograms (e.g. several particle species from the same raw
+  tomograms), chunk directories used to collide on the tomogram filename, so a concurrent
+  Dask worker could overwrite another species' chunk files, and `train_test_split` could put
+  the same tomogram in both the train and validation split. Chunk directories are now named
+  per (dataset, tomogram) whenever a stem repeats, and the train/validation split keeps all
+  rows of a tomogram together. **If you have existing chunk directories built with an older
+  version and several datasets share tomograms, delete `<chunks_dir>/done_labels_*.txt` to
+  force a rebuild** — training now refuses to reuse chunks built before this fix.
 
 ## 0.6.0
 - Added `--skip-inference` to `tomocpt predict`, which reuses the confidence maps saved by a
@@ -222,3 +257,8 @@ tomoCPT is jointly developed by Ruben Sanchez-Garcia and Pranav NM Shah at the U
 [TomoCPT: a generalizable model for 3D particle detection and localization in cryo-electron tomograms](https://doi.org/10.1107/S2059798325000865)
 
 Shah PNM, Sanchez-Garcia R, Stuart DI. *Acta Crystallographica Section D: Structural Biology*, 81(2):63-76, 2025.
+## License
+
+tomocpt is distributed under the GNU Affero General Public License v3 (see
+[LICENSE](LICENSE)). Some vendored components carry their own licenses; see
+[NOTICE](NOTICE) for attributions.

@@ -6,7 +6,11 @@ import pytorch_lightning as pl
 import torch
 
 from tomocpt import constants
-from tomocpt.configManager.configManager import update_config, update_config_with_changed_values
+from tomocpt.configManager.configManager import (
+    backfill_missing_fields,
+    update_config,
+    update_config_with_changed_values,
+)
 from tomocpt.defaultConfigs.train_config import TrainingModes
 from tomocpt.mainConfig import mainConfig, _mainConfigNoChanges
 
@@ -28,6 +32,10 @@ class BaseModel(pl.LightningModule):
         if config is None:
             config = mainConfig
         else:
+            # A checkpoint written before a config field existed unpickles without
+            # that attribute, so fill in current defaults before walking the config.
+            # Without this, loading an older checkpoint raises AttributeError.
+            config = backfill_missing_fields(config, _mainConfigNoChanges)
             # We first take the config in the checkpoint, and overwrite changes that come from the CLI
             updated_checkpoint_config = update_config_with_changed_values(target=config, originaConfig=_mainConfigNoChanges, configAfterCli=mainConfig)
             # Then, inject the updated checkpoint config into the whole config system at train level

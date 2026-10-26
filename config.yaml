@@ -1,0 +1,89 @@
+prepData:
+  raw_data_dir: ???
+  training_data_dir: ???
+  particle_length_ang: ???
+  coordinate_files: ???
+  coordinate_file_type: star
+  class_id: all
+  desired_particle_pixel_size: 20
+train:
+  training_data_dir: null
+  chunks_dir: ???
+  model_dir: ???
+  n_epochs: 10
+  batch_size: 2
+  use_gpus: true
+  n_cpus_for_preprocessing: 8
+  n_cpus_for_dataloading: 2
+  experiment_name: tomocpt
+  mode: picking
+  train_on: tomos
+  optimizer:
+    lr: 0.0004
+  network:
+    model_type: SwinUNETR
+    TORCH_FLOAT_PRECISION: bf16
+  augmentation:
+    # Existing spatial transforms. These defaults reproduce the pre-existing
+    # pipeline exactly; changing them changes established runs.
+    affine_p: 0.8
+    affine_degrees: 45.0
+    elastic_blur_p: 0.75
+    elastic_weight: 0.1
+    blur_weight: 0.1
+    blur_std: 1.0
+    # Fourier degradation. Two independent switches, both off by default.
+    # keep_angle is the half-opening of the RETAINED wedge: 90 keeps
+    # everything, 0 keeps nothing.
+    use_mw_aug: false
+    use_fourier_aug: false
+    missing_wedge_prob: 0.5
+    amplitude_prob: 0.5
+    sample_kernel_prob: 0.5
+    keep_angle_min: 45.0
+    keep_angle_max: 45.0
+    smooth_sigma_min: 2.0
+    smooth_sigma_max: 4.0
+    step_sigma_min: 0.1
+    step_sigma_max: 4.0
+    offset_min: 2.0
+    offset_max: 10.0
+    taper_width: 0.0
+    reclip: true
+    clip_value: 3.0
+    # Intensity augmentations, all off by default.
+    brightness_gradient_p: 0.0
+    local_gamma_p: 0.0
+    brightness_p: 0.0
+    brightness_sigma: 0.5
+    contrast_p: 0.0
+    contrast_min: 0.5
+    contrast_max: 2.0
+    contrast_preserve_range: false
+    # TorchIO stand-ins for reference augmentations we did not port.
+    anisotropy_p: 0.0
+    noise_p: 0.0
+    noise_std: 0.1
+    gamma_p: 0.0
+    bias_field_p: 0.0
+  launch_tensorboard: true
+  use_distillation: false
+  distill_weight: 0.5
+  feature_distill_weight: 1.0
+  temperature: 2.0
+infer:
+  tomogram_dir: ???
+  predictions_dir: ???
+  weights: ???
+  masks_dir: null
+  length: ???
+  distance_threshold: null
+  predictions_coord_filename: tomopicker_coords.star
+  predictions_coord_format: relion_31
+  save_prediction_confidence_map: false
+  save_predicted_coords: true
+  confidence_threshold: 0.3
+  predictions_batch_size: 2
+  oversubscribe_factor: 1
+  use_cuda: true
+  n_cpus_per_gpu: 1
