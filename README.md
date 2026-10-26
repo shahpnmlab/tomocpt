@@ -219,7 +219,6 @@ or alignment mismatch.
 # Changelog
 
 ## 0.7.0
-- Added a CryoET Data Portal download script (`scripts/download_portal_data.py`).
 - Added missing-wedge and amplitude-spectrum Fourier augmentation, plus brightness-gradient,
   local-gamma, brightness, contrast, and contrast-inversion intensity augmentations, exposed
   via `train.augmentation.*` config/CLI options.
