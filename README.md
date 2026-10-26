@@ -185,6 +185,30 @@ In this mode `weights` is not required. Every MRC file in `predictions_dir` is t
 confidence map, unless `tomogram_dir`/`tomogram_file` is set, in which case only the maps
 matching those tomogram names are used.
 
+## Downloading data from the CryoET Data Portal
+
+`scripts/download_portal_data.py` downloads tomograms and point annotations from the
+[CryoET Data Portal](https://cryoetdataportal.czscience.com) and writes STAR files and a
+`prepData` block that `tomocpt prepare_data` can use directly.
+
+```bash
+pip install -e '.[portal]'
+
+# See what a dataset has, without downloading
+python scripts/download_portal_data.py --dataset-id 10440 --out data/czii --list
+
+# CZII object-identification training data at 10.012 A/px
+python scripts/download_portal_data.py --dataset-id 10440 --out data/czii \
+    --voxel-spacing 10.012 --processing denoised --diameters ribosome=300
+```
+
+It writes `tomograms/<run>.mrc`, one STAR file per object in `coords/`, `coords/all_objects.star`
+(one class number per object), `manifest.json`, and `prepdata_snippet.yaml`. Objects without a
+`--diameters` value get `???` in the snippet. Fill those in before `prepare_data`.
+Downloads resume after an interruption and are checked against the portal's file size.
+The script stops if annotation points fall outside the tomogram, which usually means a unit
+or alignment mismatch.
+
 ## Performance Tips
 
 1.  **GPU Acceleration**: Enable CUDA for both training and inference for best performance.
@@ -193,6 +217,28 @@ matching those tomogram names are used.
 4.  **Gradient Accumulation**: If you have limited GPU memory, use `gradient_accumulation_steps` in your config to train with a larger effective batch size.
 
 # Changelog
+
+## Unreleased
+- Fine-tuning now trains the output layer (`out`), at the full learning rate. It was in no
+  optimizer group before, so it stayed frozen.
+- Resuming a fine-tuning run keeps its differential learning rates instead of failing to load
+  the saved optimizer state.
+- Self-supervised training works again: the model can be built and loaded from checkpoints,
+  its rotation and contrastive heads are now trained, it logs `val_loss_smooth` (needed by the
+  LR scheduler and early stopping), and the "recons" TensorBoard panel shows the
+  reconstruction instead of the input.
+- `prepare_data` with IMOD models no longer fails with a NameError, and draws labels at the
+  correct positions (X and Z were swapped).
+- The `desired_particle_pixel_size` help text now says diameter (as the code does), not radius.
+
+## 0.7.0
+- Added missing-wedge and amplitude-spectrum Fourier augmentation, plus brightness-gradient,
+  local-gamma, brightness, contrast, and contrast-inversion intensity augmentations, exposed
+  via `train.augmentation.*` config/CLI options.
+- Fixed multi-species chunking collisions and train/validation leakage when several datasets
+  share the same tomograms.
+- Fixed an invalid `config.yaml` value (`infer.predictions_coord_format`) that blocked config
+  loading entirely.
 
 ## 0.6.0
 - Added `--skip-inference` to `tomocpt predict`, which reuses the confidence maps saved by a
@@ -222,3 +268,8 @@ tomoCPT is jointly developed by Ruben Sanchez-Garcia and Pranav NM Shah at the U
 [TomoCPT: a generalizable model for 3D particle detection and localization in cryo-electron tomograms](https://doi.org/10.1107/S2059798325000865)
 
 Shah PNM, Sanchez-Garcia R, Stuart DI. *Acta Crystallographica Section D: Structural Biology*, 81(2):63-76, 2025.
+## License
+
+tomocpt is distributed under the GNU Affero General Public License v3 (see
+[LICENSE](LICENSE)). Some vendored components carry their own licenses; see
+[NOTICE](NOTICE) for attributions.

@@ -16,7 +16,7 @@ from pytorch_lightning.callbacks import (
 )
 from pytorch_lightning.loggers import TensorBoardLogger
 
-from tomocpt.dataManager.chunking import do_chunking, get_chunking_name_done
+from tomocpt.dataManager.chunking import do_chunking, get_chunking_name_done, get_chunk_layout_path
 from tomocpt.utils import read_particles_csvs, accelerator_selector
 from tomocpt.defaultConfigs.train_config import TrainingModes
 from tomocpt.networks.pickingModel import BasePickingModel
@@ -39,6 +39,17 @@ def _prepare_data_if_needed(config: DictConfig):
 
     if Path(chunking_name_done).is_file():
         logging.info("Found existing chunked data. Skipping data preparation.")
+        training_data_dir = (
+            config.training_data_dir or mainConfig.prepData.training_data_dir
+        )
+        if Path(training_data_dir).is_dir() and not Path(get_chunk_layout_path(config.chunks_dir)).is_file():
+            tomos_df = read_particles_csvs(training_data_dir)
+            stems = tomos_df["tomogram_path"].map(lambda p: Path(str(p)).stem)
+            if not stems.is_unique:
+                raise RuntimeError(
+                    f"chunks_dir was built by a version with the chunk-collision bug (several "
+                    f"datasets share tomograms). Delete {chunking_name_done} to rebuild the chunks."
+                )
         return
 
     logging.info("Chunked data not found or incomplete. Starting data preparation...")
@@ -62,6 +73,13 @@ def _prepare_data_if_needed(config: DictConfig):
         use_gpus=config.use_gpus,
     )
     logging.info("Data preparation complete.")
+
+
+def _train_continue_kwargs(checkpoint_path: str, is_resuming: bool) -> dict:
+    """train_continue controls the differential LR. Fine-tuning sets it to the checkpoint.
+    Resuming leaves the value saved in the checkpoint, so a resumed fine-tuning run keeps
+    the parameter groups its saved optimizer state was built with."""
+    return {} if is_resuming else {"train_continue": checkpoint_path}
 
 
 def _create_model(config: DictConfig):
@@ -103,10 +121,8 @@ def _create_model(config: DictConfig):
         if checkpoint_path:
             logging.info(f"Loading model from checkpoint: {checkpoint_path}")
             try:
-                # Set train_continue ONLY when fine-tuning. This hparam controls the differential LR.
-                train_continue_path = None if is_resuming else checkpoint_path
                 model = BasePickingModel.load_from_checkpoint(
-                    checkpoint_path, train_continue=train_continue_path, lr=lr
+                    checkpoint_path, lr=lr, **_train_continue_kwargs(checkpoint_path, is_resuming)
                 )
             except RuntimeError:
                 logging.info(
@@ -135,10 +151,8 @@ def _create_model(config: DictConfig):
         )
         if checkpoint_path:
             logging.info(f"Loading self-supervised model from: {checkpoint_path}")
-            # Set train_continue ONLY when fine-tuning. This hparam controls the differential LR.
-            train_continue_path = None if is_resuming else checkpoint_path
             model = SelfSupervisedModel.load_from_checkpoint(
-                checkpoint_path, train_continue=train_continue_path, lr=lr
+                checkpoint_path, lr=lr, **_train_continue_kwargs(checkpoint_path, is_resuming)
             )
         else:
             logging.info("Initializing new SelfSupervisedModel from scratch.")
