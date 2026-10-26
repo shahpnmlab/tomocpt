@@ -1,13 +1,13 @@
-# CLAUDE.md — TomoCPT scale-free upgrade: engineering contract
+# CLAUDE.md — TomoCPT v2 (scale-aware multi-class picking): engineering contract
 
-This file is the shared contract for every agent that works on the TomoCPT
-scale-free upgrade. Read all of it before you write code.
+This file is the shared contract for every agent that works on TomoCPT v2.
+Read all of it before you write code.
 
 Precedence when two sources disagree:
 1. A human instruction in the conversation.
 2. The legacy code at tag `gate-0-base` for **legacy behaviour**. `gate-0-base` is
-   `main` after `feat/fourier-augmentations` is merged; the orchestrator records the
-   commit in `.claude/state/gate_status.json`.
+   `main` after `fix/v1-patches` and `plan/scale-free` are merged; the orchestrator
+   records the commit in `.claude/state/gate_status.json`.
    Section 1 records that behaviour. If Section 1 and the code disagree, the code
    is correct. Stop and write an escalation report (see Section 8).
 3. This file.
@@ -24,8 +24,9 @@ Precedence when two sources disagree:
 - Config is a tree of Python dataclasses in `tomocpt/defaultConfigs/`, rooted at
   `MainConfig` in `tomocpt/mainConfig.py`:
   - `prepData: PrepdataConfig`
-  - `train: TrainConfig`, which contains `train.optimizer: OptimizerConfig` and
-    `train.network: NetworkConfig` (which contains `UNET` and `SwinUNETR` sub-configs)
+  - `train: TrainConfig`, which contains `train.optimizer: OptimizerConfig`,
+    `train.network: NetworkConfig` (with `UNET` and `SwinUNETR` sub-configs) and
+    `train.augmentation: AugmentationConfig`
   - `infer: InferConfig`
   - `shared: GlobalPropertyConfig` (copied into sections in `MainConfig.__post_init__`)
 - `configManager/configManager.py` builds the Typer CLI from these dataclasses.
@@ -36,44 +37,48 @@ Precedence when two sources disagree:
 
 ### 1.2 Data pipeline (legacy = "pipeline v1")
 1. `prepare_data` (`labels/run.py`, `labels/helpers.py`):
-   - Reads STAR or IMOD coordinates. Writes one full-size label MRC per tomogram at
-     the **native** voxel size, plus a tracking CSV (`tomogram_path`, `label_path`,
-     `particle_diameter_angst`, `num_particles`).
+   - Reads STAR or IMOD coordinates (both give points as `(x, y, z)`). Writes one
+     full-size label MRC per tomogram at the **native** voxel size, plus a tracking CSV
+     (`tomogram_path`, `label_path`, `particle_diameter_angst`, `num_particles`).
+     One dataset = one species; several species are several datasets.
    - It does **not** chunk.
 2. `train` chunks the data (`training/helpers._prepare_data_if_needed` →
    `dataManager/chunking.do_chunking`) if `chunks_dir/done_labels_{True|False}.txt`
-   is absent. If that file exists, chunking is skipped without any check.
+   is absent. If it exists, chunking is skipped. It refuses (RuntimeError) chunks that
+   have no `chunk_layout.json` when tomogram stems repeat (chunks built before the
+   collision fix).
 3. Per tomogram (`dataManager/transforms.PreprocessTomogramd` →
    `dataManager/preprocessing.preprocess_tomogram`):
    - Robust normalisation: `clip((x - median) / (p95 - p5), -3, 3)`.
    - **Fixed-particle rescale**: trilinear resize so that the particle *diameter*
      becomes `prepData.desired_particle_pixel_size` (default 20) voxels. The resize
-     is skipped if the native diameter is within 1 voxel of the target.
+     is skipped if the native diameter is within 1 voxel of the target. No anti-aliasing.
    - Pad to at least 64 per axis. The label is resized to the same shape (trilinear).
 4. TorchIO `GridSampler`: chunk 64³, overlap 32 (stride 32). Empty chunks are dropped
    with probability `clip(1 - ALPHA * f1/f0, 0, 1)`. Chunks are `.nii.gz` files in
-   `chunks_dir/{train,val}/<tomo>/volumes/` and `.../labels_supervised/`. No metadata
-   is stored.
-5. Train/val split: `train_test_split(test_size=0.2, random_state=42)` over
-   tomograms (default). **One tomogram gives an empty train set and an error.**
+   `chunks_dir/{train,val}/<dir>/volumes/` and `.../labels_supervised/`.
+   `<dir>` is the tomogram stem when all stems are unique, otherwise
+   `<dataset dir>__<stem>` (`chunking.assign_chunk_dir_names`).
+   `chunks_dir/chunk_layout.json` = `{"layout": 2, "dir_names": ..., "split": ...}`.
+5. Train/val split (`chunking.split_rows_by_tomogram`): `train_test_split(test_size=0.2,
+   random_state=42)` when stems are unique, otherwise `GroupShuffleSplit` grouped by
+   tomogram stem. Fewer than 2 distinct tomograms raises `ValueError`.
 6. `dataManager/dataloading.VolumeDatsetIO` returns
-   `{"input_data": [1,64,64,64], "target_data": [1,64,64,64]}`.
+   `{"input_data": [1,64,64,64], "target_data": [1,64,64,64]}`. `Data` (the
+   LightningDataModule) is constructed in `training/run.py`.
 7. Training augmentation is built by
-   `dataManager/dataloading.build_training_transforms(cfg: AugmentationConfig)`
-   (config `train.augmentation`, in `defaultConfigs/train_config.py`), in this order:
-   1. `RandomAffine(degrees=45, p=0.8)` and `OneOf(RandomElasticDeformation, RandomBlur)`
-      (the historical pipeline);
+   `dataManager/dataloading.build_training_transforms(cfg: AugmentationConfig)`, in this order:
+   1. `RandomAffine(degrees=45, p=0.8)` and `OneOf(RandomElasticDeformation, RandomBlur)`;
    2. `RandomFourierDegradation` (`dataManager/fourier_augmentations.py`): missing wedge,
       amplitude-spectrum randomisation, local blend. Off by default
       (`use_mw_aug`, `use_fourier_aug`). It must run after every spatial transform.
       It orients the wedge for `(z, y, x)` arrays and keeps the input mean and std;
-   3. `RandomContrastInversion` at a fixed `p = 0.8` (`CONTRAST_INVERSION_PROB`,
-      **always on, not configurable**), then optional intensity transforms
-      (`dataManager/intensity_augmentations.py`), all off by default.
+   3. `RandomContrastInversion` at `constants.CONTRAST_INVERSION_PROB = 0.5`
+      (**always on, deliberately not configurable** — a human decision), then optional
+      intensity transforms (`dataManager/intensity_augmentations.py`), all off by default.
    Validation uses no transform. The target is a `tio.LabelMap`: spatial transforms
    resample it with **nearest-neighbour** interpolation, and every
-   `tio.IntensityTransform` skips it. That second property is what keeps the
-   Fourier and intensity augmentations off the target (see invariant 11).
+   `tio.IntensityTransform` skips it (see invariant 10).
 
 ### 1.3 Target
 `labels/helpers.generate_gaussian_sphere(radius_px, grid)`:
@@ -86,7 +91,7 @@ Particles whose box touches or crosses the tomogram border are **skipped**
 - MONAI 1.4.0 `SwinUNETR`, subclass `networks/swinunetr.MySwinUNETR`.
   Defaults (`defaultConfigs/models/swinunetr_config.py`): `feature_size=36`,
   `use_v2=True`, `use_checkpoint=True`, `drop_rate=0.3`, `attn_drop_rate=0.3`,
-  `dropout_path_rate=0.2`. MONAI defaults: `depths=(2,2,2,2)`,
+  `dropout_path_rate=0.2`, `out_channels=1`. MONAI defaults: `depths=(2,2,2,2)`,
   `num_heads=(3,6,12,24)`, window 7, patch 2.
 - `MySwinUNETR.forward(x)` returns a **tuple** `(logits, hidden_states_out[4])`.
   `BasePickingModel.forward` keeps `[0]`. Distillation and SSL need the tuple.
@@ -100,13 +105,11 @@ Particles whose box touches or crosses the tomogram border are **skipped**
 | `layers3` | 8³ | 4fs (144) | 4³, 8fs (288) = `hidden[3]` |
 | `layers4` | 4³ | 8fs (288) | 2³, 16fs (576) = `hidden[4]` |
 
-  No Swin block runs at 2³. The MLP inside each block is MONAI `MLPBlock`
-  (`linear1`, `fn`=GELU, `drop1`, `linear2`, `drop2`; in "swin" mode
-  `drop2 is drop1`). It receives tokens shaped `[B, D, H, W, C]` after `norm2`.
-- MONAI checkpoints `forward_part1` and `forward_part2` (which holds the MLP) with
-  `use_reentrant=False`. In backward, the MLP **runs a second time**.
-- Decoder output channels: `decoder5` 8fs at 4³, `decoder4` 4fs at 8³,
-  `decoder3` 2fs at 16³, `decoder2` fs at 32³, `decoder1` fs at 64³, then `out`.
+- Decoder output channels: `encoder10` 16fs at 2³, `decoder5` 8fs at 4³, `decoder4` 4fs
+  at 8³, `decoder3` 2fs at 16³, `decoder2` fs at 32³, `decoder1` fs at 64³, then `out`
+  (1×1×1 conv, fs → `out_channels`).
+- MONAI checkpoints the Swin blocks with `use_reentrant=False`; in backward they run a
+  second time. Nothing new runs inside a Swin block in this plan.
 
 ### 1.5 Loss (`networks/pickingModel.BasePickingModel.loss`)
 Computed on `ŷ = sigmoid(logits)`. Per sample, `N` = voxels per sample,
@@ -120,14 +123,20 @@ L     = mean( w · huber(ŷ, y)  +  10 · Σ_6 huber(H(ŷ), H(y)) )       # seco
 ```
 Huber delta is 1.0. The second term is the full Hessian, not a Laplacian.
 
-### 1.6 Training runtime (`training/helpers.py`)
-- RAdam, lr 4e-4, `ReduceLROnPlateau` on `val_loss_smooth`, `EarlyStopping`,
-  `StochasticWeightAveraging`, gradient clip 1.0.
+### 1.6 Training runtime (`training/helpers.py`, `networks/baseModel.py`)
+- RAdam, lr 4e-4, `ReduceLROnPlateau` on `val_loss_smooth`, `EarlyStopping` on
+  `val_loss_smooth`, `StochasticWeightAveraging`, gradient clip 1.0.
+  `BaseModel.on_validation_epoch_end` logs `val_loss_smooth` (EMA of `val_loss`) for
+  every model type.
 - Default precision `bf16-mixed`.
 - GPU strategy `ddp_find_unused_parameters_false`. **Any parameter without a
   gradient in a step crashes multi-GPU training.**
-- Fine-tuning (`fine_tune_from`) uses differential LR: `swinViT` ×0.01,
-  `encoder*` ×0.1, `decoder*` ×1.0.
+- Fine-tuning (`fine_tune_from`, which sets `train_continue`) uses differential LR:
+  `swinViT` ×0.01, `encoder*` ×0.1, `decoder*` ×1.0, and every other trainable
+  parameter (`out`, SSL heads) ×1.0 (`BaseModel._get_model_parameters_for_optimizer`).
+  Training from scratch puts every trainable parameter in one group.
+- Resume (`resume_from`) keeps the checkpoint's `train_continue`. A run whose saved
+  optimizer predates the `out`-layer fix resumes with its original groups.
 - Distillation (`networks/distillationModel.py`): frozen teacher; temperature BCE
   on logits plus MSE on `hidden_states_out[4]`.
 
@@ -138,11 +147,13 @@ Huber delta is 1.0. The second term is the full Hessian, not a Laplacian.
   that is, about Z) then `aug_rand` (random blocks filled with min-max-scaled noise
   in [0, 1], plus pasted blocks from another sample).
 - Heads on `hidden_states_out[4]` (2³ × 16fs): 4-way rotation (CE), contrastive
-  (NT-Xent, temperature 0.1, plus L1 = `1e-4 · Σ|z|`).
+  (NT-Xent, temperature 0.1, plus L1 = `1e-4 · Σ|z|`). Both heads are optimised.
 - Reconstruction: the decoder output, L1 over the **whole** volume, weight 10.
-- Picking can start from an SSL checkpoint (`training/helpers._create_model`).
-- SSL training uses the same `Data` module, so the training augmentation in Section 1.2
-  (including contrast inversion at `p = 0.8`) also runs on SSL inputs.
+  TensorBoard `recons_*` shows the reconstruction of view 1.
+- Picking can start from an SSL checkpoint (`training/helpers._create_model`, via the
+  `RuntimeError` fallback when the checkpoint does not load as `BasePickingModel`).
+- SSL training uses the same `Data` module, so the Section 1.2 augmentation (including
+  contrast inversion) also runs on SSL inputs.
 
 ### 1.8 Inference (`predict/run.py`, `predict/helpers.py`)
 - Dask cluster, one worker per GPU. `InferenceModel.load_from_checkpoint(strict=True)`.
@@ -151,57 +162,49 @@ Huber delta is 1.0. The second term is the full Hessian, not a Laplacian.
 - The tomogram is rescaled with `infer.length`, then predicted with `GridSampler`
   64³, overlap `64 // PATCH_OVERLAP_FACTOR` = 16, `GridAggregator(overlap_mode="hann")`,
   optional flip TTA. The map is resized back to the native shape. Peaks are found
-  at the native voxel size with radius `length / (2·apix_native)`.
+  at the native voxel size with radius `length / (2·apix_native)`
+  (`_extract_peaks_from_mask`, `peak_local_max_torch`).
 - Output formats: `warp`, `relion_31`, `relion_50`, `imod`.
 
 ### 1.9 Checkpoints
 - Lightning saves the full `MainConfig` dataclass (pickled) in `hyper_parameters`.
 - `BaseModel.__init__` first calls `configManager.backfill_missing_fields(config,
   _mainConfigNoChanges)`, which adds current defaults for fields that an older
-  checkpoint lacks, then merges with `update_config(...)`, which skips fields missing
-  on the source. Without this, a new nested field built with `default_factory` would
-  make every older checkpoint raise `AttributeError` (dataclass unpickling does not
-  run `__init__`). Gate 1 adds tests that load a real older checkpoint.
+  checkpoint lacks, then merges with `update_config(...)`. Because of this, **each gate
+  adds its own config fields**; there is no up-front schema.
 
 ### 1.10 Known legacy defects (do not "fix" them outside the named gate)
 | Defect | Fixed in |
 |---|---|
-| `prepare_picking_imod` uses undefined `class_id` (NameError) | Gate 1 |
-| Old checkpoints failed to load once new nested config fields existed | Fixed on `feat/fourier-augmentations`; Gate 1 adds tests |
-| Help text says `desired_particle_pixel_size` is a radius; code uses diameter | Gate 1 (text only) |
-| Border particles are skipped and become negatives | Gate 2 (flag) |
+| Border particles are skipped and become negatives | Gate 2 (`label_border_policy`, v2) |
 | Soft targets resampled with nearest-neighbour in augmentation | Gate 2 (pipeline v2 only) |
-| Downsampling uses trilinear interpolation without anti-aliasing | Gate 2 (pipeline v2 option) |
-| Fine-tune parameter groups (`swinunetr._get_model_parameters_for_optimizer`) put only `swinViT`, `encoder*`, `decoder*` into the optimizer; `out.*` is in no group, so the output layer is frozen during fine-tuning | Gate 3 (v2 and conditioned models; v1 needs a human decision) |
-| SSL TensorBoard "recons" panel logs the input, not the reconstruction | Gate 6 |
-| SSL 4-way rotation task is ill-posed with a missing wedge (see Gate 6 spec) | Gate 6 (SSL v2) |
-| `config.yaml` has `infer.predictions_coord_format: relion`, which is not a valid enum value, so the file does not load | Human decision (`relion_31` or `relion_50`) |
-| `pyproject.toml` pins `numpy==1.26.4`, `scipy==1.14.1`; the Fourier branch was developed on newer versions | Gate 1 (run the suite on the pins) |
-| Contrast inversion is always on at `p = 0.8`, so inverted polarity is the majority | Human decision; Gate 1 makes the probability a config field with default 0.8 |
+| Downsampling uses trilinear interpolation without anti-aliasing | Gate 2 (v2 `resample=fourier`) |
+| Several species of one tomogram are separate datasets, each rescaled differently, and each species is a negative for the others | Gate 2 (one multi-class dataset per tomogram set) |
+| SSL 4-way rotation task is ill-posed with a missing wedge (see Gate 5 spec) | Gate 5 (SSL v2) |
+| SSL chunks need a particle size and see one scale | Gate 5 (SSL v2) |
+| `pyproject.toml` pins `numpy==1.26.4`, `scipy==1.14.1`; the Fourier code was developed on newer versions | Gate 1 (run the suite on the pins) |
 
 ---
 
 ## 2. Goal and non-goals
 
-**Goal, stage 1 (Gates 1–6).** Remove the requirement that every particle is rescaled
-to one size. The network must pick particles whose diameter varies within a band of
-voxel sizes, given the target diameter as an input. One backbone pass must serve several
-target sizes. Several labelled species are picked by one model, one heatmap channel per
-species (Gate 5). Wedge-aware self-supervised pretraining supports this (Gate 6).
+**Goal.** One model and one `tomocpt predict` run pick several particle species of
+different sizes and microtubules, from tomograms of different voxel sizes.
+- **Data (Gate 2).** No fixed-particle rescale. Each tomogram is resampled only as far as
+  needed to keep every class inside a band of voxel diameters (default 10–32), at one or
+  a few working voxel sizes. All species of a tomogram are labelled together.
+- **Model (Gate 3).** One output channel per class. FiLM conditioning on the working
+  voxel size, so a class trained at several voxel sizes knows its physical scale.
+- **Inference (Gate 4).** The plan of working voxel sizes comes from the checkpoint's
+  class table and the tomogram's voxel size; each class is read at the size that fits it.
+- **Self-supervised pretraining (Gate 5).** Wedge-aware, scale-aware SSL with dense
+  embeddings gives the picker a better starting point, especially with few labels.
+- **Filaments (Gate 6).** Microtubules as centreline channels, traced to polylines.
 
-**Goal, stage 2 (Gates 7–8).** One model, one inference run: particle centroids plus
-probability maps for membranes, filaments, organelles and void. Trained from partial
-labels (Gate 7). A mixture of experts with structure- and scale-specific operators
-(Gate 8) is an experiment; it ships only if it beats two controls.
+Legacy behaviour and legacy checkpoints keep working unchanged throughout.
 
-Legacy behaviour and legacy checkpoints must keep working unchanged throughout.
-
-**Main hypothesis.** Size conditioning plus multi-scale data gives most of the picking
-benefit. Labelled multi-task heads give the segmentation. MoE may add capacity where the
-tasks compete.
-
-**Non-goals.** Segmentation that "emerges" from router maps without labels.
-"Discover all species" picking.
+**Non-goals.** Segmentation of membranes, organelles or void. Mixture-of-experts models.
+Selecting a species at inference from its diameter alone (a class is a trained channel).
 
 ---
 
@@ -209,22 +212,24 @@ tasks compete.
 
 | Term | Meaning |
 |---|---|
-| `apix_native` | Voxel size in Å from the MRC header (`mrc.voxel_size.x`). |
+| `apix_native` | Voxel size in Å from the MRC header (`mrc.voxel_size.x`), or `apix_override`. |
 | `apix_work` | Voxel size in Å of the array the network sees. |
-| `d_vox` | Target diameter in working voxels: `particle_length_ang / apix_work`. |
+| `d_vox` | Diameter in working voxels: `diameter_ang / apix_work`. |
+| class table | Ordered list of `ClassSpec(number, name, diameter_ang, kind)`; `kind` is `particle` or `filament`. Channel `c` = row `c`. Particles first, then filaments. Stored in `chunk_layout.json` and in the checkpoint config. |
+| band | `[band_min_vox, band_max_vox]`, default `[10, 32]`. |
+| level | One working voxel size used for a tomogram, with the classes assigned to it. |
 | pipeline v1 | Legacy data pipeline (Section 1.2). `train.data_pipeline_version = 1`. |
-| pipeline v2 | New pipeline with a scale policy. `train.data_pipeline_version = 2`. |
-| `fixed_particle` | Scale policy of v1: `d_vox` is about `desired_particle_pixel_size`. |
-| `band` | Scale policy of v2: keep `d_vox` inside `[band_min, band_max]` (default [10, 32]) with the least resampling. |
+| pipeline v2 | Band scale policy, multi-class points. `train.data_pipeline_version = 2`. |
 
-Band rule (v2), for one or more lengths `L` in one tomogram:
+Band rule (v2), for the class diameters `L` of one tomogram:
 ```
 apix_work = clip(apix_native, max(L) / band_max, min(L) / band_min)
 ```
-If `apix_native` already puts every length inside the band, nothing is resampled.
-Otherwise the result is the voxel size closest to native that fits the band. If
-`max(L)/min(L) > band_max/band_min`, no single value fits: split the lengths into
-groups (`dataManager.scaling.group_lengths`) and process each group separately.
+If `apix_native` already puts every class inside the band, nothing is resampled.
+If `max(L)/min(L) > band_max/band_min`, no single value fits: `dataManager.scaling.group_lengths`
+splits the classes into groups, one level each. A class is **assigned** to exactly one
+level (its group) and is read there at inference. During training a class is available at
+every level where its `d_vox` lies inside the band.
 
 ---
 
@@ -234,37 +239,33 @@ groups (`dataManager.scaling.group_lengths`) and process each group separately.
    loss, chunk files, inference maps, and coordinates are identical to `gate-0-base`
    (tolerance in each gate spec). Every new behaviour is opt-in.
 2. **Checkpoint compatibility.** Every checkpoint written by `gate-0-base` code
-   loads for `train --fine-tune-from`, `train --resume-from`, distillation teacher,
-   and `predict`, and behaves as v1.
+   (picking and SSL) loads for `train --fine-tune-from`, `train --resume-from`,
+   distillation teacher, and `predict`, and behaves as v1.
 3. **Config isolation (Issue #14).** New library code takes values as arguments.
    It does not read `mainConfig` globals. Inference reads training-time settings
    from the checkpoint (`model.hparams.config.train...`), never from `mainConfig.train`.
    Never access one section through another (no `cfg.train.prepData`).
-4. **Chunk format is versioned.** Pipeline v2 writes `chunks_dir/chunk_format.json`.
-   Training refuses chunks whose format does not match the requested pipeline version.
+4. **Chunk format is versioned.** Pipeline v2 adds `"pipeline_version": 2` and the class
+   table to `chunks_dir/chunk_layout.json` (one manifest, no second file). Training
+   refuses chunks whose `pipeline_version` (missing = 1) does not match the request.
 5. **DDP safety.** When a feature is enabled, all its parameters receive a gradient
    (zero is allowed) in every training step. When a feature is disabled, do not
    create its modules.
-6. **Recompute safety.** Code that runs inside a checkpointed Swin block must not
-   append to Python lists or change state that depends on how many times it runs.
-   Overwrite per-forward statistics. Collect them right after `swinViT` returns.
+6. **Zero-init for new paths.** FiLM layers start at zero, so a conditioned model loaded
+   from an unconditioned checkpoint gives the unconditioned output.
 7. **Output contract.** Model `forward` returns `(logits, hidden_states_out[4])`.
-   `logits` are pre-sigmoid. Channels `0..P-1` are particle centroid heatmaps, one per
-   particle class (`P = 1` unless Gate 5 multi-class is on, so channel 0 is the legacy
-   heatmap). Gate 7 adds structure channels after them, in `train.tasks.classes` order.
+   `logits` are pre-sigmoid, `[B, C, D, H, W]`, channel `c` = class-table row `c`
+   (particles, then filaments). With one class, channel 0 is the legacy heatmap.
    Never encode the class in the peak height.
 8. **Dependencies.** Use only the packages pinned in `pyproject.toml`
    (torch 2.5.1, MONAI 1.4.0, Kornia 0.7.4, TorchIO 0.20.2, Lightning 2.4.0,
-   einops 0.8.0, and the others). Add nothing that needs compilation. Any new
-   dependency needs human approval.
-9. **Zero-init for new paths.** New conditioning, FiLM, expert branches, and router
-   conditioning start at zero, so a new model loaded from a legacy checkpoint gives
-   the legacy output.
-10. **Tests are frozen.** You never edit a test file that the orchestrator froze.
-    The tests that exist at `gate-0-base` (`tests/test_*.py`) are frozen from the start
-    and run in every gate.
-11. **Targets stay `tio.LabelMap`.** Intensity and Fourier augmentations rely on TorchIO
-    skipping label maps. To get smooth target resampling in pipeline v2, set
+   scikit-image 0.24.0, scikit-learn 1.6.0, scipy 1.14.1, and the others; the `portal`
+   extra for portal access). Any new dependency needs human approval.
+9. **Tests are frozen.** You never edit a test file that the orchestrator froze.
+   The tests that exist at `gate-0-base` (`tests/test_*.py`) are frozen from the start
+   and run in every gate.
+10. **Targets stay `tio.LabelMap`.** Intensity and Fourier augmentations rely on TorchIO
+    skipping label maps. For smooth target resampling in pipeline v2, set
     `label_interpolation="linear"` on the spatial transforms; never turn the target
     into a `tio.ScalarImage`.
 
@@ -276,82 +277,76 @@ groups (`dataManager.scaling.group_lengths`) and process each group separately.
 | Key | Shape | dtype | Notes |
 |---|---|---|---|
 | `input_data` | `[B,1,64,64,64]` | float32 | normalised volume |
-| `target_data` | `[B,P,64,64,64]` | float32 | soft Gaussian target per particle class, values in [0,1]; `P = 1` before Gate 5 |
-| `class_available` | `[B,P]` | bool | Gate 5: class annotated exhaustively in this sample |
-| `class_d_vox` | `[B,P]` | float32 | Gate 5: class diameter in working voxels |
-| `d_vox` | `[B,1]` | float32 | target diameter in working voxels |
-| `apix_work` | `[B,1]` | float32 | Å per working voxel |
+| `target_data` | `[B,C,64,64,64]` | float32 | soft target per class, values in [0,1] |
+| `class_available` | `[B,C]` | bool | class annotated exhaustively in this sample **and** inside the band at this level |
+| `class_d_vox` | `[B,C]` | float32 | class diameter in working voxels |
+| `apix_work` | `[B,1]` | float32 | Å per working voxel (after zoom augmentation) |
 | `dataset_id` | `[B]` | int64 | index of the `prepData` dataset |
 
 Do not rename `input_data` or `target_data`.
 
-### 5.2 Model signatures
+### 5.2 Target storage (pipeline v2)
+Chunks store targets as geometry, not dense volumes:
+- `points/<chunk>.npy`, float32 `[N, 5]`: `z, y, x, class_index, d_vox` in chunk voxels;
+- `filaments/<chunk>.npy` (Gate 6), float32 `[M, 8]`: segment `z0, y0, x0, z1, y1, x1,
+  class_index, d_vox` in chunk voxels.
+The dataloader draws dense targets with `labels.helpers.render_targets` before the
+augmentation. The GPU always sees dense `[B, C, D, H, W]`; do not use `torch.sparse`.
+
+### 5.3 Model signatures
 - Legacy: `MySwinUNETR.forward(x) -> (logits, hidden4)`.
-- Gate 3: `SizeConditionedSwinUNETR.forward(x, d_vox=None) -> (logits, hidden4)`,
-  plus `encode(x) -> hidden_states` and `decode(x, hidden_states, d_vox) -> logits`.
-  `d_vox=None` gives exactly the legacy computation.
-- Size embedding input: `t = log(d_vox / 20.0)`. At `d_vox = 20`, `t = 0`.
-- Gate 7: `MultiStructureSwinUNETR.forward(x, d_vox=None, apix=None) -> (logits, hidden4)`,
-  `logits [B, P+K, D, H, W]`; conditioning `ConditionEmbedding(d_vox, apix)` with
-  `t_apix = log(apix / 10.0)`. Multi-structure batches add `seg_target [B,K,D,H,W]` float32
-  and `seg_available [B,K]` bool.
+- Gate 3: `ScaleConditionedSwinUNETR.forward(x, apix=None) -> (logits, hidden4)`.
+  `apix=None` gives exactly the unconditioned computation.
+- Scale embedding input: `t = log(apix / 10.0)`. At 10 Å/px, `t = 0`.
 
-### 5.2b Target storage (pipeline v2)
-Chunks store particles as points (`points/<chunk>.npy`, `[N, 5]`: `z, y, x, class_index,
-d_vox` in chunk voxels), not as dense label volumes. The dataloader draws the dense target
-with `labels.helpers.render_targets` before the augmentation. The GPU always sees dense
-`[B, P, D, H, W]` tensors; do not use `torch.sparse`.
-
-### 5.3 Picking loss in pipeline v2
-Same as Section 1.5, except the Hessian is scale-normalised per sample before the
-Huber term: `H_n(v) = (d_vox / 20)² · H(v)`. At `d_vox = 20` this equals v1.
-Pipeline v1 uses Section 1.5 unchanged. With several particle classes (Gate 5) the loss
-is computed per class with per-class weights and `class_d_vox`, only for available
-classes, and the Hessian term one class at a time (gradient checkpointing).
+### 5.4 Picking loss in pipeline v2
+Section 1.5 per class `c`, with per-sample **and per-class** weights, computed only where
+`class_available[b, c]`, Hessian scale-normalised per sample and class:
+`H_n(v) = (class_d_vox[b, c] / 20)² · H(v)`. At `d_vox = 20` and one class this equals v1.
+The total is the mean over available `(b, c)` pairs. The Hessian term runs one class at a
+time (gradient checkpointing). Pipeline v1 uses Section 1.5 unchanged.
 
 ---
 
-## 6. Config additions (Gate 1 adds them all, inert; later gates add behaviour)
+## 6. Config additions (each gate adds its own; all defaults reproduce v1)
 
-| Path | Type / default | Owner gate |
+| Path | Type / default | Gate |
 |---|---|---|
-| `prepData.label_border_policy` | `skip` \| `clip` = `skip` | 2 |
-| `prepData.write_coordinates` | bool = `True` (additive CSV per tomogram) | 2 |
 | `prepData.apix_override` | Optional[float] = `None` | 2 |
+| `prepData.label_border_policy` | `skip` \| `clip` = `skip` | 2 |
+| `prepData.multiclass` | bool = `False` | 2 |
+| `prepData.class_diameters` | Optional[str] = `None` (`"1:120,2:130"`, Å) | 2 |
+| `prepData.class_names` | Optional[str] = `None` (`"1:apo-ferritin,..."`) | 2 |
+| `prepData.class_annotated` | Optional[str] = `None` (classes annotated exhaustively; default all present) | 2 |
 | `train.data_pipeline_version` | int = `1` | 2 |
-| `train.scale` | `ScaleConfig` (file `defaultConfigs/scale_config.py`) | 2 |
+| `train.scale` | `ScaleConfig` (`defaultConfigs/scale_config.py`) | 2 |
 | `train.augmentation.label_interpolation` | `nearest` \| `linear` = `nearest` | 2 |
 | `train.augmentation.rotation_mode` | `affine` \| `flips` = `affine` | 2 |
-| `train.augmentation.contrast_inversion_p` | float = `0.8` (replaces the constant) | 1 |
-| `train.pu` | `PUConfig` (file `defaultConfigs/pu_config.py`) | 3 |
-| `train.scale.target_storage` | `points` \| `dense` = `points` (v2 only) | 2 |
-| `prepData.multiclass`, `class_diameters`, `class_names`, `class_annotated` | off / `None` | 5 |
-| `train.particles` | `ParticlesConfig` (file `defaultConfigs/particles_config.py`) | 5 |
-| `infer.cross_class_nms`, `accumulate_dtype`, `accumulate_device`, `classes` | `True`, `float32`, `auto`, `None` | 5 |
-| `train.ssl` | `SSLConfig` (file `defaultConfigs/ssl_config.py`) | 6 |
-| `train.network.size_conditioning` | bool = `False` | 3 |
-| `train.tasks` | `TasksConfig` (file `defaultConfigs/tasks_config.py`) | 7 |
-| `train.network.moe` | `MoEConfig` (file `defaultConfigs/moe_config.py`) | 8 |
-| `infer.export_structures` | bool = `False` | 7 |
-| `infer.lengths` | Optional[str] = `None` (comma-separated Å) | 4 |
+| `train.augmentation.flip_p` | float = `0.0` | 2 |
+| `train.network.scale_conditioning` | bool = `False` | 3 |
+| `train.particles` | `ParticlesConfig` (`defaultConfigs/particles_config.py`) | 3 |
 | `infer.apix_override` | Optional[float] = `None` | 4 |
+| `infer.classes` | Optional[str] = `None` (subset of class names) | 4 |
+| `infer.cross_class_nms` | bool = `True` | 4 |
+| `infer.accumulate_dtype`, `infer.accumulate_device` | `float32`, `auto` | 4 |
+| `train.ssl` | `SSLConfig` (`defaultConfigs/ssl_config.py`) | 5 |
+| `prepData.filament_masks` | Optional[str] = `None` (`"<class number>:<mask dir>"`) | 6 |
+| `infer.filament_spacing_ang`, `infer.filament_min_length_ang` | float = `40.0`, `200.0` | 6 |
 
-Field details are in each gate spec. All defaults reproduce v1.
+Field details are in each gate spec. A gate may add fields only to the files it owns.
 
 ---
 
 ## 7. Gate map and file ownership
 
-| Gate | Agent spec | Purpose | May write (plus its own tests are written by TA) |
+| Gate | Agent spec | Purpose | May write (tests are written by TA) |
 |---|---|---|---|
-| 1 | `01_AGENT_BASELINE_CONFIG.md` | Lock legacy, safe config loading, inert config schema | `tomocpt/configManager/configManager.py`, `tomocpt/defaultConfigs/**`, `tomocpt/labels/helpers.py` (IMOD fix only), `tomocpt/dataManager/dataloading.py` (contrast-inversion probability from config only), `pyproject.toml` (pytest section), `.gitignore` |
-| 2 | `02_AGENT_SCALE_DATA.md` | Pipeline v2: band scale policy, metadata, multi-scale chunks, augmentation | `tomocpt/dataManager/**`, `tomocpt/labels/**`, `tomocpt/defaultConfigs/scale_config.py`, `tomocpt/defaultConfigs/prepdata_config.py` (own fields), `tomocpt/defaultConfigs/train_config.py` (`AugmentationConfig` fields only), `tomocpt/training/helpers.py` (`_prepare_data_if_needed` only) |
-| 3 | `03_AGENT_SIZE_CONDITIONED_MODEL.md` | FiLM size conditioning, v2 loss, optional PU | `tomocpt/networks/{swinunetr,conditioning,pickingModel,distillationModel,inference,baseModel}.py`, `tomocpt/training/**`, `tomocpt/defaultConfigs/{network_config,pu_config}.py` |
-| 4 | `04_AGENT_INFER_BENCHMARK.md` | v2 inference, multi-length picking, benchmark harness | `tomocpt/predict/**`, `tomocpt/defaultConfigs/infer_config.py`, `benchmarks/**`, `README.md` |
-| 5 | `05_AGENT_MULTICLASS_PARTICLES.md` | Several particle classes in one model: one heatmap channel per class, partial labels, per-class inference | `tomocpt/labels/**`, `tomocpt/dataManager/**`, `tomocpt/networks/{swinunetr,pickingModel,inference,distillationModel}.py`, `tomocpt/training/**`, `tomocpt/predict/**`, `tomocpt/defaultConfigs/{prepdata_config,particles_config,infer_config}.py`, `benchmarks/multiclass_czii.py`, `README.md` |
-| 6 | `06_AGENT_SSL_WEDGE.md` | Wedge-aware SSL v2 with relative-scale task | `tomocpt/networks/selfSupervisedModel.py`, `tomocpt/networks/ssl/**`, `tomocpt/dataManager/ssl_views.py`, `tomocpt/defaultConfigs/ssl_config.py`, `tomocpt/training/helpers.py` (self-supervised branches only) |
-| 7 | `07_AGENT_MULTI_STRUCTURE.md` | Particles + membrane, filament, organelle, void in one model; partial labels; two-resolution inference | see the spec (heads, seg losses, segmentation labels, chunk targets, predict outputs, portal masks) |
-| 8 | `08_AGENT_MOE.md` | Structure- and scale-expert soft MoE experiment and decision | `tomocpt/networks/moe.py`, `tomocpt/defaultConfigs/moe_config.py`, `benchmarks/moe_ablation.py`; one call in `NetworkConfig.build_model`; auxiliary-loss lines in `pickingModel.py` and `distillationModel.py` |
+| 1 | `01_AGENT_BASELINE.md` | Lock legacy numbers and checkpoint loading; metrics | `tomocpt/configManager/configManager.py` (`safe_getattr` only), `benchmarks/metrics.py`, `pyproject.toml` (pytest section), `.gitignore` |
+| 2 | `02_AGENT_SCALE_DATA.md` | Pipeline v2: band rule, levels, multi-class points, augmentation | `tomocpt/dataManager/**`, `tomocpt/labels/**`, `tomocpt/defaultConfigs/{scale_config,prepdata_config}.py`, `tomocpt/defaultConfigs/train_config.py` (`data_pipeline_version`, `scale`, `AugmentationConfig` fields), `tomocpt/training/helpers.py` (`_prepare_data_if_needed` only), `tomocpt/training/run.py` (`Data(...)` arguments only) |
+| 3 | `03_AGENT_MULTICLASS_PICKER.md` | Multi-class heads, FiLM on voxel size, v2 loss | `tomocpt/networks/{swinunetr,conditioning,pickingModel,distillationModel,inference,baseModel}.py`, `tomocpt/training/**` (except `_prepare_data_if_needed`), `tomocpt/defaultConfigs/{network_config,particles_config}.py` |
+| 4 | `04_AGENT_INFER_BENCHMARK.md` | v2 inference with levels, per-class outputs, benchmarks | `tomocpt/predict/**`, `tomocpt/defaultConfigs/infer_config.py`, `benchmarks/**`, `README.md` |
+| 5 | `05_AGENT_SSL.md` | Wedge-aware, scale-aware SSL v2 with dense embeddings | `tomocpt/networks/selfSupervisedModel.py`, `tomocpt/networks/ssl/**`, `tomocpt/dataManager/ssl_views.py`, `tomocpt/defaultConfigs/ssl_config.py`, `tomocpt/training/helpers.py` (self-supervised branches only), `benchmarks/ssl_*.py` |
+| 6 | `06_AGENT_FILAMENTS.md` | Microtubules: mask → centrelines, tube targets, tracing, output | `tomocpt/labels/**`, `tomocpt/dataManager/**`, `tomocpt/predict/**`, `tomocpt/defaultConfigs/{prepdata_config,infer_config}.py`, `scripts/download_portal_data.py`, `benchmarks/filaments.py`, `README.md` |
 
 Every gate also writes `.claude/reports/gate_0N_report.json`.
 Tests live in `tests/gateN/` and are written by the Test Author
@@ -367,8 +362,8 @@ in `tests/utils/` (written at Gate 1, frozen after Gate 1).
    and write `.claude/reports/gate_0N_escalation.md` (what, where, why).
 3. Do not edit frozen tests. If you think a test is wrong, write
    `.claude/reports/gate_0N_test_dispute.md` with evidence. The orchestrator decides.
-4. Run `pytest tests/gate1 ... tests/gateN -m "not slow"` before you report. Run
-   `-m slow` for your gate if a GPU is available; report if it is not.
+4. Run `pytest tests -m "not slow"` before you report. Run `pytest tests/gateN -m slow`
+   (a CUDA GPU is available on the development machine); report if it is not.
 5. If legacy code disagrees with Section 1, trust the code and escalate.
 6. Report with the schema in `00_ORCHESTRATOR.md`. Report failures honestly. Do not
    weaken a check to make it pass.

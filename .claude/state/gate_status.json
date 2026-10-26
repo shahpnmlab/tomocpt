@@ -1,13 +1,13 @@
 {
   "base_ref": "gate-0-base",
   "base_commit": null,
-  "base_note": "main after merging feat/fourier-augmentations; set by the orchestrator",
+  "base_note": "main after merging fix/v1-patches and plan/scale-free; set by the orchestrator",
   "current_gate": 1,
   "gpu_available": null,
   "gates": {
     "1": {
       "status": "PENDING",
-      "agent": "01_AGENT_BASELINE_CONFIG",
+      "agent": "01_AGENT_BASELINE",
       "attempts": 0,
       "test_hashes": {},
       "path_exceptions": [],
@@ -20,14 +20,15 @@
       "attempts": 0,
       "test_hashes": {},
       "path_exceptions": [
-        "tomocpt/training/helpers.py::_prepare_data_if_needed"
+        "tomocpt/training/helpers.py::_prepare_data_if_needed",
+        "tomocpt/training/run.py::Data(...) arguments"
       ],
       "notes": [],
       "report_path": ".claude/reports/gate_02_report.json"
     },
     "3": {
       "status": "LOCKED",
-      "agent": "03_AGENT_SIZE_CONDITIONED_MODEL",
+      "agent": "03_AGENT_MULTICLASS_PICKER",
       "attempts": 0,
       "test_hashes": {},
       "path_exceptions": [],
@@ -45,45 +46,23 @@
     },
     "5": {
       "status": "LOCKED",
-      "agent": "05_AGENT_MULTICLASS_PARTICLES",
-      "attempts": 0,
-      "test_hashes": {},
-      "path_exceptions": [],
-      "notes": [],
-      "report_path": ".claude/reports/gate_05_report.json"
-    },
-    "6": {
-      "status": "LOCKED",
-      "agent": "06_AGENT_SSL_WEDGE",
+      "agent": "05_AGENT_SSL",
       "attempts": 0,
       "test_hashes": {},
       "path_exceptions": [
         "tomocpt/training/helpers.py::self-supervised branches"
       ],
       "notes": [],
-      "report_path": ".claude/reports/gate_06_report.json"
+      "report_path": ".claude/reports/gate_05_report.json"
     },
-    "7": {
+    "6": {
       "status": "LOCKED",
-      "agent": "07_AGENT_MULTI_STRUCTURE",
+      "agent": "06_AGENT_FILAMENTS",
       "attempts": 0,
       "test_hashes": {},
       "path_exceptions": [],
       "notes": [],
-      "report_path": ".claude/reports/gate_07_report.json"
-    },
-    "8": {
-      "status": "LOCKED",
-      "agent": "08_AGENT_MOE",
-      "attempts": 0,
-      "test_hashes": {},
-      "path_exceptions": [
-        "tomocpt/defaultConfigs/network_config.py::build_model (one call)",
-        "tomocpt/networks/pickingModel.py::training_step (aux loss)",
-        "tomocpt/networks/distillationModel.py::training_step (aux loss)"
-      ],
-      "notes": [],
-      "report_path": ".claude/reports/gate_08_report.json"
+      "report_path": ".claude/reports/gate_06_report.json"
     }
   }
 }
