@@ -25,7 +25,7 @@ You may fix a merge conflict between gates; record it in the gate report.
 
 Register the `slow` marker in `pyproject.toml` (`[tool.pytest.ini_options]`) at Gate 1.
 
-## Per-gate protocol (N = 1 … 7)
+## Per-gate protocol (N = 1 … 8)
 
 ### Step 1 — Tests first
 1. Dispatch TA with: `CLAUDE.md`, `TA_TEST_AUTHOR.md`, the gate spec, earlier reports.
@@ -55,7 +55,7 @@ list of frozen test files. It must not edit them.
 5. Validate the report against the schema below.
 
 ### Step 4 — Decision
-- PASS: set status (`PASSED`, `PASSED_FAST_ONLY`, or for Gate 7 also
+- PASS: set status (`PASSED`, `PASSED_FAST_ONLY`, or for Gate 8 also
   `PASSED_NO_SHIP`), then
   `git add -A && git commit -m "Gate N passed" && git tag gate-N-passed`.
   Note: `git commit -am` does not add new files. Do not use it.

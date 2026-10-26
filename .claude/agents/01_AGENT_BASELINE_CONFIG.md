@@ -49,6 +49,7 @@ class ScaleConfig:
     scales_per_tomogram: int = 1
     resample: ResampleMethod = ResampleMethod.trilinear
     zoom_aug_max: float = 1.0          # 1.0 = off; v2 suggestion 1.25
+    target_storage: str = "points"     # v2 only: "points" or "dense"
     size_balanced_sampling: bool = False
 ```
 
@@ -69,7 +70,7 @@ class PUConfig:
 @dataclass
 class SSLConfig:
     version: int = 1
-    use_rotation: bool = True            # v1 behaviour; Gate 5 sets v2 default False
+    use_rotation: bool = True            # v1 behaviour; Gate 6 sets v2 default False
     rot_weight: float = 1.0
     contrast_weight: float = 1.0
     recon_weight: float = 10.0
@@ -103,6 +104,16 @@ class MoEConfig:
     route_supervision_weight: float = 0.0
 ```
 
+`defaultConfigs/particles_config.py`
+```python
+@dataclass
+class ParticlesConfig:
+    generic_channel: bool = False
+    class_weights: Optional[str] = None   # "1:1.0,2:2.0"
+    loss_checkpoint: bool = True
+    hessian_box: bool = False
+```
+
 `defaultConfigs/tasks_config.py`
 ```python
 @dataclass
@@ -116,14 +127,18 @@ class TasksConfig:
 
 Add fields (CLAUDE.md Section 6):
 - `PrepdataConfig`: `label_border_policy: str = "skip"`, `write_coordinates: bool = True`,
-  `apix_override: Optional[float] = None`.
+  `apix_override: Optional[float] = None`, `multiclass: bool = False`,
+  `class_diameters: Optional[str] = None`, `class_names: Optional[str] = None`,
+  `class_annotated: Optional[str] = None`.
 - `TrainConfig`: `data_pipeline_version: int = 1`, `scale: ScaleConfig`, `pu: PUConfig`,
-  `ssl: SSLConfig`, `tasks: TasksConfig`.
+  `ssl: SSLConfig`, `tasks: TasksConfig`, `particles: ParticlesConfig`.
 - `NetworkConfig`: `size_conditioning: bool = False`, `moe: MoEConfig`.
 - `AugmentationConfig` (existing, `train_config.py`): `label_interpolation: str = "nearest"`,
   `rotation_mode: str = "affine"`, `flip_p: float = 0.0`, `contrast_inversion_p: float = 0.8`.
 - `InferConfig`: `lengths: Optional[str] = None`, `apix_override: Optional[float] = None`,
-  `export_structures: bool = False`.
+  `export_structures: bool = False`, `cross_class_nms: bool = True`,
+  `accumulate_dtype: str = "float32"`, `accumulate_device: str = "auto"`,
+  `classes: Optional[str] = None`.
 
 Expose the new top-level scalar fields (`data_pipeline_version`, `label_border_policy`,
 `write_coordinates`, `apix_override`, `size_conditioning`, `lengths`) to the CLI with
@@ -143,6 +158,7 @@ Typer `Annotated` help text, like the existing fields. `tomocpt init` writes onl
 - `tomocpt.defaultConfigs.ssl_config.SSLConfig`
 - `tomocpt.defaultConfigs.moe_config.MoEConfig`
 - `tomocpt.defaultConfigs.tasks_config.TasksConfig`
+- `tomocpt.defaultConfigs.particles_config.ParticlesConfig`
 
 ## Pass criteria
 - **G1-C1** Gaussian target golden: `generate_gaussian_sphere(R, 2R+1)` for R in

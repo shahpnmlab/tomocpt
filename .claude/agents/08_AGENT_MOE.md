@@ -1,7 +1,7 @@
-# 07_AGENT_MOE.md — Gate 7: structure- and scale-expert soft MoE (experiment with a decision)
+# 08_AGENT_MOE.md — Gate 8: structure- and scale-expert soft MoE (experiment with a decision)
 
 ## Mission
-Test whether a mixture of experts improves the **Gate 6 multi-structure model**:
+Test whether a mixture of experts improves the **Gate 7 multi-structure model**:
 particles of many sizes, membranes, filaments, organelles and void in one pass.
 Build it correctly, compare it fairly with two controls, and report. It ships
 (`moe.enabled` default true for multi-structure models) only if it wins.
@@ -11,7 +11,7 @@ Build it correctly, compare it fairly with two controls, and report. It ships
   sheets, thin tubes, large smooth regions. One dense MLP per Swin block must serve all
   of them. Experts with different spatial kernels give the network separate capacity per
   kind of structure, and a router chooses per token.
-- Gate 6 supplies labels for each structure class. Those labels can also supervise the
+- Gate 7 supplies labels for each structure class. Those labels can also supervise the
   router (optional, below), so names like "sheet expert" now mean something.
 - Depthwise convolutions need every spatial neighbour, so each expert runs on the whole
   token grid. This is a **soft (dense) MoE**: compute does not drop. The benefit, if any,
@@ -29,7 +29,7 @@ Build it correctly, compare it fairly with two controls, and report. It ships
   `tomocpt/networks/distillationModel.py`, the MoE auxiliary loss lines in the training
   steps only.
 - `benchmarks/moe_ablation.py` (new)
-- `.claude/reports/gate_07_report.json`
+- `.claude/reports/gate_08_report.json`
 
 ## Design
 Stage geometry (CLAUDE.md Section 1.4): default stages `layers2` (16³, 2fs) and
@@ -54,7 +54,7 @@ Default `moe.experts = ("mlp", "dw_d1", "dw_d2", "dw_d3", "line", "sheet", "smoo
 
 ### Router
 `logits = W_x · x + W_c · c`, where `x` is the block input (already `norm2`-ed by MONAI)
-and `c` is the Gate 6 `ConditionEmbedding(d_vox, apix)`. `W_c` is zero-initialised;
+and `c` is the Gate 7 `ConditionEmbedding(d_vox, apix)`. `W_c` is zero-initialised;
 `W_x` has std 1e-3. Softmax over experts **in fp32**, divided by `temperature`.
 Output `y = Σ_e p_e · expert_e(x)`. No top-k, no epsilon.
 - Conditioning delivery: the model sets `moe.cond = c` on each MoE module before `swinViT`
@@ -69,7 +69,7 @@ Output `y = Σ_e p_e · expert_e(x)`. No top-k, no epsilon.
   per MoE block. Keep `balance_weight` small (default 0.01): tomograms differ in content,
   and equal use of every expert in every batch is not wanted.
 - Optional router supervision (`moe.route_supervision_weight`, default 0): for samples
-  where a structure class is available (Gate 6 `seg_available`), pool its target to the
+  where a structure class is available (Gate 7 `seg_available`), pool its target to the
   token grid and add cross-entropy that pushes those tokens towards the mapped experts
   (`moe.class_to_experts`, default membrane → `sheet`, filament → `line`,
   organelle and void → `smooth`; particles → `dw_d*` by `d_vox`). Only tokens with pooled
@@ -84,12 +84,12 @@ their `branch_scale` gradients differ and no extra noise is needed for symmetry 
 DDP: every expert and router parameter is used in every step.
 
 ## Tasks
-- **T7.1** `tomocpt.networks.moe`: `ScaleExpertMoE`, `EXPERT_REGISTRY`,
+- **T8.1** `tomocpt.networks.moe`: `ScaleExpertMoE`, `EXPERT_REGISTRY`,
   `maybe_inject_moe(model, moe_cfg)`, `upcycle_to_moe(model)`,
   `collect_router_stats(model) -> dict`, `moe_aux_loss(stats, cfg, seg_batch=None)`.
-- **T7.2** Integration through `maybe_inject_moe` and the training-step auxiliary loss.
-- **T7.3** `benchmarks/moe_ablation.py`: equal steps, data and 3 seeds per arm:
-  - **A**: Gate 6 multi-structure dense model.
+- **T8.2** Integration through `maybe_inject_moe` and the training-step auxiliary loss.
+- **T8.3** `benchmarks/moe_ablation.py`: equal steps, data and 3 seeds per arm:
+  - **A**: Gate 7 multi-structure dense model.
   - **B**: A plus every conv branch of every expert in each chosen MLP, summed with
     learned `branch_scale`, **no router** (same operators, no routing).
   - **C**: A plus `ScaleExpertMoE`.
@@ -101,22 +101,22 @@ DDP: every expert and router parameter is used in every step.
 `tomocpt.networks.moe.{ScaleExpertMoE, EXPERT_REGISTRY, maybe_inject_moe, upcycle_to_moe, collect_router_stats, moe_aux_loss}`.
 
 ## Pass criteria (implementation)
-- **G7-C1** Upcycling equivalence: tiny dense Gate 6 model vs its upcycled MoE, eval, CPU
+- **G8-C1** Upcycling equivalence: tiny dense Gate 7 model vs its upcycled MoE, eval, CPU
   fp32, random input, `d_vox ∈ {10, 20, 32}`, `apix ∈ {None, 10, 40}`:
   max |Δlogits| < 1e-5 on every channel.
-- **G7-C2** Router conditioning starts inert: at initialisation, changing `d_vox` or
+- **G8-C2** Router conditioning starts inert: at initialisation, changing `d_vox` or
   `apix` changes no router probability (atol 1e-7), because `W_c = 0`.
-- **G7-C3** bf16 autocast forward and backward on CPU: no NaN or Inf.
-- **G7-C4** Recompute safety: with `use_checkpoint=True`, after one training step
+- **G8-C3** bf16 autocast forward and backward on CPU: no NaN or Inf.
+- **G8-C4** Recompute safety: with `use_checkpoint=True`, after one training step
   `collect_router_stats` returns exactly one entry per MoE block, with values equal to a
   run with `use_checkpoint=False` (atol 1e-6).
-- **G7-C5** DDP rule: after one backward pass every parameter has `grad is not None`,
+- **G8-C5** DDP rule: after one backward pass every parameter has `grad is not None`,
   with and without router supervision, and for a batch that has no structure labels.
-- **G7-C6** Disabled MoE creates no MoE modules, and the model equals Gate 6
+- **G8-C6** Disabled MoE creates no MoE modules, and the model equals Gate 7
   (state-dict keys).
-- **G7-C7** Legacy, Gate 3 and Gate 6 checkpoints upcycle and load for fine-tuning.
-- **G7-C8** Each registered expert has the stated kernel shapes and is depthwise.
-- **G7-C9** (slow) Routing follows structure: on the Gate 6 phantom, after training arm C
+- **G8-C7** Legacy, Gate 3 and Gate 7 checkpoints upcycle and load for fine-tuning.
+- **G8-C8** Each registered expert has the stated kernel shapes and is depthwise.
+- **G8-C9** (slow) Routing follows structure: on the Gate 7 phantom, after training arm C
   (no router supervision), the mean router mass on `sheet` is higher on membrane tokens
   than on solvent tokens, and the mass on `line` is higher on filament tokens (report the
   ratios; pass if both > 1.2).

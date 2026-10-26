@@ -45,27 +45,36 @@
     },
     "5": {
       "status": "LOCKED",
-      "agent": "05_AGENT_SSL_WEDGE",
+      "agent": "05_AGENT_MULTICLASS_PARTICLES",
+      "attempts": 0,
+      "test_hashes": {},
+      "path_exceptions": [],
+      "notes": [],
+      "report_path": ".claude/reports/gate_05_report.json"
+    },
+    "6": {
+      "status": "LOCKED",
+      "agent": "06_AGENT_SSL_WEDGE",
       "attempts": 0,
       "test_hashes": {},
       "path_exceptions": [
         "tomocpt/training/helpers.py::self-supervised branches"
       ],
       "notes": [],
-      "report_path": ".claude/reports/gate_05_report.json"
-    },
-    "6": {
-      "status": "LOCKED",
-      "agent": "06_AGENT_MULTI_STRUCTURE",
-      "attempts": 0,
-      "test_hashes": {},
-      "path_exceptions": [],
-      "notes": [],
       "report_path": ".claude/reports/gate_06_report.json"
     },
     "7": {
       "status": "LOCKED",
-      "agent": "07_AGENT_MOE",
+      "agent": "07_AGENT_MULTI_STRUCTURE",
+      "attempts": 0,
+      "test_hashes": {},
+      "path_exceptions": [],
+      "notes": [],
+      "report_path": ".claude/reports/gate_07_report.json"
+    },
+    "8": {
+      "status": "LOCKED",
+      "agent": "08_AGENT_MOE",
       "attempts": 0,
       "test_hashes": {},
       "path_exceptions": [
@@ -74,7 +83,7 @@
         "tomocpt/networks/distillationModel.py::training_step (aux loss)"
       ],
       "notes": [],
-      "report_path": ".claude/reports/gate_07_report.json"
+      "report_path": ".claude/reports/gate_08_report.json"
     }
   }
 }

@@ -50,7 +50,7 @@ Create `tests/utils/` with:
   without overlap and away from borders unless `allow_border=True`. Sheets are
   bilayers (two parallel dark planes, 40 Å apart, random orientation). Tubes are
   hollow cylinders (diameter 250 Å; `tube_diameter_ang` sets it, e.g. 70 for actin).
-  Extra keyword arguments for Gate 6: `vesicles=0` (large closed bilayer shells,
+  Extra keyword arguments for Gate 7: `vesicles=0` (large closed bilayer shells,
   diameter 600–1500 Å, interior slightly denser than cytosol = organelle lumen) and
   `void_slab=False` (an empty, noise-only slab at one Z face, as outside a lamella).
   `make_phantom` also returns `masks: dict[str, np.ndarray]` with the exact membrane,

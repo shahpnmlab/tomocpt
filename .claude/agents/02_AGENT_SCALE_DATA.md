@@ -43,14 +43,19 @@ resamples only when the particle is outside the band and tells the model the siz
 
 ### T2.2 Coordinates and targets (`labels/**`)
 - When `prepData.write_coordinates` is true, `prepare_data` also writes
-  `<dataset_dir>/coords/<tomo>.csv` with columns `x,y,z` (native voxels, the same
-  values used to draw labels) and adds columns `coords_path` and `apix_native` to the
-  tracking CSV. Existing columns and label MRCs stay identical.
-- `render_targets(coords_xyz_native, apix_native, apix_work, work_shape_zyx,
-  diameter_ang, border_policy) -> np.ndarray[float32]`. Draws the Section 1.3 target
-  directly at the working scale with float radius `R = (diameter_ang/apix_work)/2`,
-  grid `2*ceil(R)+1`, centre `round(coord * apix_native / apix_work)`, max-combine.
-  `border_policy="skip"` reproduces the v1 border rule; `"clip"` draws the in-bounds part.
+  `<dataset_dir>/coords/<tomo>.csv` with columns `x,y,z,class_index,diameter_ang`
+  (native voxels, the same values used to draw labels; `class_index = 0` and the
+  dataset's diameter for single-class data; Gate 5 fills several classes) and adds
+  columns `coords_path` and `apix_native` to the tracking CSV. Existing columns and
+  label MRCs stay identical.
+- `render_targets(points, out_shape_zyx, n_classes=1, border_policy="clip") -> np.ndarray[float32]`
+  of shape `[n_classes, *out_shape_zyx]`. `points` is an `[N, 5]` array
+  `z, y, x, class_index, d_vox` in the voxels of the output array (float positions allowed).
+  Draws the Section 1.3 target with float radius `R = d_vox / 2`, grid `2*ceil(R)+1`,
+  centred at the rounded position, max-combine per channel. `"clip"` draws the in-bounds
+  part; `"skip"` drops particles whose box touches the array border (the v1 rule).
+- `points_to_working(coords_csv_rows, apix_native, apix_work) -> np.ndarray[N, 5]`
+  converts native `x,y,z` and `diameter_ang` to working `z,y,x,class_index,d_vox`.
 - `prepData.label_border_policy` also applies to v1 label MRCs. Default `skip` keeps v1.
 
 ### T2.3 Chunking v2 (`dataManager/chunking.py`, `transforms.py`, `metadata.py`)
@@ -61,10 +66,22 @@ resamples only when the particle is outside the band and tells the model the siz
   - `k = 0` uses the band rule. `k > 0` draws `d_target` log-uniformly in the band
     (seeded by `seed` and the tomogram name) and sets `apix_work = L / d_target`.
   - Normalise as v1, resample with `scale_cfg.resample`, pad to ≥ 64 (as v1).
-  - Target: `render_targets(...)` from the coordinates CSV, padded the same way.
-  - Grid sample and drop empty chunks as v1.
-  - Output directory `<split>/<tomo>__s{k}/` with the v1 sub-folders plus
-    `chunk_meta.json` (`ChunkMeta`).
+  - **Targets are stored as points, not as dense label chunks**
+    (`scale.target_storage = "points"`, the v2 default). Convert the coordinates to
+    working voxels (`points_to_working`), shift them by the padding, apply the
+    tomogram-border policy (`prepData.label_border_policy`) once at this level, then for
+    each chunk save `points/<chunk stem>.npy`: float32 `[N, 5]`, `z, y, x` relative to
+    the chunk origin, `class_index`, `d_vox`, for every particle whose sphere overlaps the
+    chunk (centre within `[-R, 64 + R)` on each axis). A chunk with 50 particles is
+    about 1 kB, whatever the number of classes.
+  - `scale.target_storage = "dense"` writes dense label chunks as in v1 (for debugging and
+    for comparison tests).
+  - Grid sample as v1. Drop empty chunks with the v1 probability, using "no point inside
+    the chunk" as "empty".
+  - Output directory `<split>/<dataset dir>__<tomo>__s{k}/` (unique per dataset,
+    tomogram and scale; see `HANDOFF_chunk_collisions.md`) with `volumes/`, `points/`
+    and `chunk_meta.json` (`ChunkMeta`).
+  - Split by tomogram stem (all rows of one tomogram in one split).
 - After all tomograms, write `chunks_dir/chunk_format.json`
   (`{"version": 2, "policy": ..., "band": [..], "resample": ..., "scales_per_tomogram": ...}`).
   In v2 this file is the "done" marker.
@@ -103,7 +120,13 @@ def write_chunk_format(chunks_dir, info: dict) / read_chunk_format(chunks_dir) -
   volume and target by `s` (trilinear), crop a random 64³, return `d_vox * s`. Zoom is a
   spatial step: apply it **before** `build_training_transforms` runs, so the Fourier
   degradation still comes after every spatial change.
-- `VolumeDatsetIO` v2 returns the batch in CLAUDE.md Section 5.1. v1 output unchanged.
+- `VolumeDatsetIO` v2 reads the volume chunk and its points file, draws the target with
+  `render_targets(points, (64, 64, 64), n_classes, "clip")` in the worker, and wraps it
+  as a `tio.LabelMap` before the transforms (invariant 11). It returns the batch in
+  CLAUDE.md Section 5.1. v1 output unchanged.
+- With points, zoom augmentation scales the point positions and `d_vox` and draws the
+  target after zooming, instead of interpolating a dense target. Rotations and elastic
+  deformation still act on the drawn target (with `label_interpolation="linear"`).
 - `size_balanced_sampling`: sample weights `∝ 1 / count(bin)` with 8 bins of
   `log(d_vox)` over the band. Lightning wraps the sampler for DDP.
 
@@ -128,6 +151,13 @@ def write_chunk_format(chunks_dir, info: dict) / read_chunk_format(chunks_dir) -
   `<tomo>__s{k}` dir; batches match Section 5.1 shapes and dtypes; `d_vox == L/apix_work`.
 - **G2-C6** v2 targets: the maximum lies within 1 voxel of each particle centre;
   target > 0 for `r < R - 0.5` and == 0 for `r > R + 1`.
+- **G2-C15** Points storage: for every chunk, `render_targets` from the stored points
+  equals the crop of a tomogram-level `render_targets` at the same working scale
+  (atol 1e-6), including particles that cross the chunk border.
+- **G2-C16** A chunk with 50 particles stores a points file under 4 kB; `target_storage =
+  "dense"` and `"points"` give the same training batches without augmentation (atol 1e-6).
+- **G2-C17** Two datasets that share tomograms write separate chunk directories, and no
+  tomogram stem is in both splits.
 - **G2-C7** Border policy: a particle 3 voxels from the edge is absent with `skip`
   (matches v1) and partly drawn with `clip`.
 - **G2-C8** Format guard errors in both directions.

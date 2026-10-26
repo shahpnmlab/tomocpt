@@ -3,7 +3,7 @@
 ## Mission
 Make `tomocpt predict` run pipeline-v2 checkpoints, pick several particle sizes from
 one backbone pass, and keep v1 output identical. Build the benchmark harness that
-Gates 5, 6 and 7 (and a human) use to decide what ships.
+Gates 5–8 (and a human) use to decide what ships.
 
 ## Allowed write paths
 - `tomocpt/predict/**`

@@ -10,26 +10,34 @@ Read this first in any new session. Then read `CLAUDE.md` and `.claude/agents/00
 | `main` | `0402392` | Legacy TomoCPT 0.6.0 | unchanged |
 | `feat/fourier-augmentations` | `1645d09` | membrain-seg Fourier + intensity augmentation port, config back-fill, contrast inversion, **plus two review fixes** (below) | tests not yet run by a human after the fixes |
 | `feat/portal-download` | `b4f6793` | `feat/fourier-augmentations` + `scripts/download_portal_data.py` + tests | **download confirmed working on real data** (CZII 10440, 7 runs) |
-| `plan/scale-free` | this commit | `CLAUDE.md`, `.claude/agents/*` (orchestrator, test author, Gates 1–7), `.claude/state/gate_status.json`, this file | plan only, no code |
+| `plan/scale-free` | this commit | `CLAUDE.md`, `.claude/agents/*` (orchestrator, test author, Gates 1–8), `.claude/state/gate_status.json`, this file | plan only, no code |
 
 `feat/portal-download` contains all of `feat/fourier-augmentations`. Merging it into `main`
 brings both.
 
 ## 2. What was decided and why (short)
 
-- **Goal stage 1 (Gates 1–5):** remove the fixed-particle rescale (every particle → 20 voxels).
+- **Goal stage 1 (Gates 1–6):** remove the fixed-particle rescale (every particle → 20 voxels).
   Pipeline v2 keeps the particle inside a band of 10–32 voxels with the least resampling
   and tells the network the size (FiLM conditioning). One backbone pass serves several sizes.
-- **Goal stage 2 (Gates 6–7):** one model, one `predict` run: particle centroids plus maps for
-  membrane, filament, organelle and void, trained from partial labels (Gate 6). Organelles and
+- **Goal stage 2 (Gates 7–8):** one model, one `predict` run: particle centroids plus maps for
+  membrane, filament, organelle and void, trained from partial labels (Gate 7). Organelles and
   void run at a coarser voxel size (default 40 Å/px) through the same network, because a 64³
   chunk at 10 Å/px is only 64 nm wide.
-- **MoE (Gate 7)** is an experiment on top of Gate 6: blob, line, sheet and smooth experts,
+- **Several particle classes (Gate 5):** one centroid heatmap channel per species, trained
+  with all species of a tomogram labelled together and a per-class "annotated" mask for
+  partial labels. Coding the class in the peak height was rejected (it mixes class with
+  confidence). Pipeline v2 stores particles as points per chunk and draws the dense target in
+  the dataloader, so disk use does not grow with the number of classes; the Hessian loss is
+  computed one class at a time to limit GPU memory.
+- **Gate numbers changed on 26 Oct:** multi-class is Gate 5; SSL is now Gate 6,
+  multi-structure Gate 7, MoE Gate 8.
+- **MoE (Gate 8)** is an experiment on top of Gate 7: blob, line, sheet and smooth experts,
   router conditioned on size and voxel size, optional label-guided routing. Ships only if it
   beats the dense model and a "same convolutions, no router" control.
 - **Segmentation does not emerge from router maps without labels.** That part of the original
   MoE plan was dropped. Labels come from portal masks, MemBrain-seg pseudo-labels or the user.
-- **SSL v2 (Gate 5):** the 4-way rotation task is removed. Rotating by 90° about Z moves the
+- **SSL v2 (Gate 6):** the 4-way rotation task is removed. Rotating by 90° about Z moves the
   missing wedge, so the head can only learn wedge orientation (accuracy ≈ 50 %, loss ≈ 0.69).
   It is replaced by masked reconstruction with a clean target, contrastive learning between
   differently degraded views, and a relative-scale task. The Fourier augmentation degrades the
@@ -86,8 +94,8 @@ rescaling. Expect weaker precision for those. Pipeline v2 with size conditioning
 1. `config.yaml`: `infer.predictions_coord_format: relion` is invalid → `relion_31` or `relion_50`.
 2. Contrast inversion probability: 0.8 (current, always on) or 0.5 (suggested).
 3. v1 fine-tuning: should the `out` layer train? (It is in no optimizer group today.)
-4. Gate 6 classes: membrane, filament, organelle, void — split microtubules and actin?
-5. Gate 6 label sources: portal masks, MemBrain-seg pseudo-labels, own masks.
+4. Gate 7 classes: membrane, filament, organelle, void — split microtubules and actin?
+5. Gate 7 label sources: portal masks, MemBrain-seg pseudo-labels, own masks.
 
 ## 6. Next steps, in order
 

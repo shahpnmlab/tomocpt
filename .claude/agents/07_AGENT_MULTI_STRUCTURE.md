@@ -1,4 +1,4 @@
-# 06_AGENT_MULTI_STRUCTURE.md — Gate 6: one pass for particles, filaments, membranes, organelles and void
+# 07_AGENT_MULTI_STRUCTURE.md — Gate 7: one pass for particles, filaments, membranes, organelles and void
 
 ## Mission
 Add segmentation heads so that one network, in one inference run, gives:
@@ -8,14 +8,14 @@ Add segmentation heads so that one network, in one inference run, gives:
 
 Train it from **partial labels**: most tomograms are annotated for only some classes.
 Keep every earlier behaviour unchanged when no segmentation class is enabled.
-This gate is a dense (non-MoE) model. Gate 7 tests MoE on top of it.
+This gate is a dense (non-MoE) model. Gate 8 tests MoE on top of it.
 
 ## Why labels, and why this order
 - Router maps do not become membrane or filament maps without supervision. Each class
   needs labelled examples. The portal has segmentation masks for many datasets, and
   MemBrain-seg can give membrane pseudo-labels.
 - MoE helps when different tasks compete for capacity. That competition exists only once
-  these heads exist, so MoE is tested after this gate (Gate 7).
+  these heads exist, so MoE is tested after this gate (Gate 8).
 
 ## Scale: two resolutions, one network
 At 10 Å/px a 64³ chunk covers 64 nm. A membrane bilayer (about 4 nm thick) and an actin
@@ -40,7 +40,7 @@ maps at the native size. "One pass" means one model and one command.
 - `tomocpt/defaultConfigs/{tasks_config,prepdata_config,infer_config}.py`
 - `scripts/download_portal_data.py` (segmentation masks)
 - `benchmarks/multi_structure.py` (new)
-- `.claude/reports/gate_06_report.json`
+- `.claude/reports/gate_07_report.json`
 
 ## Design
 
@@ -50,8 +50,9 @@ maps at the native size. "One pass" means one model and one command.
 
 `MultiStructureSwinUNETR(SizeConditionedSwinUNETR)`:
 - `forward(x, d_vox=None, apix=None) -> (logits, hidden4)`, `logits` has shape
-  `[B, 1 + K, D, H, W]`. Channel 0 is the centroid heatmap (exactly the Gate 3 output).
-  Channels `1..K` follow `train.tasks.classes`.
+  `[B, P + K, D, H, W]`. Channels `0..P-1` are the particle heatmaps from Gate 5
+  (`P = 1` for a single-class picker, which is exactly the Gate 3 output).
+  Channels `P..P+K-1` follow `train.tasks.classes`.
 - Segmentation heads: one `UnetOutBlock(fs → K)` on `decoder1` output, plus an optional
   shared `1×1×1` conv. Independent sigmoid per class (multi-label: a voxel can be both
   "membrane" and "organelle boundary").
@@ -71,7 +72,7 @@ Loss per available class: `BCE + soft Dice`; filaments add **clDice** (centre-li
 membranes use a 1-voxel distance-tolerant Dice (labels from different tools disagree by
 about one voxel). Per-class weights in `train.tasks.class_weights`.
 Total: `L = L_pick (Gate 3, only where a particle target exists) + Σ_k w_k L_k`.
-If a batch has no available sample for class `k`, add `0 · logits[:, 1+k].sum()` so the
+If a batch has no available sample for class `k`, add `0 · logits[:, P+k].sum()` so the
 head still gets a (zero) gradient (DDP rule).
 
 ### Labels
@@ -106,29 +107,30 @@ size; context classes at `context_apix`; both are resized to native size.
 `tomocpt.defaultConfigs.tasks_config.TasksConfig`.
 
 ## Pass criteria
-- **G6-C1** With `train.tasks.classes = ()`, the model, loss and outputs equal Gate 3
+- **G7-C1** With `train.tasks.classes = ()`, the model, loss and outputs equal Gate 5 (and
+  Gate 3 for one particle class)
   (state-dict keys and logits, atol 1e-6).
-- **G6-C2** Channel 0 of `MultiStructureSwinUNETR` loaded from a Gate 3 checkpoint equals
+- **G7-C2** The particle channels of `MultiStructureSwinUNETR` loaded from a Gate 3 or Gate 5 checkpoint equal
   the Gate 3 logits (atol 1e-6), for `apix=None` and any `apix` (zero-init).
-- **G6-C3** Partial labels: with `seg_available[k] = False` for every sample, the gradient
+- **G7-C3** Partial labels: with `seg_available[k] = False` for every sample, the gradient
   of head `k` is exactly 0 and not `None`; changing that class's target changes nothing.
-- **G6-C4** `cl_dice` is 1 for identical tubes and drops below 0.5 when a tube is broken
+- **G7-C4** `cl_dice` is 1 for identical tubes and drops below 0.5 when a tube is broken
   in three places, while plain Dice stays above 0.9 (shows why clDice is used).
-- **G6-C5** `resample_mask` round trip keeps a sheet's position within 0.5 native voxel;
+- **G7-C5** `resample_mask` round trip keeps a sheet's position within 0.5 native voxel;
   `render_filament_traces` gives a tube of the right diameter (± 1 voxel).
-- **G6-C6** Two-resolution inference: on a phantom with a context-scale blob, the merged
+- **G7-C6** Two-resolution inference: on a phantom with a context-scale blob, the merged
   map at native size aligns with the truth (centroid error < 1 native voxel).
-- **G6-C7** Portal masks: on a fake portal client (as in the script's tests), `--masks`
+- **G7-C7** Portal masks: on a fake portal client (as in the script's tests), `--masks`
   writes masks with the tomogram's shape and voxel size and records availability in the
   manifest.
-- **G6-C8** DDP rule: one step with a batch that has only particle labels gives every
+- **G7-C8** DDP rule: one step with a batch that has only particle labels gives every
   parameter a gradient (not `None`).
-- **G6-C9** (slow) Synthetic multi-structure phantom (spheres of two sizes, bilayer
+- **G7-C9** (slow) Synthetic multi-structure phantom (spheres of two sizes, bilayer
   sheets, tubes, large organelle-like vesicles, a void slab; wedge ±60°; noise), with
   partial labels (each tomogram labels two random classes). Thresholds on held-out data:
   membrane Dice ≥ 0.6, filament clDice ≥ 0.6, organelle Dice ≥ 0.7, void Dice ≥ 0.8.
-- **G6-C10** (slow) Interference check: picking F1 of the multi-structure model is at most
-  0.03 below the Gate 3 picking-only model on the same particles.
+- **G7-C10** (slow) Interference check: picking F1 of the multi-structure model is at most
+  0.03 below the Gate 5 (or Gate 3) picking-only model on the same particles, for every particle class.
 
 ## Benchmark (human review)
 `benchmarks/multi_structure.py` runs on portal datasets that have membrane and filament

@@ -1,4 +1,4 @@
-# 05_AGENT_SSL_WEDGE.md — Gate 5: wedge-aware self-supervised pretraining (SSL v2)
+# 06_AGENT_SSL_WEDGE.md — Gate 6: wedge-aware self-supervised pretraining (SSL v2)
 
 ## Mission
 Replace the pretext tasks that the missing wedge breaks. Add a task that teaches the
@@ -61,7 +61,7 @@ keep SSL → picking transfer working.
     ignore CTF, dose and wedge differences between datasets. This is the main benefit
     for transfer to new datasets.
   - *Relative scale*: random amplitude spectra hide the radial power-spectrum shape,
-    which is the main shortcut for guessing scale. (G5-C13 checks this with `D` on.)
+    which is the main shortcut for guessing scale. (G6-C13 checks this with `D` on.)
   Do not apply `D` to the target. A degraded target teaches the network to reproduce the
   artefacts.
 - **Polarity.** Contrast inversion with `ssl.inversion_p` (default 0.5), drawn per view
@@ -103,26 +103,26 @@ keep SSL → picking transfer working.
   `source_chunk=128`; set v2 defaults inside the v2 code path only)
 - Path exception: `tomocpt/training/helpers.py`, the self-supervised branch of
   `_create_model` and of `_prepare_data_if_needed` only.
-- `.claude/reports/gate_05_report.json`
+- `.claude/reports/gate_06_report.json`
 
 ## Tasks
-- **T5.1** Fix the TensorBoard bug for v1 too (log the reconstruction). Change nothing
+- **T6.1** Fix the TensorBoard bug for v1 too (log the reconstruction). Change nothing
   else in v1.
-- **T5.2** SSL v2 data: `make_ssl_source_chunks(...)` and `ScalePairDataset` in
+- **T6.2** SSL v2 data: `make_ssl_source_chunks(...)` and `ScalePairDataset` in
   `dataManager/ssl_views.py`. Write `chunk_format.json` with `"kind": "ssl"`.
-- **T5.3** `tomocpt.networks.ssl.views`: `make_scale_pair(source, centre, s_a, s_b,
+- **T6.3** `tomocpt.networks.ssl.views`: `make_scale_pair(source, centre, s_a, s_b,
   apix_ref, rng) -> (view_a, view_b, target_log2)`, `equalise_noise(view_a, view_b)`,
   `wedge_preserving_augment(view, target, rng) -> (view, target)` (flips and polarity,
   applied to both), `degrade(view, ssl_cfg, rng) -> view` (the augmentation `D`; reuses
   `RandomFourierDegradation._degrade_patch`, no copy of its numerics).
   `make_training_pair(...) -> dict(input_a, target_a, mask_a, input_b, target_b, mask_b, target_log2)`
   runs the full order above.
-- **T5.4** `tomocpt.networks.ssl.losses`: `masked_l1(pred, target, mask, visible_weight)`,
+- **T6.4** `tomocpt.networks.ssl.losses`: `masked_l1(pred, target, mask, visible_weight)`,
   `nt_xent(z_a, z_b, temperature, l1_weight)`.
-- **T5.5** `tomocpt.networks.ssl.heads`: `ProjectionHead`, `RelativeScaleHead`.
-- **T5.6** `SelfSupervisedModel` v2 path: two views per sample, the three tasks, the
+- **T6.5** `tomocpt.networks.ssl.heads`: `ProjectionHead`, `RelativeScaleHead`.
+- **T6.6** `SelfSupervisedModel` v2 path: two views per sample, the three tasks, the
   optional wedge task, logging of each loss and of scale MAE.
-- **T5.7** Transfer: SSL v2 checkpoint → picking (unconditioned or conditioned) loads
+- **T6.7** Transfer: SSL v2 checkpoint → picking (unconditioned or conditioned) loads
   backbone and decoder; SSL heads are dropped explicitly; conditioned models use
   `load_legacy_state_dict` rules for `cond.*`.
 
@@ -133,40 +133,40 @@ keep SSL → picking transfer working.
 `tomocpt.dataManager.ssl_views.{make_ssl_source_chunks, ScalePairDataset}`.
 
 ## Pass criteria
-- **G5-C1** v1 lock: seeded `SelfSupervisedModel._step` on the tiny model equals the
+- **G6-C1** v1 lock: seeded `SelfSupervisedModel._step` on the tiny model equals the
   `gate-0-base` golden loss and its three components (rtol 1e-5).
-- **G5-C2** With a mock logger, the `recons_*` image equals the reconstruction slice.
-- **G5-C3** Cause check: on a wedged noise volume, rot90 about Z raises
+- **G6-C2** With a mock logger, the `recons_*` image equals the reconstruction slice.
+- **G6-C3** Cause check: on a wedged noise volume, rot90 about Z raises
   `wedge_power_fraction` (canonical orientation) above 0.2; rot180 about Z and every
   axis flip keep it below 0.02.
-- **G5-C4** `wedge_preserving_augment` and `make_scale_pair` keep
+- **G6-C4** `wedge_preserving_augment` and `make_scale_pair` keep
   `wedge_power_fraction` < 0.02 (50 draws). `degrade` with only the wedge on also keeps
   it < 0.02 (its wedge is oriented like the data's).
-- **G5-C5** `masked_l1`: with equal residuals, the gradient at a visible voxel is
+- **G6-C5** `masked_l1`: with equal residuals, the gradient at a visible voxel is
   `visible_weight ×` the gradient at a masked voxel; masked input voxels are exactly 0.
-- **G5-C6** `make_scale_pair`: target equals `log2(s_a/s_b)`; on a one-blob volume the
+- **G6-C6** `make_scale_pair`: target equals `log2(s_a/s_b)`; on a one-blob volume the
   blob centroid sits at the view centre in both views (± 0.5 voxel).
-- **G5-C7** `RelativeScaleHead(a, b) == -RelativeScaleHead(b, a)` (atol 1e-6).
-- **G5-C8** `equalise_noise` on pure noise: shell noise std of the two views within 10 %.
-- **G5-C9** v2 with `use_rotation=True` → `ValueError`.
-- **G5-C10** One v2 training step: every parameter of enabled modules gets a gradient;
+- **G6-C7** `RelativeScaleHead(a, b) == -RelativeScaleHead(b, a)` (atol 1e-6).
+- **G6-C8** `equalise_noise` on pure noise: shell noise std of the two views within 10 %.
+- **G6-C9** v2 with `use_rotation=True` → `ValueError`.
+- **G6-C10** One v2 training step: every parameter of enabled modules gets a gradient;
   disabled optional modules do not exist.
-- **G5-C11** Transfer: SSL v2 checkpoint → picking model (unconditioned and
+- **G6-C11** Transfer: SSL v2 checkpoint → picking model (unconditioned and
   conditioned) loads; only SSL heads are dropped and only `cond.*` is missing.
-- **G5-C12** (slow) Scale learning: structured phantoms (blobs, sheets, tubes, wedge,
+- **G6-C12** (slow) Scale learning: structured phantoms (blobs, sheets, tubes, wedge,
   noise); held-out MAE of `log2` ratio < 0.15.
-- **G5-C15** Target is clean: in `make_training_pair`, `target_a` equals the view after
+- **G6-C15** Target is clean: in `make_training_pair`, `target_a` equals the view after
   flips and polarity only (bitwise, for a fixed seed), even with `degradation_p = 1`;
   `input_a` differs from `target_a` outside the mask.
-- **G5-C16** Polarity is consistent: with `inversion_p = 1`, `target_a` is the inverted
+- **G6-C16** Polarity is consistent: with `inversion_p = 1`, `target_a` is the inverted
   view and the masked-region L1 between a perfect predictor and the target is 0.
-- **G5-C17** `degrade` keeps the view's mean and standard deviation (rtol 0.02).
-- **G5-C13** (slow) Shortcut control (run with `D` on): same pipeline on pure-noise volumes; the absolute
+- **G6-C17** `degrade` keeps the view's mean and standard deviation (rtol 0.02).
+- **G6-C13** (slow) Shortcut control (run with `D` on): same pipeline on pure-noise volumes; the absolute
   Pearson correlation between predicted and true ratio < 0.2.
-- **G5-C18** (slow, report only) Degradation ablation: SSL v2 with `D` on vs off; then
+- **G6-C18** (slow, report only) Degradation ablation: SSL v2 with `D` on vs off; then
   picking fine-tune on a synthetic set whose test tomograms use a different amplitude
   spectrum and tilt range from training. Report F1 for both.
-- **G5-C14** (slow, report only) Picking fine-tune from SSL v2 vs from scratch on the
+- **G6-C14** (slow, report only) Picking fine-tune from SSL v2 vs from scratch on the
   Gate 3 G3-C12 task: report steps to reach F1 0.7. Not a pass condition.
 
 ## Notes for the next gate
