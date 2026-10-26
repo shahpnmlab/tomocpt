@@ -218,6 +218,19 @@ or alignment mismatch.
 
 # Changelog
 
+## Unreleased
+- Fine-tuning now trains the output layer (`out`), at the full learning rate. It was in no
+  optimizer group before, so it stayed frozen.
+- Resuming a fine-tuning run keeps its differential learning rates instead of failing to load
+  the saved optimizer state.
+- Self-supervised training works again: the model can be built and loaded from checkpoints,
+  its rotation and contrastive heads are now trained, it logs `val_loss_smooth` (needed by the
+  LR scheduler and early stopping), and the "recons" TensorBoard panel shows the
+  reconstruction instead of the input.
+- `prepare_data` with IMOD models no longer fails with a NameError, and draws labels at the
+  correct positions (X and Z were swapped).
+- The `desired_particle_pixel_size` help text now says diameter (as the code does), not radius.
+
 ## 0.7.0
 - Added missing-wedge and amplitude-spectrum Fourier augmentation, plus brightness-gradient,
   local-gamma, brightness, contrast, and contrast-inversion intensity augmentations, exposed

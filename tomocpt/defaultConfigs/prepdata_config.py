@@ -45,7 +45,7 @@ class PrepdataConfig:
     desired_particle_pixel_size: Annotated[
         int,
         typer.Option(
-            help="Resize the volume to dimensions that yield particle radius in pixels"
+            help="Resize the volume so that the particle diameter is this many pixels"
         ),
     ] = 20
 

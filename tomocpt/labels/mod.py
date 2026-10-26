@@ -38,9 +38,10 @@ class Mod:
                 # Read the mod file
                 df = imodmodel.read(mod_file)
 
-                # Extract ZYX coordinates
+                # Extract XYZ coordinates: create_particle_masks reads each point as
+                # (x, y, z), the same order the STAR reader returns.
                 #TODO: Support multiple object ids if preset in the df
-                headings = [f"{axis}" for axis in "zyx"]
+                headings = [f"{axis}" for axis in "xyz"]
                 if not all(heading in df.columns for heading in headings):
                     logger.warning(f"Missing coordinate columns in {mod_file}")
                     continue

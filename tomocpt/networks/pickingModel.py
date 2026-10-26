@@ -125,24 +125,6 @@ class BasePickingModel(BaseModel):
                 
             return loss
 
-    def on_validation_epoch_end(self):
-        """
-        Called at the end of the validation epoch to compute the smoothed loss.
-        """
-        current_val_loss = self.trainer.callback_metrics.get("val_loss")
-        if current_val_loss is None:
-            return
-
-        # Calculate the EMA on the epoch's average loss
-        if self.val_loss_ema is None:
-            self.val_loss_ema = current_val_loss
-        else:
-            alpha = self.ema_alpha
-            self.val_loss_ema = alpha * current_val_loss + (1 - alpha) * self.val_loss_ema
-        
-        # Log the smoothed metric for EarlyStopping and ModelCheckpoint
-        self.log("val_loss_smooth", self.val_loss_ema, prog_bar=True, sync_dist=True)
-    
     def predict_step(self, batch, batch_idx, dataloader_idx=0):
         logits = self(batch)
         # y_pred = nn.functional.softplus(logits, beta=BETA_FOR_SOFTPLUS)

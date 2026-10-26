@@ -273,7 +273,7 @@ def prepare_picking_imod(input_file: Path ,
     matched_data = match_data_to_tomograms(vol_coord_pairs, tomo_path)
 
     # Create tracking DataFrame
-    tracking_df = create_tracking_dataframe(matched_data, tomo_path, output_dir, particle_diameter_angst, class_id)
+    tracking_df = create_tracking_dataframe(matched_data, tomo_path, output_dir, particle_diameter_angst, class_id="all")
 
     # Save tracking information
     tracking_csv = output_dir / "imod_picking_tracking.csv"

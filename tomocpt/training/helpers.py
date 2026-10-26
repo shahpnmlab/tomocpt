@@ -75,6 +75,13 @@ def _prepare_data_if_needed(config: DictConfig):
     logging.info("Data preparation complete.")
 
 
+def _train_continue_kwargs(checkpoint_path: str, is_resuming: bool) -> dict:
+    """train_continue controls the differential LR. Fine-tuning sets it to the checkpoint.
+    Resuming leaves the value saved in the checkpoint, so a resumed fine-tuning run keeps
+    the parameter groups its saved optimizer state was built with."""
+    return {} if is_resuming else {"train_continue": checkpoint_path}
+
+
 def _create_model(config: DictConfig):
     """Factory function to create the appropriate model based on the config."""
     lr = config.optimizer.lr
@@ -114,10 +121,8 @@ def _create_model(config: DictConfig):
         if checkpoint_path:
             logging.info(f"Loading model from checkpoint: {checkpoint_path}")
             try:
-                # Set train_continue ONLY when fine-tuning. This hparam controls the differential LR.
-                train_continue_path = None if is_resuming else checkpoint_path
                 model = BasePickingModel.load_from_checkpoint(
-                    checkpoint_path, train_continue=train_continue_path, lr=lr
+                    checkpoint_path, lr=lr, **_train_continue_kwargs(checkpoint_path, is_resuming)
                 )
             except RuntimeError:
                 logging.info(
@@ -146,10 +151,8 @@ def _create_model(config: DictConfig):
         )
         if checkpoint_path:
             logging.info(f"Loading self-supervised model from: {checkpoint_path}")
-            # Set train_continue ONLY when fine-tuning. This hparam controls the differential LR.
-            train_continue_path = None if is_resuming else checkpoint_path
             model = SelfSupervisedModel.load_from_checkpoint(
-                checkpoint_path, train_continue=train_continue_path, lr=lr
+                checkpoint_path, lr=lr, **_train_continue_kwargs(checkpoint_path, is_resuming)
             )
         else:
             logging.info("Initializing new SelfSupervisedModel from scratch.")
