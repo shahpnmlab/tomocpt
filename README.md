@@ -219,31 +219,14 @@ or alignment mismatch.
 # Changelog
 
 ## 0.7.0
-- Added a CryoET Data Portal download script (`scripts/download_portal_data.py`) that pulls
-  tomograms and point annotations directly from the portal, with resumable downloads and
-  class-number assignment for multi-species datasets.
-- Fixed multi-species chunking: when `training_data_dir` contains several `prepare_data`
-  datasets that share the same tomograms (e.g. several particle species from the same raw
-  tomograms), chunk directories used to collide on the tomogram filename, so a concurrent
-  Dask worker could overwrite another species' chunk files, and `train_test_split` could put
-  the same tomogram in both the train and validation split. Chunk directories are now named
-  per (dataset, tomogram) whenever a stem repeats, and the train/validation split keeps all
-  rows of a tomogram together. **If you have existing chunk directories built with an older
-  version and several datasets share tomograms, delete `<chunks_dir>/done_labels_*.txt` to
-  force a rebuild** — training now refuses to reuse chunks built before this fix.
-- Added a missing-wedge and amplitude-spectrum Fourier augmentation, ported from
-  membrain-seg's `FourierAugmentations` (DeePiCt-derived filter utilities, Apache-2.0; see
-  `NOTICE`), plus brightness-gradient, local-gamma, brightness, and contrast intensity
-  augmentations. All are off by default and exposed via `train.augmentation.*` config/CLI
-  options; see `HANDOFF_fourier_augmentations.md` for the full port notes and
-  `experiments/NOTEBOOK.md` for a full-training comparison confirming the augmentation
-  measurably increases training difficulty (i.e. is active) without hurting validation loss
-  on clean data.
-- Added `RandomContrastInversion`, baked in unconditionally at `p=0.5`
-  (`tomocpt.constants.CONTRAST_INVERSION_PROB`), so the picker is trained to be invariant to
-  whether particles are dark-on-light or light-on-dark.
-- Fixed `config.yaml`'s `infer.predictions_coord_format`, which held an invalid enum value
-  (`relion`) and blocked config loading entirely; set to `relion_31`.
+- Added a CryoET Data Portal download script (`scripts/download_portal_data.py`).
+- Added missing-wedge and amplitude-spectrum Fourier augmentation, plus brightness-gradient,
+  local-gamma, brightness, contrast, and contrast-inversion intensity augmentations, exposed
+  via `train.augmentation.*` config/CLI options.
+- Fixed multi-species chunking collisions and train/validation leakage when several datasets
+  share the same tomograms.
+- Fixed an invalid `config.yaml` value (`infer.predictions_coord_format`) that blocked config
+  loading entirely.
 
 ## 0.6.0
 - Added `--skip-inference` to `tomocpt predict`, which reuses the confidence maps saved by a
