@@ -65,8 +65,8 @@ The Test Author writes `tests/utils/` (see `TA_TEST_AUTHOR.md`). The implementer
 - **G1-C8** `build_training_transforms(AugmentationConfig())` is transform-wise
   identical to the `v2-gate-0-base` pipeline (types, order, parameters; contrast inversion
   at `constants.CONTRAST_INVERSION_PROB`).
-- **G1-C9** `tomocpt init --output-path x.yaml` writes a file that loads back with
-  `--config-file`.
+- **G1-C9** `tomocpt init --output_path x.yaml` writes a file that loads back with
+  `--config_file`.
 - **G1-C10** Metrics: hand-made cases (exact match, one miss, one false positive, a point
   just outside the radius, two predictions competing for one truth, empty inputs) give the
   expected counts and scores.

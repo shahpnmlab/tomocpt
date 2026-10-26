@@ -49,7 +49,7 @@ The first step is to create a configuration file that defines parameters for dat
 
 ```bash
 # Create a default configuration file in the current directory
-tomocpt init --output-path ./my_config.yaml
+tomocpt init --output_path ./my_config.yaml
 ```
 
 ### Expected output:
@@ -88,14 +88,14 @@ This step processes your raw tomograms and coordinate files into a format suitab
 
 ```bash
 # After filling out the prepData section in my_config.yaml
-tomocpt prepare_data --config-file my_config.yaml
+tomocpt prepare_data --config_file my_config.yaml
 ```
 
 ### Combined approach:
 
 ```bash
 # Use config file but override specific parameters
-tomocpt prepare_data --config-file my_config.yaml --particle-length-ang 200
+tomocpt prepare_data --config_file my_config.yaml --particle_length_ang 200
 ```
 
 ## 3. Train a Model
@@ -108,7 +108,7 @@ This is the most basic scenario, where you train a new model from randomly initi
 
 ```bash
 # Using a configuration file is recommended
-tomocpt train --config-file my_config.yaml
+tomocpt train --config_file my_config.yaml
 ```
 
 ### Scenario 2: Resuming an Interrupted Run
@@ -116,8 +116,8 @@ tomocpt train --config-file my_config.yaml
 If your training run is aborted, you can resume it seamlessly from the last saved checkpoint. This restores the model, optimizer, and learning rate scheduler to their exact previous states.
 
 ```bash
-# The command is the same as your original run, just add --resume-from
-tomocpt train --config-file my_config.yaml --resume-from /path/to/model_dir/weights.ckpt
+# The command is the same as your original run, just add --resume_from
+tomocpt train --config_file my_config.yaml --resume_from /path/to/model_dir/weights.ckpt
 ```
 *Alternatively, set `resume_from: /path/to/model_dir/weights.ckpt` in your `my_config.yaml`.*
 
@@ -128,8 +128,8 @@ Use this to adapt a trained model to a new dataset. This loads the weights but r
 You can download a pre-trained model from [here](https://zenodo.org/records/17087180).
 
 ```bash
-# Use --fine-tune-from to load weights and start a new training run
-tomocpt train --config-file my_config.yaml --fine-tune-from /path/to/previous_model/weights.ckpt
+# Use --fine_tune_from to load weights and start a new training run
+tomocpt train --config_file my_config.yaml --fine_tune_from /path/to/previous_model/weights.ckpt
 ```
 *Alternatively, set `fine_tune_from: /path/to/previous_model/weights.ckpt` in your `my_config.yaml`.*
 
@@ -139,14 +139,14 @@ This is an advanced fine-tuning technique where a "student" model learns from a 
 
 ```bash
 tomocpt train \
-  --config-file my_config.yaml \
-  --fine-tune-from /path/to/teacher/weights.ckpt \
-  --use-distillation True \
-  --distill-weight 0.5
+  --config_file my_config.yaml \
+  --fine_tune_from /path/to/teacher/weights.ckpt \
+  --use_distillation True \
+  --distill_weight 0.5
 ```
-- `--fine-tune-from`: Path to the teacher model's weights.
-- `--use-distillation`: Must be set to `True`.
-- `--distill-weight`: Balances learning from new labels vs. learning from the teacher.
+- `--fine_tune_from`: Path to the teacher model's weights.
+- `--use_distillation`: Must be set to `True`.
+- `--distill_weight`: Balances learning from new labels vs. learning from the teacher.
 
 ### Hydra-style Parameter Overrides
 
@@ -154,7 +154,7 @@ You can always override any parameter from your config file directly on the comm
 
 ```bash
 # Override learning rate and precision
-tomocpt train --config-file my_config.yaml optimizer.lr=0.0001 network.TORCH_FLOAT_PRECISION=16
+tomocpt train --config_file my_config.yaml optimizer.lr=0.0001 network.TORCH_FLOAT_PRECISION=16
 ```
 
 ## 4. Run Prediction
@@ -165,7 +165,7 @@ Finally, apply your trained model to new tomograms for particle detection.
 
 ```bash
 # After filling out the infer section in my_config.yaml
-tomocpt predict --config-file my_config.yaml
+tomocpt predict --config_file my_config.yaml
 ```
 
 The resulting star file contains particle coordinates, ready for subsequent processing in tools like Relion.
@@ -173,12 +173,12 @@ The resulting star file contains particle coordinates, ready for subsequent proc
 ### Re-picking without re-running inference
 
 If a previous run was made with `save_prediction_confidence_map: true`, the confidence maps
-are stored as MRC files in `predictions_dir`. Use `--skip-inference` to reuse them and only
+are stored as MRC files in `predictions_dir`. Use `--skip_inference` to reuse them and only
 redo peak extraction — useful for tuning `confidence_threshold` or `distance_threshold`
 without paying for inference again:
 
 ```bash
-tomocpt predict --config-file my_config.yaml --skip-inference --confidence-threshold 0.5
+tomocpt predict --config_file my_config.yaml --skip_inference --confidence_threshold 0.5
 ```
 
 In this mode `weights` is not required. Every MRC file in `predictions_dir` is treated as a
@@ -243,7 +243,7 @@ or alignment mismatch.
   loading entirely.
 
 ## 0.6.0
-- Added `--skip-inference` to `tomocpt predict`, which reuses the confidence maps saved by a
+- Added `--skip_inference` to `tomocpt predict`, which reuses the confidence maps saved by a
   previous run and only redoes peak extraction. Useful for tuning `confidence_threshold` or
   `distance_threshold` without paying for inference again. `weights` is no longer required
   when this flag is used.

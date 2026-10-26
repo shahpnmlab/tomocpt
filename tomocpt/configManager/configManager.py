@@ -633,12 +633,13 @@ def backfill_missing_fields(target: Any, defaults: Any) -> Any:
 
     for field in fields(type(defaults)):
         default_value = getattr(defaults, field.name, None)
-        if not hasattr(target, field.name):
+        # Check the instance, not ``hasattr``: a field with a plain default also exists
+        # as a class attribute, so ``hasattr`` is true even when the instance lacks it.
+        existing = safe_getattr(target, field.name, _ABSENT)
+        if existing is _ABSENT:
             setattr(target, field.name, copy.deepcopy(default_value))
-        else:
-            existing = getattr(target, field.name)
-            if is_dataclass(existing) and is_dataclass(default_value):
-                backfill_missing_fields(existing, default_value)
+        elif is_dataclass(existing) and is_dataclass(default_value):
+            backfill_missing_fields(existing, default_value)
     return target
 
 
@@ -655,11 +656,11 @@ def update_config(target: Any, source: Any):
     for field in fields(target):
         field_name = field.name
         target_value = getattr(target, field_name)
-        if not hasattr(source, field_name):
+        source_value = safe_getattr(source, field_name, _ABSENT)
+        if source_value is _ABSENT:
             # Source predates this field (e.g. an older checkpoint's config) and
             # so has no opinion on it. Keep the target's value.
             continue
-        source_value = getattr(source, field_name)
 
         # Handle MISSING values
         if source_value == MISSING and target_value != MISSING:

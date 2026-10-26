@@ -30,7 +30,9 @@ Precedence when two sources disagree:
   - `infer: InferConfig`
   - `shared: GlobalPropertyConfig` (copied into sections in `MainConfig.__post_init__`)
 - `configManager/configManager.py` builds the Typer CLI from these dataclasses.
-  Hydra-style dot overrides work (`optimizer.lr=1e-4`).
+  Hydra-style dot overrides work (`optimizer.lr=1e-4`). CLI options are spelled with
+  underscores, as the field names (`--config_file`, `--output_path`, `--resume_from`);
+  hyphenated spellings are rejected. Booleans also get a `--no-<field>` form.
 - A global singleton `mainConfig` exists. Legacy code reads it from many places
   (for example `dataManager/transforms.py` reads `mainConfig.prepData` and
   `mainConfig.train`).
@@ -172,6 +174,13 @@ Huber delta is 1.0. The second term is the full Hessian, not a Laplacian.
   _mainConfigNoChanges)`, which adds current defaults for fields that an older
   checkpoint lacks, then merges with `update_config(...)`. Because of this, **each gate
   adds its own config fields**; there is no up-front schema.
+- An unpickled checkpoint config lacks newer fields in its instance `__dict__`, while
+  plain `getattr` still finds the class default. `backfill_missing_fields` checks the
+  instance (fixed at Gate 1), so after `BaseModel.__init__` every field is present.
+  Code that reads a checkpoint config **before** that point (raw `torch.load`) reads a
+  gate's new fields with `safe_getattr(cfg, name, <current default>)`, never with
+  `hasattr` or bare `getattr`. `tests/gate1/test_g1_backfill_instance_fields.py` sweeps
+  every `MainConfig` field, so a new field is covered automatically.
 
 ### 1.10 Known legacy defects (do not "fix" them outside the named gate)
 | Defect | Fixed in |
@@ -246,7 +255,7 @@ class is available at every level where `lo_c <= d_vox <= band_max`.
    loss, chunk files, inference maps, and coordinates are identical to `v2-gate-0-base`
    (tolerance in each gate spec). Every new behaviour is opt-in.
 2. **Checkpoint compatibility.** Every checkpoint written by `v2-gate-0-base` code
-   (picking and SSL) loads for `train --fine-tune-from`, `train --resume-from`,
+   (picking and SSL) loads for `train --fine_tune_from`, `train --resume_from`,
    distillation teacher, and `predict`, and behaves as v1.
 3. **Config isolation (Issue #14).** New library code takes values as arguments.
    It does not read `mainConfig` globals. Inference reads training-time settings

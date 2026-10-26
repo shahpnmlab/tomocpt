@@ -28,16 +28,18 @@
         "tests/utils/legacy.py": "bfd3b368b022efd28ce72cd6aabfce8cdf6f5a79e1d12ab64ef819cd5fdb75c4",
         "tests/utils/phantoms.py": "3638520986d9bbc9872426ad5734f37e68f246023b939c09420ebf808d46eff6",
         "tests/utils/tiny.py": "cdbfe2d3c66089df9d76157f55b8581976331bb07a8605528fc15a9a5b9b81d8",
-        "tests/utils/wedge.py": "6ac1c0f65a523be34fe6f40e2eb51555fc9acd7f08c1fcb81e5419fcb81140e5"
+        "tests/utils/wedge.py": "6ac1c0f65a523be34fe6f40e2eb51555fc9acd7f08c1fcb81e5419fcb81140e5",
+        "tests/gate1/test_g1_backfill_instance_fields.py": "52ded6744e1cf24be5f5ff45b3aeeb81df2a97eb24ea2ee5ee16e7acf1902233"
       },
       "path_exceptions": [],
       "notes": [
         "Freeze also covers tests/golden/ and tests/fixtures/ (goldens and the legacy-checkpoint builder define correctness).",
         "Legacy base tests tests/test_*.py are frozen per CLAUDE.md invariant 9 (unchanged since v2-gate-0-base).",
-        "Spec/README says `tomocpt init --output-path` / `--config-file`; legacy CLI only accepts --output_path / --config_file. C9 test uses underscores. Spec wording needs a human.",
         "make_phantom returns Phantom(volume, coords, polylines, masks) (4 fields). Each tests/gateN/ needs __init__.py; import helpers as utils.<module>.",
         "Legacy checkpoints are built with a TensorBoardLogger (legacy training_step needs self.logger.experiment), not logger=False as TA spec says.",
-        "Verified by orchestrator: hashes unchanged; ownership OK; fast 141 passed/27 skipped; slow 1 passed (RTX A6000). Open item (not fixed, outside T1.1): backfill_missing_fields uses hasattr, so simple-default fields missing on an old checkpoint instance are not backfilled; plain getattr still sees the class default, safe_getattr returns the caller's default."
+        "Human decision (26 Oct 2026): CLI spelling = what the CLI accepts (underscores). Fixed README, CLAUDE.md, 01 spec; CLAUDE.md 1.1 documents it.",
+        "Human decision (26 Oct 2026): close the backfill gap. backfill_missing_fields and update_config now check the instance via safe_getattr (orchestrator change in configManager.py, human-authorised). New frozen test tests/gate1/test_g1_backfill_instance_fields.py sweeps every MainConfig field (127 of its cases fail on the old code). CLAUDE.md 1.9 documents the rule.",
+        "Human decision (26 Oct 2026): legacy checkpoints built with a TensorBoardLogger (accepted); make_phantom returns Phantom(volume, coords, polylines, masks). TA_TEST_AUTHOR.md updated, plus a 'Test layout' section."
       ],
       "report_path": ".claude/reports/gate_01_report.json"
     },

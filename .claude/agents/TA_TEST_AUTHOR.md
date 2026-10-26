@@ -42,7 +42,8 @@ Create `tests/utils/` with:
 
 ### `tests/utils/phantoms.py`
 - `make_phantom(shape=(64,128,128), apix=10.0, species=(...), tubes=(...), wedge_deg=60.0,
-  snr=0.5, seed=0, allow_border=False) -> (volume, coords, polylines)`.
+  snr=0.5, seed=0, allow_border=False) -> Phantom(volume, coords, polylines, masks)`
+  (a NamedTuple; unpack four values or use attributes).
   - `species`: tuple of `(class_number, diameter_ang, count, hollow: bool)`. Solid or hollow
     spheres with dark contrast (density negative, as in cryo-ET), placed without overlap,
     away from borders unless `allow_border=True`.
@@ -52,7 +53,7 @@ Create `tests/utils/` with:
   - Apply the wedge, then add white Gaussian noise for the requested SNR.
   - `coords: dict[int, np.ndarray]` per class, `(x, y, z)` in voxels (RELION order).
   - `polylines: dict[int, list[np.ndarray]]` per tube class, `(x, y, z)` in voxels.
-  - Also return `masks: dict[int, np.ndarray]` with the exact tube masks (for Gate 6
+  - `masks: dict[int, np.ndarray]` with the exact tube masks (for Gate 6
     mask → centreline tests).
 - `write_mrc(path, vol, apix)` and `write_star(path, coords_by_class, tomo_name, apix)`
   (RELION 3.1 style, `rlnCoordinateX/Y/Z`, `rlnMicrographName`, `rlnClassNumber`).
@@ -72,13 +73,24 @@ Create `tests/utils/` with:
 - `legacy_checkpoint(tmp_cache_dir) -> Path`. Builds (once, then caches in `tests/.cache/`,
   git-ignored) a tiny `BasePickingModel` checkpoint **with code from `v2-gate-0-base`**, by
   running `tests/fixtures/make_legacy_ckpt.py` in a worktree of that tag through
-  `subprocess`. Save it with `pl.Trainer(max_epochs=1, accelerator="cpu", logger=False)`
+  `subprocess`. Save it with `pl.Trainer(max_epochs=1, accelerator="cpu", logger=TensorBoardLogger(<tmp>))`
+  (legacy `training_step` writes images to `self.logger.experiment`; `logger=False` crashes)
   `.fit(...)` on random tensors and `trainer.save_checkpoint(...)`, so the pickled
   `MainConfig` is the legacy class and the optimizer state is real. If the worktree cannot
   be built, **fail** (do not skip).
 - `legacy_ssl_checkpoint(...)`: the same for `SelfSupervisedModel`.
 - Optional: if the environment variable `TOMOCPT_ZENODO_CKPT` points to the public
   pretrained checkpoint, tests also use it; otherwise those tests skip with a reason.
+
+## Test layout (learned at Gate 1)
+- Every `tests/gateN/` needs an `__init__.py`; otherwise its `conftest.py` shadows
+  `tests/conftest.py` and legacy tests fail to collect.
+- Import shared helpers as `utils.<module>` (put `tests/` on `sys.path` in the gate
+  `conftest.py`, as `tests/gate1/conftest.py` does), never `tests.utils`: a third-party
+  `tests` package in site-packages shadows the repo's.
+- Loading a legacy checkpoint mutates the global `mainConfig` and `tomocpt.constants`;
+  wrap tests with `utils.tiny.applied_main_config` (autouse fixture in `tests/gate1/conftest.py`).
+- CLI options use underscores (`--config_file`), see CLAUDE.md Section 1.1.
 
 ## Hand-over
 Write `tests/gateN/README.md`: criterion → test name table, runtime of the fast
