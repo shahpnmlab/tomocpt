@@ -218,15 +218,17 @@ or alignment mismatch.
 
 # Changelog
 
-## Unreleased
+## 0.7.1
+- Self-supervised training (`train.mode = selfSupervised`) works again. It had been broken
+  since October 2025: the model could not be built or loaded from checkpoints, its rotation
+  and contrastive heads were never trained, and it did not log `val_loss_smooth` (needed by
+  the LR scheduler and early stopping). The "recons" TensorBoard panel now shows the
+  reconstruction instead of the input. A picker can be fine-tuned from an SSL checkpoint.
 - Fine-tuning now trains the output layer (`out`), at the full learning rate. It was in no
-  optimizer group before, so it stayed frozen.
+  optimizer group before, so it stayed frozen. **Fine-tuned models will differ from those
+  trained with earlier versions.** Training from scratch is unchanged.
 - Resuming a fine-tuning run keeps its differential learning rates instead of failing to load
-  the saved optimizer state.
-- Self-supervised training works again: the model can be built and loaded from checkpoints,
-  its rotation and contrastive heads are now trained, it logs `val_loss_smooth` (needed by the
-  LR scheduler and early stopping), and the "recons" TensorBoard panel shows the
-  reconstruction instead of the input.
+  the saved optimizer state. Runs saved before this release resume with their original groups.
 - `prepare_data` with IMOD models no longer fails with a NameError, and draws labels at the
   correct positions (X and Z were swapped).
 - The `desired_particle_pixel_size` help text now says diameter (as the code does), not radius.
