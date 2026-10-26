@@ -6,9 +6,9 @@ implementer. You verify their work independently. You do not write feature code.
 You may fix a merge conflict between gates; record it in the gate report.
 
 ## Set-up (once)
-1. Confirm that `fix/v1-patches` and `plan/scale-free` are merged into `main` and that
-   `pytest tests` passes there. Confirm a clean tree on that commit. Tag it
-   `git tag gate-0-base` and record the hash in `gate_status.json → base_commit`.
+1. Work on branch `v2-dev` (never on `main`; CLAUDE.md Section 8, rule 0). Confirm that
+   `pytest tests` passes there and the tree is clean. Tag that commit
+   `git tag v2-gate-0-base` and record the hash in `gate_status.json → base_commit`.
 2. Use the existing `tomocpt` conda environment (Python 3.12, torch 2.5.1+cu124,
    MONAI 1.4.0) with `pip install -e '.[dev,portal]'`. Record
    `python -c "import torch, monai, kornia, torchio, pytorch_lightning as pl; print(...)"`
@@ -31,8 +31,8 @@ Register the `slow` marker in `pyproject.toml` (`[tool.pytest.ini_options]`) at 
 ### Step 1 — Tests first
 1. Dispatch TA with: `CLAUDE.md`, `TA_TEST_AUTHOR.md`, the gate spec, earlier reports.
 2. TA writes `tests/gateN/**` (and `tests/utils/**` at Gate 1) and any golden files.
-   Golden values for legacy behaviour must come from code at `gate-0-base`
-   (TA uses `git worktree add ../tomocpt-base gate-0-base`).
+   Golden values for legacy behaviour must come from code at `v2-gate-0-base`
+   (TA uses `git worktree add ../tomocpt-base v2-gate-0-base`).
 3. Review the tests against the gate spec "Pass criteria" list. Every criterion
    needs at least one test. Tests must import only the public names in the spec.
 4. Freeze: record `sha256` of each file under `tests/gateN/` (and `tests/utils/`
@@ -46,18 +46,18 @@ list of frozen test files. It must not edit them.
 ### Step 3 — Verification (do not trust the report)
 1. Frozen tests unchanged: recompute the hashes.
 2. Ownership: `git status --porcelain --untracked-files=all` and
-   `git diff --name-only gate-$((N-1))-passed` (use `gate-0-base` for N = 1).
+   `git diff --name-only v2-gate-$((N-1))-passed` (use `v2-gate-0-base` for N = 1).
    Every changed path must be inside the gate's paths (CLAUDE.md Section 7),
    `.claude/reports/`, or `.claude/state/`.
 3. Run `pytest tests -m "not slow" -q` (all gates up to N plus the tests that
-   existed at `gate-0-base`). All must pass. Tests for later gates do not exist yet.
+   existed at `v2-gate-0-base`). All must pass. Tests for later gates do not exist yet.
 4. Run `pytest tests/gateN -m slow -q` on the GPU. If no GPU is available, mark the
    gate `PASSED_FAST_ONLY` and list the slow tests for a human to run.
 5. Validate the report against the schema below.
 
 ### Step 4 — Decision
 - PASS: set status (`PASSED` or `PASSED_FAST_ONLY`), then
-  `git add -A && git commit -m "Gate N passed" && git tag gate-N-passed`.
+  `git add -A && git commit -m "Gate N passed" && git tag v2-gate-N-passed`.
   Note: `git commit -am` does not add new files. Do not use it.
   Unlock gate N+1.
 - FAIL: increment `attempts`. Write the failing test output and your analysis to
@@ -80,7 +80,7 @@ list of frozen test files. It must not edit them.
   "gate_id": 1,
   "agent_name": "01_AGENT_BASELINE",
   "status": "READY_FOR_REVIEW",
-  "base_ref": "gate-0-base",
+  "base_ref": "v2-gate-0-base",
   "files_created": [],
   "files_modified": [],
   "exported_symbols": {"tomocpt.module.path": ["Name"]},

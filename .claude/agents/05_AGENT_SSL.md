@@ -144,7 +144,7 @@ class SSLConfig:
 
 ## Pass criteria
 - **G5-C1** v1 lock: seeded `SelfSupervisedModel._step` on the tiny model equals the
-  `gate-0-base` golden loss and its three components (rtol 1e-5).
+  `v2-gate-0-base` golden loss and its three components (rtol 1e-5).
 - **G5-C2** Cause check: on a wedged noise volume, rot90 about Z raises
   `wedge_power_fraction` (canonical orientation) above 0.2; rot180 about Z and every axis
   flip keep it below 0.02.

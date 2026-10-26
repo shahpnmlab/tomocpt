@@ -5,9 +5,9 @@ Read all of it before you write code.
 
 Precedence when two sources disagree:
 1. A human instruction in the conversation.
-2. The legacy code at tag `gate-0-base` for **legacy behaviour**. `gate-0-base` is
-   `main` after `fix/v1-patches` and `plan/scale-free` are merged; the orchestrator
-   records the commit in `.claude/state/gate_status.json`.
+2. The legacy code at tag `v2-gate-0-base` for **legacy behaviour**. `v2-gate-0-base` is
+   the first commit of branch `v2-dev` (released `main` + `fix/v1-patches` + this plan);
+   the orchestrator records the commit in `.claude/state/gate_status.json`.
    Section 1 records that behaviour. If Section 1 and the code disagree, the code
    is correct. Stop and write an escalation report (see Section 8).
 3. This file.
@@ -15,7 +15,7 @@ Precedence when two sources disagree:
 
 ---
 
-## 1. Repository facts (verified at `gate-0-base`)
+## 1. Repository facts (verified at `v2-gate-0-base`)
 
 ### 1.1 CLI and config
 - Entry point: `tomocpt/main.py`. Commands: `tomocpt init`, `tomocpt prepare_data`,
@@ -243,9 +243,9 @@ class is available at every level where `lo_c <= d_vox <= band_max`.
 ## 4. Invariants (never break)
 
 1. **Legacy equivalence.** With all new config fields at their defaults, training
-   loss, chunk files, inference maps, and coordinates are identical to `gate-0-base`
+   loss, chunk files, inference maps, and coordinates are identical to `v2-gate-0-base`
    (tolerance in each gate spec). Every new behaviour is opt-in.
-2. **Checkpoint compatibility.** Every checkpoint written by `gate-0-base` code
+2. **Checkpoint compatibility.** Every checkpoint written by `v2-gate-0-base` code
    (picking and SSL) loads for `train --fine-tune-from`, `train --resume-from`,
    distillation teacher, and `predict`, and behaves as v1.
 3. **Config isolation (Issue #14).** New library code takes values as arguments.
@@ -269,7 +269,7 @@ class is available at every level where `lo_c <= d_vox <= band_max`.
    scikit-image 0.24.0, scikit-learn 1.6.0, scipy 1.14.1, and the others; the `portal`
    extra for portal access). Any new dependency needs human approval.
 9. **Tests are frozen.** You never edit a test file that the orchestrator froze.
-   The tests that exist at `gate-0-base` (`tests/test_*.py`) are frozen from the start
+   The tests that exist at `v2-gate-0-base` (`tests/test_*.py`) are frozen from the start
    and run in every gate.
 10. **Targets stay `tio.LabelMap`.** Intensity and Fourier augmentations rely on TorchIO
     skipping label maps. For smooth target resampling in pipeline v2, set
@@ -367,6 +367,12 @@ in `tests/utils/` (written at Gate 1, frozen after Gate 1).
 ---
 
 ## 8. Rules for every agent
+
+0. **Branches.** All v2 work (features, fixes, plans) lives on branches whose names start
+   with `v2-`. The integration branch is `v2-dev`; side branches are `v2-feat/<name>`,
+   `v2-fix/<name>`, `v2-plan/<name>` and merge into `v2-dev`. Tags start with `v2-`
+   (`v2-gate-0-base`, `v2-gate-N-passed`). Never commit to, merge into or push `main`:
+   it is the production branch. Moving v2 to `main` is a human decision.
 
 1. Read this file, `00_ORCHESTRATOR.md`, your own spec, and all earlier gate reports.
 2. Write only inside your paths in Section 7. If you need a change elsewhere, stop

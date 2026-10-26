@@ -18,12 +18,12 @@ exist yet. The orchestrator freezes your files after review.
    (`tests/utils/tiny.py`). Use fixed seeds. Set thresholds with a margin: a
    correct implementation must pass in at least 9 of 10 seeds. State the
    margin in a comment.
-6. Legacy goldens come from `gate-0-base` code only. Write the generator script
+6. Legacy goldens come from `v2-gate-0-base` code only. Write the generator script
    into `tests/golden/make_goldens_gateN.py`, run it in a worktree of
-   `gate-0-base`, and commit both the script and its output (`.json` or `.npz`).
+   `v2-gate-0-base`, and commit both the script and its output (`.json` or `.npz`).
 7. Do not test private helpers. Do not assert on log text.
 8. A test must fail on the legacy code if the criterion is new behaviour. Check this
-   by running the test once on `gate-0-base` before you hand over. Record the
+   by running the test once on `v2-gate-0-base` before you hand over. Record the
    result in `tests/gateN/README.md` (which tests fail on base, and why).
 
 ## Shared helpers (Gate 1 only; frozen afterwards)
@@ -70,7 +70,7 @@ Create `tests/utils/` with:
 
 ### `tests/utils/legacy.py`
 - `legacy_checkpoint(tmp_cache_dir) -> Path`. Builds (once, then caches in `tests/.cache/`,
-  git-ignored) a tiny `BasePickingModel` checkpoint **with code from `gate-0-base`**, by
+  git-ignored) a tiny `BasePickingModel` checkpoint **with code from `v2-gate-0-base`**, by
   running `tests/fixtures/make_legacy_ckpt.py` in a worktree of that tag through
   `subprocess`. Save it with `pl.Trainer(max_epochs=1, accelerator="cpu", logger=False)`
   `.fit(...)` on random tensors and `trainer.save_checkpoint(...)`, so the pickled
@@ -82,4 +82,4 @@ Create `tests/utils/` with:
 
 ## Hand-over
 Write `tests/gateN/README.md`: criterion → test name table, runtime of the fast
-suite on your machine, tests that fail on `gate-0-base` and why.
+suite on your machine, tests that fail on `v2-gate-0-base` and why.

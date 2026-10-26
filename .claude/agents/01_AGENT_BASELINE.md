@@ -45,7 +45,7 @@ The Test Author writes `tests/utils/` (see `TA_TEST_AUTHOR.md`). The implementer
 
 ## Pass criteria
 - **G1-C1** Gaussian target golden: `generate_gaussian_sphere(R, 2R+1)` for R in
-  {5, 10, 17} equals the `gate-0-base` golden (atol 1e-7).
+  {5, 10, 17} equals the `v2-gate-0-base` golden (atol 1e-7).
 - **G1-C2** Loss golden: `BasePickingModel.loss(ŷ, y)` on fixed random tensors
   (soft labels from G1-C1 placed in a 64³ volume, B=2) equals the golden (rtol 1e-6).
 - **G1-C3** Forward golden: tiny `MySwinUNETR` (`tests/utils/tiny.py`), seed 0, eval,
@@ -63,7 +63,7 @@ The Test Author writes `tests/utils/` (see `TA_TEST_AUTHOR.md`). The implementer
   fields missing on the source; `backfill_missing_fields` adds every field that a legacy
   checkpoint lacks; `safe_getattr` returns the default for a missing field.
 - **G1-C8** `build_training_transforms(AugmentationConfig())` is transform-wise
-  identical to the `gate-0-base` pipeline (types, order, parameters; contrast inversion
+  identical to the `v2-gate-0-base` pipeline (types, order, parameters; contrast inversion
   at `constants.CONTRAST_INVERSION_PROB`).
 - **G1-C9** `tomocpt init --output-path x.yaml` writes a file that loads back with
   `--config-file`.

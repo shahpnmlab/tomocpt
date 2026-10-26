@@ -120,7 +120,7 @@ stored in the checkpoint.
 
 ## Pass criteria
 - **G4-C1** v1 lock: legacy tiny checkpoint on a synthetic tomogram through `infer_tomos`
-  (no Dask): confidence map equals the `gate-0-base` golden (atol 1e-5); coordinates equal
+  (no Dask): confidence map equals the `v2-gate-0-base` golden (atol 1e-5); coordinates equal
   (same count, atol 1e-3 voxel).
 - **G4-C2** `plan_inference` table: v1 case; v2 cases from G2-C2; the overlap rule
   (`d_vox` 10 → 16; 28 → 28; 40 → 32); `infer.classes` drops a level that becomes empty.

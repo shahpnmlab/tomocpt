@@ -1,7 +1,7 @@
 {
-  "base_ref": "gate-0-base",
+  "base_ref": "v2-gate-0-base",
   "base_commit": null,
-  "base_note": "main after merging fix/v1-patches and plan/scale-free; set by the orchestrator",
+  "base_note": "first commit of branch v2-dev (released main + fix/v1-patches + plan); set by the orchestrator",
   "current_gate": 1,
   "gpu_available": null,
   "gates": {

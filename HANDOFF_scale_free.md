@@ -1,14 +1,17 @@
 # HANDOFF — TomoCPT v2 (state on 26 Oct 2026)
 
 Read this first in any new session. Then read `CLAUDE.md` and `.claude/agents/00_ORCHESTRATOR.md`
-(both on branch `plan/scale-free`).
+(both on branch `v2-dev`).
 
 ## 1. Where things are
 
 | Branch | Content | Status |
 |---|---|---|
-| `main` | v0.7.0 (Fourier augmentation, portal download, chunk-collision fix, contrast inversion p = 0.5) + `fix/v1-patches` | merged; tests pass (109 passed, 26 skipped without the membrain-seg reference) |
-| `plan/scale-free` | `main` + `CLAUDE.md`, `.claude/agents/*` (orchestrator, test author, Gates 1–6), `.claude/state/gate_status.json`, this file | plan only, no code |
+| `origin/main` | v0.7.0 (Fourier augmentation, portal download, chunk-collision fix, contrast inversion p = 0.5) | production; v2 work never goes here |
+| `v2-dev` | v0.7.0 + `fix/v1-patches` + the plan (`CLAUDE.md`, `.claude/agents/*`, `.claude/state/gate_status.json`, this file) | v2 integration branch; tests pass (109 passed, 26 skipped without the membrain-seg reference) |
+
+All v2 branches start with `v2-` (`v2-dev`, `v2-feat/…`, `v2-fix/…`, `v2-plan/…`), and so do
+tags (`v2-gate-0-base`, `v2-gate-N-passed`). See CLAUDE.md Section 8, rule 0.
 
 The development machine has an RTX A6000 and the `tomocpt` conda env (Python 3.12,
 torch 2.5.1+cu124, MONAI 1.4.0), so slow tests run there.
@@ -34,7 +37,7 @@ Dropped: mixture-of-experts; membrane, organelle and void segmentation; picking 
 its diameter alone (FiLM on a requested length); PU / EMA-teacher training; distillation
 into v2 models; the SSL wedge-restoration and even/odd tasks.
 
-## 3. Fixed on `main` before the plan (`fix/v1-patches`)
+## 3. Fixed before the plan (`fix/v1-patches`, on `v2-dev`, not on `origin/main`)
 
 - Fine-tuning trains the `out` layer (×1.0); it was in no optimizer group.
 - SSL works again: it could not be built (since `5a3abc3`), not be loaded from checkpoints,
@@ -65,10 +68,9 @@ architectures. More reading is needed before this becomes a gate.
 
 ## 5. Next steps, in order
 
-1. Merge `plan/scale-free` → `main`.
-2. Tag `gate-0-base` on that `main` and start Gate 1 with the orchestrator
+1. Tag `v2-gate-0-base` on `v2-dev` and start Gate 1 with the orchestrator
    (`.claude/agents/00_ORCHESTRATOR.md`).
-3. Optional, any time: finish the baseline arm of the Fourier-augmentation comparison
+2. Optional, any time: finish the baseline arm of the Fourier-augmentation comparison
    (`experiments/NOTEBOOK.md`: the baseline run was stopped at epoch ~20) and score both
    runs with picking F-beta once `tomocpt/metrics.py` exists (Gate 1).
 

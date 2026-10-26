@@ -197,7 +197,7 @@ Repeat-factor sampling (Gupta et al., LVIS, 2019) for the training loader when
 
 ## Pass criteria
 - **G2-C1** v1 equivalence: `do_chunking` with defaults on `make_dataset(n_tomos=2)`
-  gives the same file list and identical decoded arrays as the `gate-0-base` golden.
+  gives the same file list and identical decoded arrays as the `v2-gate-0-base` golden.
 - **G2-C2** Band rule table: (apix 10, L [70]) → 10.0 (no upsampling); (13.48, [110]) →
   13.48; (10, [250]) → 10.0; (5, [350]) → 10.9375; (14, [140]) → 14.0;
   group (10, [120, 300]) → one group at 10.0; group (10, [70, 300]) → one group at 10.0

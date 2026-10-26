@@ -115,7 +115,7 @@ models")` at construction.
 
 ## Pass criteria
 - **G3-C1** v1 lock: tiny unconditioned single-class model, pipeline v1, dropout 0:
-  `training_step` loss on a fixed batch equals the `gate-0-base` golden (rtol 1e-6).
+  `training_step` loss on a fixed batch equals the `v2-gate-0-base` golden (rtol 1e-6).
 - **G3-C2** Zero-init: `ScaleConditionedSwinUNETR` with legacy weights gives the same
   logits as `MySwinUNETR` (atol 1e-6) for `apix ∈ {5, 10, 20}` and `None`.
 - **G3-C3** After one backward pass with conditioning, every parameter has `grad is not None`
