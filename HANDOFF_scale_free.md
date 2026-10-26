@@ -49,6 +49,19 @@ into v2 models; the SSL wedge-restoration and even/odd tasks.
 - Contrast inversion stays fixed at p = 0.5 (`constants.CONTRAST_INVERSION_PROB`), not configurable.
 - `config.yaml` uses `infer.predictions_coord_format: relion_31`.
 - Fine-tuning LR for `out`: ×1.0 (fine-tuning usually targets a new species).
+- Pipeline v2 never upsamples: `apix_work >= apix_native`; a class below the band at native
+  size is used there with `d_vox < band_min` (Gate 2).
+- Multi-class training uses repeat-factor chunk sampling (`train.chunk_sampling`, Gate 2).
+- Per-class thresholds are calibrated on the validation tomograms after v2 training and
+  stored in the checkpoint; `predict` also writes a merged `heatmap.mrc` and a `classmap.mrc`
+  (class numbers) (Gate 4).
+- Not adopted: a global class catalogue across datasets, and a per-tomogram presence test
+  that drops classes with few picks.
+
+## 4b. Open research question (not planned)
+The model picks only the classes of its class table. A cell contains an open-ended set of
+objects; detecting objects outside the trained classes needs new ideas and probably new
+architectures. More reading is needed before this becomes a gate.
 
 ## 5. Next steps, in order
 
@@ -57,7 +70,7 @@ into v2 models; the SSL wedge-restoration and even/odd tasks.
    (`.claude/agents/00_ORCHESTRATOR.md`).
 3. Optional, any time: finish the baseline arm of the Fourier-augmentation comparison
    (`experiments/NOTEBOOK.md`: the baseline run was stopped at epoch ~20) and score both
-   runs with picking F-beta once `benchmarks/metrics.py` exists (Gate 1).
+   runs with picking F-beta once `tomocpt/metrics.py` exists (Gate 1).
 
 ## 6. Data
 

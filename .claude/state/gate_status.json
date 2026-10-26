@@ -40,7 +40,9 @@
       "agent": "04_AGENT_INFER_BENCHMARK",
       "attempts": 0,
       "test_hashes": {},
-      "path_exceptions": [],
+      "path_exceptions": [
+        "tomocpt/training/run.py::post-fit calibration call"
+      ],
       "notes": [],
       "report_path": ".claude/reports/gate_04_report.json"
     },

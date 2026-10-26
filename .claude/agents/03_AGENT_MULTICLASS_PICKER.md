@@ -149,7 +149,7 @@ models")` at construction.
 
 F1 in slow tests: peaks from `predict.helpers.peak_local_max_torch` with threshold 0.3
 and min distance `d/2` per channel; a hit is within `d/4` voxels of a true centre
-(`benchmarks.metrics`). Thresholds must pass in 9 of 10 seeds.
+(`tomocpt.metrics`). Thresholds must pass in 9 of 10 seeds.
 
 ## Notes for the next gate
 Give the exact call pattern for inference (`forward(x, apix=level.apix_work)`), the

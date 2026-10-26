@@ -8,7 +8,8 @@ No config fields are added here; each later gate adds its own (CLAUDE.md Section
 
 ## Allowed write paths
 - `tomocpt/configManager/configManager.py` (`safe_getattr` only)
-- `benchmarks/__init__.py`, `benchmarks/metrics.py` (new)
+- `tomocpt/metrics.py` (new; inside the package because Gate 4 calibration uses it at run time)
+- `benchmarks/__init__.py` (new, empty)
 - `pyproject.toml` (`[tool.pytest.ini_options]` only: register marker `slow`)
 - `.gitignore` (add `tests/.cache/`, `benchmarks/out/`)
 - `.claude/reports/gate_01_report.json`
@@ -26,7 +27,7 @@ guard them with it. Keep all other behaviour.
 Run the fast suite with the pinned `numpy==1.26.4` and `scipy==1.14.1`. Report any
 failure; do not change the pins without a human decision.
 
-### T1.3 Picking metrics (`benchmarks/metrics.py`)
+### T1.3 Picking metrics (`tomocpt/metrics.py`)
 - `match_points(pred_xyz, true_xyz, radius) -> (tp_pairs, fp_idx, fn_idx)`: greedy
   one-to-one matching by increasing distance, within `radius`.
 - `prf_beta(tp, fp, fn, beta=4.0) -> dict(precision, recall, f1, fbeta)` (β = 4 is the
@@ -40,7 +41,7 @@ The Test Author writes `tests/utils/` (see `TA_TEST_AUTHOR.md`). The implementer
 
 ## Public names (tests import these)
 - `tomocpt.configManager.configManager.{update_config, backfill_missing_fields, safe_getattr}`
-- `benchmarks.metrics.{match_points, prf_beta, score_classes}`
+- `tomocpt.metrics.{match_points, prf_beta, score_classes}`
 
 ## Pass criteria
 - **G1-C1** Gaussian target golden: `generate_gaussian_sphere(R, 2R+1)` for R in

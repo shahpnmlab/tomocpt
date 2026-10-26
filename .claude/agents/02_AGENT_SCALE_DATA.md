@@ -9,9 +9,11 @@ recorded per chunk. Keep pipeline v1 byte-identical. No model or loss change her
 - In v1 every species becomes about 20 voxels wide, each in its own dataset. A 70 Å
   particle at 10 Å/px is upsampled ×2.86; a 500 Å particle loses detail; and in a
   tomogram with six species, each species is a negative for the other five.
-- Pipeline v2 resamples only when a class is outside the band, puts all classes of a
-  tomogram into one target with one channel per class, and records `apix_work`, which the
-  Gate 3 model receives as its conditioning input.
+- Pipeline v2 resamples only when a class is above the band (it never upsamples), puts all
+  classes of a tomogram into one target with one channel per class, and records
+  `apix_work`, which the Gate 3 model receives as its conditioning input.
+- In a multi-class set, common classes (ribosomes) fill most chunks and rare ones (NPCs,
+  viruses) few. Repeat-factor sampling evens this out.
 
 ## Allowed write paths
 - `tomocpt/dataManager/**` (new: `scaling.py`, `metadata.py`)
@@ -38,7 +40,9 @@ class ScaleConfig:
 ```
 `PrepdataConfig`: `apix_override`, `label_border_policy`, `multiclass`, `class_diameters`,
 `class_names`, `class_annotated` (CLAUDE.md Section 6).
-`TrainConfig`: `data_pipeline_version: int = 1`, `scale: ScaleConfig`.
+`TrainConfig`: `data_pipeline_version: int = 1`, `scale: ScaleConfig`,
+`chunk_sampling: ChunkSampling = ChunkSampling.uniform` (`uniform` | `repeat_factor`),
+`repeat_factor_threshold: float = 0.1`.
 `AugmentationConfig`: `label_interpolation`, `rotation_mode`, `flip_p`.
 Use `str` Enums (Typer needs them) and `field(default_factory=...)` for nested dataclasses.
 Scalar fields get Typer `Annotated` help text like the existing fields.
@@ -50,14 +54,17 @@ Scalar fields get Typer `Annotated` help text like the existing fields.
   given. Raise `ValueError` that names `apix_override` if the header value is `<= 0`.
   Log a warning if it is exactly 1.0 (often an unset header).
 - `choose_working_apix(apix_native, lengths_ang, band_min, band_max) -> float`: the band
-  rule (CLAUDE.md Section 3). Raise `ValueError` if no value fits (use `group_lengths`).
+  rule (CLAUDE.md Section 3), never below `apix_native`. Raise `ValueError` if no value fits
+  (use `group_lengths`).
 - `group_lengths(apix_native, lengths_ang, band_min, band_max) -> list[tuple[float, list[float]]]`:
-  sort lengths; greedily grow a group while `max/min <= band_max/band_min`; return
-  `(apix_work, lengths)` per group with the band rule.
+  sort by `L_eff = max(L, apix_native · band_min)`; greedily grow a group while
+  `max(L_eff)/min(L_eff) <= band_max/band_min`; return `(apix_work, lengths)` per group with
+  the band rule (original lengths, not `L_eff`).
 - `plan_levels(apix_native, class_table, band_min, band_max) -> list[Level]`, where
   `Level = NamedTuple(apix_work: float, assigned: list[int], available: list[int])`:
   one level per group; `assigned` = class indices of that group; `available` = every class
-  whose `d_vox` at that level is inside the band. Gate 4 uses the same function.
+  with `lo_c <= d_vox <= band_max` at that level (`lo_c = min(band_min, diameter / apix_native)`,
+  CLAUDE.md Section 3; compare with a relative tolerance of 1e-6). Gate 4 uses the same function.
 - `working_shape(native_shape_zyx, apix_native, apix_work) -> tuple[int, int, int]`:
   `int(s * apix_native / apix_work)` per axis (the v1 rounding).
 - `resample_volume(vol: Tensor[D,H,W], target_shape, method: ResampleMethod) -> Tensor`.
@@ -109,8 +116,10 @@ Scalar fields get Typer `Annotated` help text like the existing fields.
   classes. Reuse `assign_chunk_dir_names` and `split_rows_by_tomogram`.
 - Per tomogram, `plan_levels(...)` gives the levels. Per level and scale index `k`
   (`k = 0 … scales_per_level-1`): `k = 0` uses the level's `apix_work`; `k > 0` draws a
-  voxel size log-uniformly in the range that keeps the level's `assigned` classes inside
-  the band (seeded by `seed`, tomogram name, level). Normalise as v1 at native size,
+  voxel size log-uniformly in the range that keeps every `assigned` class within
+  `[lo_c, band_max]` and is never below `apix_native` (seeded by `seed`, tomogram name,
+  level). If that range has zero width (for example a level with a class already below the
+  band at native size), the `k > 0` directories are not written; log it. Normalise as v1 at native size,
   resample with `scale_cfg.resample`, pad to ≥ 64 (as v1).
 - Targets are stored as points (`target_storage = "points"`): convert coordinates with
   `points_to_working`, shift by the padding, apply `label_border_policy` once at tomogram
@@ -122,7 +131,9 @@ Scalar fields get Typer `Annotated` help text like the existing fields.
 - Output directory `<split>/<dir name>__L{level}s{k}/` with `volumes/`, `points/` and
   `chunk_meta.json` (`ChunkMeta`).
 - Manifest: v2 writes `chunk_layout.json` with the v1 keys plus `"pipeline_version": 2`,
-  `"band"`, `"resample"`, `"scales_per_level"` and `"class_table"`. Training with
+  `"band"`, `"resample"`, `"scales_per_level"`, `"class_table"` and `"val_tomograms"`
+  (list of `{tomogram_path, coords_path, dataset_id, class_available}` for the validation
+  split; Gate 4 calibrates on them). Training with
   `data_pipeline_version = 2` on a manifest without `pipeline_version: 2` raises
   `ValueError("chunk format ...")`; v1 training on a v2 manifest raises the same.
   The done file is still written last.
@@ -152,32 +163,49 @@ def write_chunk_layout(chunks_dir, info: dict) / read_chunk_layout(chunks_dir) -
 - Zoom augmentation (`zoom_aug_max > 1`): draw `s ~ U(1, zoom_aug_max)`, zoom the volume
   by `s` (trilinear), crop a random 64³, scale the point positions and `d_vox` by `s`,
   divide `apix_work` by `s`, then draw the target. Mark a class unavailable if its zoomed
-  `d_vox` leaves the band. Zoom runs **before** `build_training_transforms`.
+  `d_vox` exceeds `band_max` (zoom only enlarges, so classes below the band stay available). Zoom runs **before** `build_training_transforms`.
 - `VolumeDatsetIO` v2 reads the volume chunk, its points file and `chunk_meta.json`, draws
   the target with `render_targets(points, (64, 64, 64), C, "clip")` in the worker, wraps it
   as a `tio.LabelMap`, applies the transforms, and returns the CLAUDE.md Section 5.1 batch.
   v1 output unchanged.
-- `Data` gets `pipeline_version` and `scale_cfg` arguments; `training/run.py` passes them
-  from the train config.
+- `Data` gets `pipeline_version`, `scale_cfg`, `chunk_sampling` and
+  `repeat_factor_threshold` arguments; `training/run.py` passes them from the train config.
+
+### T2.5 Repeat-factor sampling (`dataManager/dataloading.py`)
+Repeat-factor sampling (Gupta et al., LVIS, 2019) for the training loader when
+`chunk_sampling = repeat_factor` (v2 only; v1 with `repeat_factor` raises `ValueError`):
+- `f_c` = fraction of training chunks in which class `c` is available and has at least one
+  point centred inside the chunk (read from the points files and `chunk_meta.json` at setup).
+- Class factor `r_c = max(1, sqrt(t / f_c))` with `t = repeat_factor_threshold`; chunk factor
+  `r = max(r_c)` over the classes centred in it; `r = 1` for a chunk without such classes.
+- `repeat_factor_weights(chunk_classes: list[set[int]], n_classes, threshold) -> np.ndarray`
+  returns `r` per chunk. The train loader uses
+  `WeightedRandomSampler(r, num_samples=round(sum(r)), replacement=True)` with a generator
+  seeded from the training seed. Lightning wraps it for DDP (`use_distributed_sampler`,
+  the default). Validation stays unweighted. Log `f_c` and `r_c` per class at setup.
+- `uniform` keeps today's loader exactly.
 
 ## Public names
 `tomocpt.dataManager.scaling.{read_apix, choose_working_apix, group_lengths, plan_levels, Level, working_shape, resample_volume}`,
 `tomocpt.dataManager.metadata.{ChunkMeta, write_chunk_meta, read_chunk_meta, write_chunk_layout, read_chunk_layout}`,
 `tomocpt.labels.multiclass.{ClassSpec, parse_class_diameters, parse_class_names, build_class_table, class_table_from_config}`,
 `tomocpt.labels.helpers.{render_targets, points_to_working}`,
-`tomocpt.dataManager.dataloading.{build_training_transforms, VolumeDatsetIO, Data}`,
+`tomocpt.dataManager.dataloading.{build_training_transforms, VolumeDatsetIO, Data, repeat_factor_weights}`,
 `tomocpt.dataManager.chunking.do_chunking` (new kwargs),
-`tomocpt.defaultConfigs.scale_config.{ScaleConfig, ResampleMethod}`.
+`tomocpt.defaultConfigs.scale_config.{ScaleConfig, ResampleMethod}`,
+`tomocpt.defaultConfigs.train_config.ChunkSampling`.
 
 ## Pass criteria
 - **G2-C1** v1 equivalence: `do_chunking` with defaults on `make_dataset(n_tomos=2)`
   gives the same file list and identical decoded arrays as the `gate-0-base` golden.
-- **G2-C2** Band rule table: (apix 10, L [70]) → 7.0; (10, [250]) → 10.0;
-  (5, [350]) → 10.9375; (14, [140]) → 14.0; group (10, [120, 300]) → one group at 10.0;
-  group (10, [70, 500]) → two groups. CZII diameters at 10.012 Å/px → one level, no
-  resampling.
+- **G2-C2** Band rule table: (apix 10, L [70]) → 10.0 (no upsampling); (13.48, [110]) →
+  13.48; (10, [250]) → 10.0; (5, [350]) → 10.9375; (14, [140]) → 14.0;
+  group (10, [120, 300]) → one group at 10.0; group (10, [70, 300]) → one group at 10.0
+  (70 Å counts as 100 Å); group (10, [70, 500]) → two groups. CZII diameters at
+  10.012 Å/px → one level, no resampling. No case returns `apix_work < apix_native`.
 - **G2-C3** `plan_levels`: every class is assigned to exactly one level; `available ⊇
-  assigned`; every available class has `d_vox` inside the band at that level.
+  assigned`; every available class has `lo_c <= d_vox <= band_max` at that level; a class
+  below the band at native size is available at the native-size level only.
 - **G2-C4** Fourier resampling: a cosine above the new Nyquist keeps < 1 % of its power;
   the centroid of a smooth blob moves < 0.1 voxel; the mean is kept (rtol 1e-4);
   round trip native → work → native moves a blob centroid < 0.25 native voxel.
@@ -215,6 +243,12 @@ def write_chunk_layout(chunks_dir, info: dict) / read_chunk_layout(chunks_dir) -
   (rtol 1e-6), the target radius grows by `s` (± 1 voxel), and a class pushed outside the
   band becomes unavailable.
 - **G2-C17** `read_apix`: header 0 → `ValueError` naming `apix_override`; override wins.
+- **G2-C18** Repeat-factor sampling: `repeat_factor_weights` on chunks where class 0 is in
+  50 % and class 1 in 1 % gives `r = 1` and `sqrt(10)` (rtol 1e-6), chunks with both get
+  `sqrt(10)`, empty chunks 1; over 20 000 draws of the train loader with a fixed seed, class
+  1's share of chunks is within 10 % (relative) of the expected value; with `uniform` the
+  train loader yields the same chunk order as a `Data` built without the new arguments; v1 with
+  `repeat_factor` → `ValueError`; the v2 manifest lists the validation tomograms.
 
 ## Notes for the next gate
 Document the exact batch keys, the meaning of `apix_work` and `class_d_vox` after zoom,

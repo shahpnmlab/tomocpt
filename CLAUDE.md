@@ -205,6 +205,9 @@ Legacy behaviour and legacy checkpoints keep working unchanged throughout.
 
 **Non-goals.** Segmentation of membranes, organelles or void. Mixture-of-experts models.
 Selecting a species at inference from its diameter alone (a class is a trained channel).
+Objects outside the model's class table: the model picks only the classes it was trained on.
+Handling the open-ended set of objects in a cell needs new ideas and is an open research
+question, not part of this plan.
 
 ---
 
@@ -221,15 +224,19 @@ Selecting a species at inference from its diameter alone (a class is a trained c
 | pipeline v1 | Legacy data pipeline (Section 1.2). `train.data_pipeline_version = 1`. |
 | pipeline v2 | Band scale policy, multi-class points. `train.data_pipeline_version = 2`. |
 
-Band rule (v2), for the class diameters `L` of one tomogram:
+Band rule (v2), for the class diameters `L` of one tomogram. The working voxel size is
+**never finer than native**: upsampling adds no information and costs compute, so a class
+below the band at native size is used at native size with `d_vox < band_min`.
 ```
-apix_work = clip(apix_native, max(L) / band_max, min(L) / band_min)
+L_eff     = max(L, apix_native · band_min)     # per class; a class under the band counts as at its lower edge
+apix_work = max(apix_native, max(L) / band_max)  # valid when max(L_eff) / min(L_eff) <= band_max / band_min
 ```
-If `apix_native` already puts every class inside the band, nothing is resampled.
-If `max(L)/min(L) > band_max/band_min`, no single value fits: `dataManager.scaling.group_lengths`
-splits the classes into groups, one level each. A class is **assigned** to exactly one
-level (its group) and is read there at inference. During training a class is available at
-every level where its `d_vox` lies inside the band.
+If `apix_native` already puts every class inside the band (or below it), nothing is resampled.
+If `max(L_eff)/min(L_eff) > band_max/band_min`, no single value fits:
+`dataManager.scaling.group_lengths` splits the classes into groups, one level each. A class is
+**assigned** to exactly one level (its group) and is read there at inference.
+Per class, the lower limit is `lo_c = min(band_min, diameter / apix_native)`. During training a
+class is available at every level where `lo_c <= d_vox <= band_max`.
 
 ---
 
@@ -323,12 +330,16 @@ time (gradient checkpointing). Pipeline v1 uses Section 1.5 unchanged.
 | `train.augmentation.label_interpolation` | `nearest` \| `linear` = `nearest` | 2 |
 | `train.augmentation.rotation_mode` | `affine` \| `flips` = `affine` | 2 |
 | `train.augmentation.flip_p` | float = `0.0` | 2 |
+| `train.chunk_sampling` | `uniform` \| `repeat_factor` = `uniform` | 2 |
+| `train.repeat_factor_threshold` | float = `0.1` | 2 |
 | `train.network.scale_conditioning` | bool = `False` | 3 |
 | `train.particles` | `ParticlesConfig` (`defaultConfigs/particles_config.py`) | 3 |
 | `infer.apix_override` | Optional[float] = `None` | 4 |
 | `infer.classes` | Optional[str] = `None` (subset of class names) | 4 |
 | `infer.cross_class_nms` | bool = `True` | 4 |
 | `infer.accumulate_dtype`, `infer.accumulate_device` | `float32`, `auto` | 4 |
+| `infer.class_thresholds` | Optional[str] = `None` (`"ribosome:0.4,..."`; overrides calibration) | 4 |
+| `infer.calibration_beta`, `infer.calibration_min_particles` | float = `4.0`, int = `20` | 4 |
 | `train.ssl` | `SSLConfig` (`defaultConfigs/ssl_config.py`) | 5 |
 | `prepData.filament_masks` | Optional[str] = `None` (`"<class number>:<mask dir>"`) | 6 |
 | `infer.filament_spacing_ang`, `infer.filament_min_length_ang` | float = `40.0`, `200.0` | 6 |
@@ -341,10 +352,10 @@ Field details are in each gate spec. A gate may add fields only to the files it 
 
 | Gate | Agent spec | Purpose | May write (tests are written by TA) |
 |---|---|---|---|
-| 1 | `01_AGENT_BASELINE.md` | Lock legacy numbers and checkpoint loading; metrics | `tomocpt/configManager/configManager.py` (`safe_getattr` only), `benchmarks/metrics.py`, `pyproject.toml` (pytest section), `.gitignore` |
-| 2 | `02_AGENT_SCALE_DATA.md` | Pipeline v2: band rule, levels, multi-class points, augmentation | `tomocpt/dataManager/**`, `tomocpt/labels/**`, `tomocpt/defaultConfigs/{scale_config,prepdata_config}.py`, `tomocpt/defaultConfigs/train_config.py` (`data_pipeline_version`, `scale`, `AugmentationConfig` fields), `tomocpt/training/helpers.py` (`_prepare_data_if_needed` only), `tomocpt/training/run.py` (`Data(...)` arguments only) |
+| 1 | `01_AGENT_BASELINE.md` | Lock legacy numbers and checkpoint loading; metrics | `tomocpt/configManager/configManager.py` (`safe_getattr` only), `tomocpt/metrics.py`, `benchmarks/__init__.py`, `pyproject.toml` (pytest section), `.gitignore` |
+| 2 | `02_AGENT_SCALE_DATA.md` | Pipeline v2: band rule, levels, multi-class points, augmentation | `tomocpt/dataManager/**`, `tomocpt/labels/**`, `tomocpt/defaultConfigs/{scale_config,prepdata_config}.py`, `tomocpt/defaultConfigs/train_config.py` (`data_pipeline_version`, `scale`, `chunk_sampling`, `repeat_factor_threshold`, `AugmentationConfig` fields), `tomocpt/training/helpers.py` (`_prepare_data_if_needed` only), `tomocpt/training/run.py` (`Data(...)` arguments only) |
 | 3 | `03_AGENT_MULTICLASS_PICKER.md` | Multi-class heads, FiLM on voxel size, v2 loss | `tomocpt/networks/{swinunetr,conditioning,pickingModel,distillationModel,inference,baseModel}.py`, `tomocpt/training/**` (except `_prepare_data_if_needed`), `tomocpt/defaultConfigs/{network_config,particles_config}.py` |
-| 4 | `04_AGENT_INFER_BENCHMARK.md` | v2 inference with levels, per-class outputs, benchmarks | `tomocpt/predict/**`, `tomocpt/defaultConfigs/infer_config.py`, `benchmarks/**`, `README.md` |
+| 4 | `04_AGENT_INFER_BENCHMARK.md` | v2 inference with levels, per-class outputs, benchmarks | `tomocpt/predict/**`, `tomocpt/defaultConfigs/infer_config.py`, `tomocpt/training/run.py` (post-fit calibration call only), `benchmarks/**`, `README.md` |
 | 5 | `05_AGENT_SSL.md` | Wedge-aware, scale-aware SSL v2 with dense embeddings | `tomocpt/networks/selfSupervisedModel.py`, `tomocpt/networks/ssl/**`, `tomocpt/dataManager/ssl_views.py`, `tomocpt/defaultConfigs/ssl_config.py`, `tomocpt/training/helpers.py` (self-supervised branches only), `benchmarks/ssl_*.py` |
 | 6 | `06_AGENT_FILAMENTS.md` | Microtubules: mask → centrelines, tube targets, tracing, output | `tomocpt/labels/**`, `tomocpt/dataManager/**`, `tomocpt/predict/**`, `tomocpt/defaultConfigs/{prepdata_config,infer_config}.py`, `scripts/download_portal_data.py`, `benchmarks/filaments.py`, `README.md` |
 
