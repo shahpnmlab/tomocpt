@@ -1,17 +1,43 @@
 {
   "base_ref": "v2-gate-0-base",
-  "base_commit": null,
+  "base_commit": "ce6f7b0ce856f19556266e7ad3143bfb66cdb7e2",
   "base_note": "first commit of branch v2-dev (released main + fix/v1-patches + plan); set by the orchestrator",
   "current_gate": 1,
-  "gpu_available": null,
+  "gpu_available": true,
   "gates": {
     "1": {
-      "status": "PENDING",
+      "status": "TESTS_FROZEN",
       "agent": "01_AGENT_BASELINE",
       "attempts": 0,
-      "test_hashes": {},
+      "test_hashes": {
+        "tests/fixtures/make_legacy_ckpt.py": "198804b61eada1e21ee83b44fc0738963c0505ad716cbfa06de3b6a17aab3998",
+        "tests/gate1/README.md": "85a9360f1ba1481381801b4e709839b6ee0d67564bcadebf126a5a4244ece5d9",
+        "tests/gate1/__init__.py": "414fb42eb486659f2cee48a0a64f1f20be252bb7c3271dc9fcc3b69ec854c570",
+        "tests/gate1/conftest.py": "a86ca49fb4132214e6cb509c29c1cc626b9d52bad2227f6ee08d48e5b6c36a37",
+        "tests/gate1/test_g1_checkpoints.py": "7ec4cd64b65ea1eff4de8274677dab5591e32f12431494b8bcf9a34169335ab6",
+        "tests/gate1/test_g1_config_cli.py": "2a8478f695bb95de1738a57b5c69e965e135da936bcefee4f670a6f6a494c3e5",
+        "tests/gate1/test_g1_goldens.py": "a7c14e0a57d930d45c975b86fecdbbe1281fa660ad5f8751546b07eb31bee7ec",
+        "tests/gate1/test_g1_helpers.py": "fd2043a862f98c10c76db638ea65c0daa724fccb21facd46cac2ca5c2797befb",
+        "tests/gate1/test_g1_metrics.py": "9d38649546a2a3bc4c610dd1df37db6d8b72f6f5d95257f831d10cacb4e55e7f",
+        "tests/golden/gate1_common.py": "a243dd43fde6e0759780b15cc476a3194d1a4ab9004b4561da544e9e5c52cc45",
+        "tests/golden/gate1_forward.npz": "982d0d6fbe212c3aaa60cdff4cce03aa33ef17e81cd50aa4f386772a3d5ed5a0",
+        "tests/golden/gate1_goldens.json": "8cb3f3f5e58d3a2b0758654992ff3a02164ad66ee462e573fd70d0cc4beacc71",
+        "tests/golden/gate1_spheres.npz": "fe71e27b418e3c4e85af4df1caf82bac1a85dc94e1712b2cc1617b33758df4be",
+        "tests/golden/make_goldens_gate1.py": "43b654df4e2b478d5a698dbe8ebbe943a715c8f44184707825d32a274ee90761",
+        "tests/utils/__init__.py": "34a347c43b8bcf3b3c98c2eb3c4d5c5c1f9a91e58ae1c8c5be052093410736c4",
+        "tests/utils/legacy.py": "bfd3b368b022efd28ce72cd6aabfce8cdf6f5a79e1d12ab64ef819cd5fdb75c4",
+        "tests/utils/phantoms.py": "3638520986d9bbc9872426ad5734f37e68f246023b939c09420ebf808d46eff6",
+        "tests/utils/tiny.py": "cdbfe2d3c66089df9d76157f55b8581976331bb07a8605528fc15a9a5b9b81d8",
+        "tests/utils/wedge.py": "6ac1c0f65a523be34fe6f40e2eb51555fc9acd7f08c1fcb81e5419fcb81140e5"
+      },
       "path_exceptions": [],
-      "notes": [],
+      "notes": [
+        "Freeze also covers tests/golden/ and tests/fixtures/ (goldens and the legacy-checkpoint builder define correctness).",
+        "Legacy base tests tests/test_*.py are frozen per CLAUDE.md invariant 9 (unchanged since v2-gate-0-base).",
+        "Spec/README says `tomocpt init --output-path` / `--config-file`; legacy CLI only accepts --output_path / --config_file. C9 test uses underscores. Spec wording needs a human.",
+        "make_phantom returns Phantom(volume, coords, polylines, masks) (4 fields). Each tests/gateN/ needs __init__.py; import helpers as utils.<module>.",
+        "Legacy checkpoints are built with a TensorBoardLogger (legacy training_step needs self.logger.experiment), not logger=False as TA spec says."
+      ],
       "report_path": ".claude/reports/gate_01_report.json"
     },
     "2": {

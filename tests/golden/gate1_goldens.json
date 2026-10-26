@@ -1,0 +1,164 @@
+{
+  "G1_C2_loss": {
+    "value": 8.287988662719727,
+    "y_pred_sum": 262452.2915110984,
+    "y_true_sum": 3440.55615234375
+  },
+  "G1_C3_forward": {
+    "hidden4_sum": 3.289504093118012e-06,
+    "logits_sum": 39939.818080268466
+  },
+  "G1_C8_contrast_inversion_prob": 0.5,
+  "G1_C8_transforms": {
+    "children": [
+      {
+        "package": "torchio",
+        "params": {
+          "args_names": [],
+          "center": "image",
+          "check_shape": true,
+          "copy": true,
+          "default_pad_value": "otsu",
+          "degrees": [
+            -45.0,
+            45.0,
+            -45.0,
+            45.0,
+            -45.0,
+            45.0
+          ],
+          "exclude": null,
+          "image_interpolation": "linear",
+          "include": null,
+          "isotropic": false,
+          "keep": null,
+          "label_interpolation": "nearest",
+          "label_keys": null,
+          "parse_input": true,
+          "probability": 0.8,
+          "scales": [
+            0.9,
+            1.1,
+            0.9,
+            1.1,
+            0.9,
+            1.1
+          ],
+          "translation": [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "type": "RandomAffine"
+      },
+      {
+        "choices": [
+          [
+            {
+              "package": "torchio",
+              "params": {
+                "args_names": [],
+                "copy": true,
+                "exclude": null,
+                "image_interpolation": "linear",
+                "include": null,
+                "keep": null,
+                "label_interpolation": "nearest",
+                "label_keys": null,
+                "max_displacement": [
+                  7.5,
+                  7.5,
+                  7.5
+                ],
+                "num_control_points": [
+                  7,
+                  7,
+                  7
+                ],
+                "num_locked_borders": 2,
+                "parse_input": true,
+                "probability": 1
+              },
+              "type": "RandomElasticDeformation"
+            },
+            0.5
+          ],
+          [
+            {
+              "package": "torchio",
+              "params": {
+                "args_names": [],
+                "copy": true,
+                "exclude": null,
+                "include": null,
+                "keep": null,
+                "label_keys": null,
+                "parse_input": true,
+                "probability": 1,
+                "std_ranges": [
+                  0,
+                  1.0,
+                  0,
+                  1.0,
+                  0,
+                  1.0
+                ]
+              },
+              "type": "RandomBlur"
+            },
+            0.5
+          ]
+        ],
+        "package": "torchio",
+        "params": {
+          "args_names": [],
+          "copy": true,
+          "exclude": null,
+          "include": null,
+          "keep": null,
+          "label_keys": null,
+          "parse_input": false,
+          "probability": 0.75
+        },
+        "type": "OneOf"
+      },
+      {
+        "package": "tomocpt",
+        "params": {
+          "args_names": [],
+          "copy": true,
+          "exclude": null,
+          "include": null,
+          "keep": null,
+          "label_keys": null,
+          "parse_input": true,
+          "probability": 0.5
+        },
+        "type": "RandomContrastInversion"
+      }
+    ],
+    "package": "torchio",
+    "params": {
+      "args_names": [],
+      "copy": true,
+      "exclude": null,
+      "include": null,
+      "keep": null,
+      "label_keys": null,
+      "parse_input": false,
+      "probability": 1
+    },
+    "type": "Compose"
+  },
+  "provenance": {
+    "base_commit": "ce6f7b0ce856f19556266e7ad3143bfb66cdb7e2",
+    "base_ref": "v2-gate-0-base",
+    "numpy": "1.26.4",
+    "tomocpt_file": "/home/pranav/Desktop/pranav/software/tomocpt-base/tomocpt/__init__.py",
+    "torch": "2.5.1+cu124"
+  }
+}
