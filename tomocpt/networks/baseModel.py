@@ -61,10 +61,10 @@ class BaseModel(pl.LightningModule):
 
     def build_model(self, **kwargs):
         network_config = self.hparams.config.train.network
-        require_labels = self.hparams.config.train.mode == TrainingModes.picking
-        model_name, model = network_config.build_model(
-            img_size=self.patch_size, require_labels=require_labels, **kwargs
-        )
+        # Default only: SelfSupervisedModel passes require_labels=True itself, because it
+        # needs MySwinUNETR's (logits, hidden) tuple even though the mode is selfSupervised.
+        kwargs.setdefault("require_labels", self.hparams.config.train.mode == TrainingModes.picking)
+        model_name, model = network_config.build_model(img_size=self.patch_size, **kwargs)
         return model_name, model
 
     def forward_and_zero_edges(self, x):
@@ -82,16 +82,67 @@ class BaseModel(pl.LightningModule):
 
         return out
 
+    def on_validation_epoch_end(self):
+        """Log val_loss_smooth, an EMA of the epoch's val_loss. The LR scheduler and early
+        stopping monitor it, so every model must log it, not only the picking model."""
+        current_val_loss = self.trainer.callback_metrics.get("val_loss")
+        if current_val_loss is None:
+            return
+
+        previous = getattr(self, "val_loss_ema", None)
+        alpha = getattr(self, "ema_alpha", 0.3)
+        self.val_loss_ema = current_val_loss if previous is None else alpha * current_val_loss + (1 - alpha) * previous
+
+        self.log("val_loss_smooth", self.val_loss_ema, prog_bar=True, sync_dist=True)
+
     def _get_model_parameters_for_optimizer(self):
         # Check if we're fine-tuning based on train_continue in hparams
         is_finetuning = self.hparams.get('train_continue') is not None
 
         # If the model is a SwinUNETR model with differentiated LR method
         if hasattr(self.model, '_get_model_parameters_for_optimizer'):
-            return self.model._get_model_parameters_for_optimizer(different_lrs=is_finetuning)
+            parameters = list(self.model._get_model_parameters_for_optimizer(different_lrs=is_finetuning))
+
+            # The model's groups cover only swinViT, encoder* and decoder*. Everything else
+            # that trains (the SwinUNETR `out` layer, and the self-supervised heads, which live
+            # on this module rather than on self.model) would otherwise never be optimised.
+            grouped_params = [p for g in parameters for p in g["params"]] if is_finetuning else parameters
+            grouped = {id(p) for p in grouped_params}
+            rest = [p for p in self.parameters() if p.requires_grad and id(p) not in grouped]
+
+            if rest and not self._resume_needs_legacy_groups(parameters, is_finetuning):
+                if is_finetuning:
+                    parameters.append({"params": rest, "lr_mult": 1.0})  # Task head learns fully
+                else:
+                    parameters.extend(rest)
+            return parameters
 
         # Otherwise return all parameters with default learning rate
         return self.parameters()
+
+    def _resume_needs_legacy_groups(self, legacy_parameters, is_finetuning) -> bool:
+        """True when resuming a run whose optimizer was built before `out` and the SSL heads
+        were optimised. Its saved optimizer state fits only the old grouping, so that run
+        keeps the old grouping until it ends."""
+        saved_sizes = getattr(self, "_saved_optimizer_group_sizes", None)
+        if saved_sizes is None:
+            return False
+        legacy_sizes = [len(g["params"]) for g in legacy_parameters] if is_finetuning \
+            else [len(legacy_parameters)]
+        if saved_sizes != legacy_sizes:
+            return False
+        logging.warning(
+            "Resuming a run whose optimizer predates the fix that trains the output layer and "
+            "the self-supervised heads; keeping its original parameter groups for this run."
+        )
+        return True
+
+    def on_load_checkpoint(self, checkpoint):
+        # Only a resume (trainer.fit(ckpt_path=...)) restores the optimizer state, and only
+        # then is a trainer attached; load_from_checkpoint (fine-tuning) has none.
+        if self._trainer is not None and checkpoint.get("optimizer_states"):
+            param_groups = checkpoint["optimizer_states"][0]["param_groups"]
+            self._saved_optimizer_group_sizes = [len(g["params"]) for g in param_groups]
 
     def configure_optimizers(self):
         train_config = self.hparams.config.train

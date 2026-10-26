@@ -20,7 +20,9 @@ class SelfSupervisedModel(BaseModel):
     def __init__(self, lr: float | None = None,
                  num_levels: int | None = None, model: Optional[BaseModel] = None, *args, **kwargs):
 
-        super(SelfSupervisedModel, self).__init__(lr, num_levels, *args, **kwargs)
+        # num_levels is unused and must not be forwarded: BaseModel's second positional
+        # argument is `config`, which load_from_checkpoint also passes by keyword.
+        super(SelfSupervisedModel, self).__init__(lr, *args, **kwargs)
 
 
         n_voxels = mainConfig.train.CHUNK_SIZE
@@ -101,7 +103,8 @@ class SelfSupervisedModel(BaseModel):
             grid1 = torchvision.utils.make_grid(x[:, :1, size // 2, :, :])
             grid2 = torchvision.utils.make_grid(x1[:, :1, size // 2, :, :])
             grid3 = torchvision.utils.make_grid(x2[:, :1, size // 2, :, :])
-            grid4 = torchvision.utils.make_grid(x[:, :1, size // 2, :, :])
+            # Reconstruction of view 1 (rec_x1, the first half of imgs_recon); its target is x1.
+            grid4 = torchvision.utils.make_grid(imgs_recon[:x1.shape[0], :1, size // 2, :, :])
 
             tensorboard.add_image("input_train", grid1, global_step=self.current_epoch)
             tensorboard.add_image("aug1_train", grid2, global_step=self.current_epoch)
@@ -127,7 +130,8 @@ class SelfSupervisedModel(BaseModel):
             grid1 = torchvision.utils.make_grid(x[:, :1, size // 2, :, :])
             grid2 = torchvision.utils.make_grid(x1[:, :1, size // 2, :, :])
             grid3 = torchvision.utils.make_grid(x2[:, :1, size // 2, :, :])
-            grid4 = torchvision.utils.make_grid(x[:, :1, size // 2, :, :])
+            # Reconstruction of view 1 (rec_x1, the first half of imgs_recon); its target is x1.
+            grid4 = torchvision.utils.make_grid(imgs_recon[:x1.shape[0], :1, size // 2, :, :])
             tensorboard.add_image("input_val", grid1, global_step=self.current_epoch)
             tensorboard.add_image("aug1_val", grid2, global_step=self.current_epoch)
             tensorboard.add_image("aug2_val", grid3, global_step=self.current_epoch)
