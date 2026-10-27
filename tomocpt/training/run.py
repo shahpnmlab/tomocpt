@@ -53,6 +53,10 @@ def train(config: DictConfig = None):
         batch_size=config.batch_size,
         workers_for_data=config.n_cpus_for_dataloading,
         augmentation=config.augmentation,
+        pipeline_version=config.data_pipeline_version,
+        scale_cfg=config.scale,
+        chunk_sampling=config.chunk_sampling,
+        repeat_factor_threshold=config.repeat_factor_threshold,
     )
     data.setup()
 

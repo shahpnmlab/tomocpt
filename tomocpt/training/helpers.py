@@ -30,15 +30,46 @@ logging = get_logger()
 
 
 def _prepare_data_if_needed(config: DictConfig):
-    """Checks for chunked data and runs preprocessing if it doesn't exist."""
+    """Checks for chunked data and runs preprocessing if it doesn't exist.
+
+    Existing chunks must match ``train.data_pipeline_version`` (the manifest's
+    ``pipeline_version``, missing = 1), else ValueError("chunk format ..."). Pipeline v2
+    chunks must also record the class table of ``prepData`` (``class_table_from_config``).
+    """
+    from tomocpt.dataManager.metadata import layout_pipeline_version, read_chunk_layout
+
     logging.info("Checking for prepared data...")
     require_labels = config.mode == TrainingModes.picking
+    pipeline_version = int(getattr(config, "data_pipeline_version", 1) or 1)
     chunking_name_done = get_chunking_name_done(
         config.chunks_dir, require_labels=require_labels
     )
 
     if Path(chunking_name_done).is_file():
         logging.info("Found existing chunked data. Skipping data preparation.")
+        layout = read_chunk_layout(config.chunks_dir)
+        found = layout_pipeline_version(layout)
+        if found != pipeline_version:
+            raise ValueError(
+                f"chunk format mismatch: {config.chunks_dir} holds pipeline v{found} chunks but "
+                f"train.data_pipeline_version={pipeline_version}. Delete {chunking_name_done} to rebuild "
+                "the chunks, or set train.data_pipeline_version to match."
+            )
+        if pipeline_version == 2:
+            # The class table at training start must be the one the chunks were built with.
+            from tomocpt.labels.multiclass import (class_table_from_config, class_table_from_json,
+                                                   class_table_to_json, same_class_table)
+
+            expected = class_table_from_config(mainConfig.prepData)
+            recorded = class_table_from_json(layout.get("class_table", []))
+            if not same_class_table(expected, recorded):
+                raise ValueError(
+                    "The class table of prepData differs from the one the chunks were built with: "
+                    f"prepData gives {class_table_to_json(expected)}, chunk_layout.json records "
+                    f"{class_table_to_json(recorded)}. Fix prepData.class_diameters / class_names, or "
+                    f"delete {chunking_name_done} to rebuild the chunks."
+                )
+            return
         training_data_dir = (
             config.training_data_dir or mainConfig.prepData.training_data_dir
         )
@@ -63,6 +94,24 @@ def _prepare_data_if_needed(config: DictConfig):
         )
 
     tomos_df = read_particles_csvs(training_data_dir)
+    # Every value is passed explicitly (T2.6): chunking workers do not read mainConfig.
+    chunk_kwargs = dict(
+        alpha_drop_empty=mainConfig.prepData.ALPHA_FOR_DROPPING_EMPTY_CUBES,
+        chunk_size=getattr(config, "CHUNK_SIZE", None),
+        chunk_stride=getattr(config, "CHUNK_STRIDE", None),
+    )
+    if pipeline_version == 2:
+        from tomocpt.labels.multiclass import class_table_from_config
+
+        if not require_labels:
+            raise ValueError("train.data_pipeline_version=2 supports mode=picking only")
+        chunk_kwargs.update(
+            pipeline_version=2,
+            scale_cfg=config.scale,
+            class_table=class_table_from_config(mainConfig.prepData),
+            seed=getattr(config, "SEED_FOR_TRAIN_VAL_SPLIT", 42),
+            label_border_policy=mainConfig.prepData.label_border_policy,
+        )
     do_chunking(
         tomos_df,
         chunkedDataDir=config.chunks_dir,
@@ -71,6 +120,7 @@ def _prepare_data_if_needed(config: DictConfig):
         require_labels=require_labels,
         train_val_level=config.train_on,
         use_gpus=config.use_gpus,
+        **chunk_kwargs,
     )
     logging.info("Data preparation complete.")
 

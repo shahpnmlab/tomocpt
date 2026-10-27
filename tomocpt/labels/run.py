@@ -112,6 +112,13 @@ def prepare_data(config: DictConfig = None) -> None:
 
     from tomocpt.labels.helpers import prepare_picking_star, prepare_picking_imod
 
+    border_policy = _border_policy(config)
+    apix_override = getattr(config, "apix_override", None)
+
+    if bool(getattr(config, "multiclass", False)):
+        _prepare_data_multiclass(config, border_policy, apix_override)
+        return
+
     # Parse comma-separated strings into lists
     particle_length_ang, raw_data_dir, coordinate_files, class_id = config.parse_lists()
 
@@ -143,6 +150,8 @@ def prepare_data(config: DictConfig = None) -> None:
                     output_dir=dataset_output_dir,
                     class_id=class_id,
                     particle_diameter_angst=particle_length,
+                    border_policy=border_policy,
+                    apix_override=apix_override,
                 )
             elif config.coordinate_file_type == PrepareDataType.imod:
                 prepare_picking_imod(
@@ -150,6 +159,8 @@ def prepare_data(config: DictConfig = None) -> None:
                     tomo_path=raw_data_dir,
                     output_dir=dataset_output_dir,
                     particle_diameter_angst=particle_length,
+                    border_policy=border_policy,
+                    apix_override=apix_override,
                 )
 
             logging.info(f"Successfully processed dataset {idx}")
@@ -157,6 +168,59 @@ def prepare_data(config: DictConfig = None) -> None:
         except Exception as e:
             logging.error(f"Error processing dataset {idx}: {str(e)}")
             continue
+
+    logging.info("Completed processing all datasets")
+    OmegaConf.save(config, os.path.join(base_output_dir, "prep_config.yaml"))
+
+
+def _border_policy(config) -> str:
+    policy = getattr(config, "label_border_policy", "skip")
+    policy = str(getattr(policy, "value", policy))
+    if policy not in ("skip", "clip"):
+        raise ConfigurationError(f"label_border_policy must be 'skip' or 'clip', got '{policy}'")
+    return policy
+
+
+def _split_csv(text) -> list:
+    return [x.strip() for x in str(text).split(",") if x.strip()]
+
+
+def _prepare_data_multiclass(config, border_policy: str, apix_override) -> None:
+    """prepare_data with prepData.multiclass=True: every (raw_data_dir, coordinate_files)
+    pair is one dataset that holds all species (STAR files with rlnClassNumber)."""
+    from tomocpt.labels.helpers import prepare_picking_star_multiclass
+    from tomocpt.labels.multiclass import class_table_from_config
+
+    if config.coordinate_file_type != PrepareDataType.star:
+        raise ConfigurationError("prepData.multiclass=True needs STAR coordinate files with rlnClassNumber")
+    class_table = class_table_from_config(config)  # raises if class_diameters is missing or invalid
+
+    raw_dirs = [Path(x) for x in _split_csv(config.raw_data_dir)]
+    coord_files = [Path(x) for x in _split_csv(config.coordinate_files)]
+    if len(raw_dirs) != len(coord_files):
+        raise ConfigurationError(
+            f"raw_data_dir has {len(raw_dirs)} entries but coordinate_files has {len(coord_files)}")
+    class_ids = _split_csv(getattr(config, "class_id", "all")) or ["all"]
+    label = class_ids[0] if len(class_ids) == 1 else "all"
+
+    base_output_dir = Path(config.training_data_dir)
+    base_output_dir.mkdir(parents=True, exist_ok=True)
+    for idx, (raw_dir, coord_file) in enumerate(zip(raw_dirs, coord_files), 1):
+        logging.info(f"Processing multi-class dataset:{idx} ({coord_file})")
+        dataset_output_dir = Path(base_output_dir / f"dataset_{idx}_class_{label}").resolve()
+        dataset_output_dir.mkdir(parents=True, exist_ok=True)
+        # Errors are raised (not logged and skipped): a missing class diameter must stop here.
+        prepare_picking_star_multiclass(
+            input_file=coord_file,
+            tomo_path=raw_dir,
+            output_dir=dataset_output_dir,
+            class_table=class_table,
+            class_annotated=getattr(config, "class_annotated", None),
+            class_id_label=label,
+            border_policy=border_policy,
+            apix_override=apix_override,
+        )
+        logging.info(f"Successfully processed dataset {idx}")
 
     logging.info("Completed processing all datasets")
     OmegaConf.save(config, os.path.join(base_output_dir, "prep_config.yaml"))

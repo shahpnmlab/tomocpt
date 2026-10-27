@@ -7,6 +7,7 @@ import typer
 from omegaconf import MISSING
 
 from tomocpt.defaultConfigs.network_config import NetworkConfig
+from tomocpt.defaultConfigs.scale_config import ScaleConfig
 
 
 class TrainingModes(str, Enum):
@@ -26,6 +27,21 @@ class OptimizerConfig:
 class CrossValidationLevelSplit(str, Enum):
     tomos = "tomos"
     cubes = "chunks"
+
+
+class ChunkSampling(str, Enum):
+    uniform = "uniform"
+    repeat_factor = "repeat_factor"
+
+
+class LabelInterpolation(str, Enum):
+    nearest = "nearest"
+    linear = "linear"
+
+
+class RotationMode(str, Enum):
+    affine = "affine"
+    flips = "flips"
 
 
 @dataclass
@@ -57,6 +73,23 @@ class AugmentationConfig:
     blur_std: Annotated[
         float, typer.Option(help="Standard deviation of the random blur kernel")
     ] = 1.0
+    label_interpolation: Annotated[
+        LabelInterpolation,
+        typer.Option(
+            help="Interpolation of the target in the spatial transforms: 'nearest' (legacy) or 'linear' "
+                 "(smooth soft targets; recommended with pipeline v2). The target stays a LabelMap."
+        ),
+    ] = LabelInterpolation.nearest
+    rotation_mode: Annotated[
+        RotationMode,
+        typer.Option(
+            help="'affine' (legacy random rotation + elastic/blur) or 'flips' (axis flips, no elastic "
+                 "deformation; keeps the real missing wedge in place)"
+        ),
+    ] = RotationMode.affine
+    flip_p: Annotated[
+        float, typer.Option(help="Per-axis flip probability when rotation_mode='flips' (suggestion 0.5)")
+    ] = 0.0
 
     # --- Fourier degradation (missing wedge + amplitude spectrum) ---
     # Two independent switches, mirroring membrain-seg's use_mw_aug / use_fourier_aug.
@@ -221,6 +254,22 @@ class TrainConfig:
     launch_tensorboard: Annotated[
         bool, typer.Option(help="Launch tensorboard for evaluating training")
     ] = False
+
+    # Data pipeline v2 (Gate 2)
+    data_pipeline_version: Annotated[
+        int,
+        typer.Option(help="Data pipeline: 1 = legacy fixed-particle rescale, 2 = band scale policy, multi-class"),
+    ] = 1
+    scale: Annotated[
+        ScaleConfig, typer.Option(help="Scale policy of data pipeline v2")
+    ] = field(default_factory=ScaleConfig)
+    chunk_sampling: Annotated[
+        ChunkSampling,
+        typer.Option(help="Training chunk sampling: 'uniform' (legacy) or 'repeat_factor' (pipeline v2 only)"),
+    ] = ChunkSampling.uniform
+    repeat_factor_threshold: Annotated[
+        float, typer.Option(help="Threshold t of repeat-factor sampling: r_c = max(1, sqrt(t / f_c))")
+    ] = 0.1
 
     # Distillation parameters
     use_distillation: Annotated[

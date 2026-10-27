@@ -137,3 +137,21 @@ class Star:
             str(name): group[xyz_headings].astype(int).values
             for name, group in subset_data.groupby(self.tomo_label)
         }
+
+    def get_shifted_scaled_coordinates_with_classes(
+        self, particle_data: pd.DataFrame, tomogram_pixel_size: Union[pd.Series, float]
+    ) -> Tuple[Dict[str, np.ndarray], Dict[str, np.ndarray]]:
+        """Like :meth:`get_shifted_scaled_coordinates` (same shifts, scaling and integer
+        truncation), plus the ``rlnClassNumber`` of every point.
+
+        Returns ``(coords, classes)``: ``{tomogram name: (N, 3) int xyz}`` and
+        ``{tomogram name: (N,) int class numbers}`` in the same order.
+        """
+        if "rlnClassNumber" not in particle_data.columns:
+            raise ValueError("rlnClassNumber column not found in the particle data")
+        coords = self.get_shifted_scaled_coordinates(particle_data, tomogram_pixel_size)
+        classes = {
+            str(name): group["rlnClassNumber"].astype(int).values
+            for name, group in particle_data.groupby(self.tomo_label)
+        }
+        return coords, {k: classes[k] for k in coords}

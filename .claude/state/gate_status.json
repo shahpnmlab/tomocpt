@@ -2,7 +2,7 @@
   "base_ref": "v2-gate-0-base",
   "base_commit": "ce6f7b0ce856f19556266e7ad3143bfb66cdb7e2",
   "base_note": "first commit of branch v2-dev (released main + fix/v1-patches + plan); set by the orchestrator",
-  "current_gate": 2,
+  "current_gate": 3,
   "gpu_available": true,
   "gates": {
     "1": {
@@ -44,9 +44,9 @@
       "report_path": ".claude/reports/gate_01_report.json"
     },
     "2": {
-      "status": "TESTS_FROZEN",
+      "status": "PASSED",
       "agent": "02_AGENT_SCALE_DATA",
-      "attempts": 0,
+      "attempts": 1,
       "test_hashes": {
         "tests/gate2/README.md": "82569896ddd2089fe15b1b4fe3911cb9ce6d20da85143ddd6c68eb39ad4d3e4e",
         "tests/gate2/__init__.py": "95275f395f458c8a03fd11f59de62eadbcd92fdd96836c44022c5dab2e9876c5",
@@ -71,12 +71,13 @@
         "Human decisions (27 Oct 2026): (1) fix the Dask-worker config defect in Gate 2 (T2.6, G2-C19; v1 and v2); (2) G2-C15 tolerance 5 % peak / max err <= 0.06; (3) rotation_mode=flips drops RandomElasticDeformation (G2-C14 tests default config). Spec and CLAUDE.md 1.10 updated.",
         "G2-C1 golden built with gate2_common.inprocess_chunking (in-process Dask, CUDA hidden, chunking.random seeded) because legacy chunking is unseeded and GPU-dependent.",
         "TA choices: C18 sampler test uses threshold 1.0 and train_dataloader().sampler must be a WeightedRandomSampler; C13/C5 guard tested through training.run.train (guard may live in _prepare_data_if_needed or Data.setup); CZII diameters 120,130,180,300,260,270 A.",
-        "Human decision (27 Oct 2026): exact point mapping after resampling (scaling.coordinate_map, points_to_working coord_map, zoom map; G2-C20). TA fixed the C9 reference (it encoded the apix-ratio approximation) and added tests/gate2/test_g2_alignment.py; re-frozen. Far-edge blobs within 3 vox are on Z only (skip policy drops y/x border particles); y/x blobs at 10 native vox still see ~0.5 vox drift under the old map. Orchestrator accepted without spec change."
+        "Human decision (27 Oct 2026): exact point mapping after resampling (scaling.coordinate_map, points_to_working coord_map, zoom map; G2-C20). TA fixed the C9 reference (it encoded the apix-ratio approximation) and added tests/gate2/test_g2_alignment.py; re-frozen. Far-edge blobs within 3 vox are on Z only (skip policy drops y/x border particles); y/x blobs at 10 native vox still see ~0.5 vox drift under the old map. Orchestrator accepted without spec change.",
+        "Verified by orchestrator (27 Oct 2026): hashes unchanged (gates 1-2); ownership OK (training/helpers.py only _prepare_data_if_needed, run.py only Data args, train_config only allowed fields); fast 387 passed/27 skipped; slow gate1+gate2 2 passed (RTX A6000). Zoom uses an explicit align_corners=True grid, consistent with p*s - o. Implementer extras: do_chunking label_border_policy kwarg, Data seed kwarg, worker mainConfig fallback only for task dicts lacking T2.6 keys (legacy frozen test)."
       ],
       "report_path": ".claude/reports/gate_02_report.json"
     },
     "3": {
-      "status": "LOCKED",
+      "status": "PENDING",
       "agent": "03_AGENT_MULTICLASS_PICKER",
       "attempts": 0,
       "test_hashes": {},

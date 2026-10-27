@@ -1,0 +1,178 @@
+{
+  "gate_id": 2,
+  "agent_name": "02_AGENT_SCALE_DATA",
+  "status": "READY_FOR_REVIEW",
+  "base_ref": "v2-gate-1-passed",
+  "files_created": [
+    "tomocpt/dataManager/scaling.py",
+    "tomocpt/dataManager/metadata.py",
+    "tomocpt/labels/multiclass.py",
+    "tomocpt/defaultConfigs/scale_config.py",
+    ".claude/reports/gate_02_report.json"
+  ],
+  "files_modified": [
+    "tomocpt/dataManager/chunking.py",
+    "tomocpt/dataManager/dataloading.py",
+    "tomocpt/dataManager/transforms.py",
+    "tomocpt/labels/helpers.py",
+    "tomocpt/labels/run.py",
+    "tomocpt/labels/star.py",
+    "tomocpt/defaultConfigs/prepdata_config.py",
+    "tomocpt/defaultConfigs/train_config.py",
+    "tomocpt/training/helpers.py",
+    "tomocpt/training/run.py"
+  ],
+  "exported_symbols": {
+    "tomocpt.dataManager.scaling": [
+      "read_apix",
+      "choose_working_apix",
+      "group_lengths",
+      "plan_levels",
+      "Level",
+      "working_shape",
+      "resample_volume",
+      "coordinate_map",
+      "in_band",
+      "class_lower_limit",
+      "jitter_range"
+    ],
+    "tomocpt.dataManager.metadata": [
+      "ChunkMeta",
+      "write_chunk_meta",
+      "read_chunk_meta",
+      "write_chunk_layout",
+      "read_chunk_layout",
+      "layout_pipeline_version"
+    ],
+    "tomocpt.labels.multiclass": [
+      "ClassSpec",
+      "parse_class_diameters",
+      "parse_class_names",
+      "build_class_table",
+      "class_table_from_config",
+      "parse_class_annotated",
+      "class_table_to_json",
+      "class_table_from_json",
+      "same_class_table",
+      "single_class_number"
+    ],
+    "tomocpt.labels.helpers": [
+      "render_targets",
+      "points_to_working (new kwarg coord_map)",
+      "touches_border",
+      "write_coords_csv",
+      "prepare_picking_star_multiclass"
+    ],
+    "tomocpt.dataManager.dataloading": [
+      "build_training_transforms",
+      "VolumeDatsetIO",
+      "Data",
+      "repeat_factor_weights"
+    ],
+    "tomocpt.dataManager.chunking": [
+      "do_chunking (new kwargs: pipeline_version, scale_cfg, class_table, seed, alpha_drop_empty, chunk_size, chunk_stride, label_border_policy)",
+      "process_single_tomo_task_v2"
+    ],
+    "tomocpt.defaultConfigs.scale_config": [
+      "ScaleConfig",
+      "ResampleMethod"
+    ],
+    "tomocpt.defaultConfigs.train_config": [
+      "ChunkSampling",
+      "LabelInterpolation",
+      "RotationMode"
+    ],
+    "tomocpt.defaultConfigs.prepdata_config": [
+      "LabelBorderPolicy"
+    ]
+  },
+  "config_fields_added": [
+    "prepData.apix_override",
+    "prepData.label_border_policy",
+    "prepData.multiclass",
+    "prepData.class_diameters",
+    "prepData.class_names",
+    "prepData.class_annotated",
+    "train.data_pipeline_version",
+    "train.scale.band_min_vox",
+    "train.scale.band_max_vox",
+    "train.scale.scales_per_level",
+    "train.scale.resample",
+    "train.scale.zoom_aug_max",
+    "train.scale.target_storage",
+    "train.chunk_sampling",
+    "train.repeat_factor_threshold",
+    "train.augmentation.label_interpolation",
+    "train.augmentation.rotation_mode",
+    "train.augmentation.flip_p"
+  ],
+  "legacy_equivalence": {
+    "G2_C1_v1_chunks_default_alpha": {
+      "max_abs_diff": 0.0,
+      "tolerance": "identical decoded arrays (sha256) and file list",
+      "result": "pass"
+    },
+    "G2_C1_v1_chunks_keep_all": {
+      "max_abs_diff": 0.0,
+      "tolerance": "identical decoded arrays (sha256) and file list",
+      "result": "pass"
+    },
+    "G1_C1_gaussian_sphere": {
+      "max_abs_diff": 0.0,
+      "tolerance": 1e-07,
+      "result": "pass (generate_gaussian_sphere unchanged)"
+    },
+    "G1_C2_loss": {
+      "tolerance": 1e-06,
+      "result": "pass (loss code not touched)"
+    },
+    "G1_C3_tiny_forward": {
+      "tolerance": 1e-05,
+      "result": "pass (model code not touched)"
+    },
+    "G1_C8_default_augmentation_pipeline": {
+      "tolerance": "exact (types, order, parameters)",
+      "result": "pass (affine mode passes no new kwargs to TorchIO)"
+    },
+    "G1_C9_init_round_trip": {
+      "result": "pass"
+    },
+    "v1_label_mrcs": {
+      "result": "unchanged with label_border_policy=skip (test_G2_C12_v1_label_skip_is_the_default / _explicit_matches_default); tracking CSVs gain columns coords_path, apix_native, class_annotated, existing columns unchanged"
+    },
+    "v1_data_module": {
+      "result": "same chunk order and samples (test_G2_C18_v1_data_order_is_a_plain_shuffled_loader, test_G2_C18_uniform_gives_the_legacy_chunk_order)"
+    },
+    "G2_C20_alignment": {
+      "result": "pass: stored chunk points within 0.10 working voxel (fourier) / 0.15 (trilinear) of resampled blob centroids; zoomed target peaks within 0.15 voxel"
+    }
+  },
+  "metrics": {},
+  "pytest_fast": {
+    "command": "pytest tests -m 'not slow' -q",
+    "exit_code": 0,
+    "result": "387 passed, 27 skipped, 2 deselected"
+  },
+  "pytest_slow": {
+    "command": "pytest tests/gate2 -m slow -q; pytest tests/gate1 -m slow -q",
+    "exit_code": 0,
+    "ran": true,
+    "result": "gate2: 1 passed (G2-C8 GPU cluster == CPU); gate1: 1 passed",
+    "reason": ""
+  },
+  "benchmarks": {},
+  "known_limitations": [
+    "v2 empty-chunk drop: 'empty' = no point of an available class whose sphere box overlaps the chunk (centre within [-R, 64+R) per axis); the drop probability uses the v1 formula with f1 estimated analytically as the sum of sphere volumes of available-class points (no tomogram-level render). The drop RNG is seeded by (seed, chunk dir name, level, k), so v2 chunk sets are reproducible and identical across CPU/GPU clusters (unlike the unseeded v1 drop, which is kept unchanged).",
+    "class_table_from_config, single-class: the class number is int(class_id) when class_id is numeric, otherwise 1 ('all' and subsets like '1:2' map to 1), so the table agrees with the class numbers prepare_data writes into the coordinate CSVs. The spec text says 'number 1'; it is the same for the default class_id='all'. Legacy configs with several single-class datasets give one row per dataset and need distinct numeric class_id values (else ValueError suggesting multiclass).",
+    "class_annotated: stored per dataset as a tracking-CSV column 'class_annotated' (comma-joined class numbers). Accepts numbers or names separated by commas/colons/semicolons/spaces. Without the column, a dataset's annotated classes are the classes present in its coordinate CSVs. When several datasets share a tomogram, a class is available if any of them annotates it; the merged task gets the smallest dataset_id.",
+    "prepare_data always writes the coordinate CSVs and the new tracking columns (single-class STAR, IMOD and multi-class), not only 'when v2 data are prepared': prepare_data does not know the training pipeline version. Label MRCs and legacy columns are unchanged.",
+    "Multi-class prepare_data writes one combined v1-style label MRC per tomogram (each class with its own radius) so the legacy label_path column stays valid; particle_diameter_angst is the largest class diameter. Errors in the multi-class path are raised, not logged-and-skipped as in the legacy per-dataset loop.",
+    "Levels are planned on the whole class table (as Gate 4 will at inference); a (level, scale) where no annotated class is in the band is not written (logged).",
+    "do_chunking gained one extra kwarg not listed in the spec: label_border_policy (default 'skip'), used by v2 only; _prepare_data_if_needed passes prepData.label_border_policy. The worker fallbacks to mainConfig in process_single_tomo_task exist only for task dicts built without the T2.6 keys (a frozen legacy test builds one); do_chunking always fills them. PreprocessTomogramd falls back to mainConfig only if a caller passes target_px/chunk_size=None.",
+    "v2 chunking supports picking (labelled) data only; self-supervised v2 raises ValueError (Gate 5). With train_on=chunks, v2 moves level directories like v1 and val_tomograms is empty.",
+    "Fourier resampling of a whole tomogram uses per-axis rfft/irfft (scipy.signal.resample Nyquist convention); on CUDA OOM it falls back to the CPU.",
+    "Data gained an optional 'seed' kwarg for the repeat-factor sampler generator (default torch.initial_seed()); training/run.py does not pass it, so the sampler follows Lightning's seed_everything / global seed."
+  ],
+  "notes_for_next_agent": "BATCH (pipeline v2, Data with pipeline_version=2): keys exactly input_data [B,1,64,64,64] float32; target_data [B,C,64,64,64] float32 in [0,1] (channel c = class-table row c, drawn in the dataloader worker by labels.helpers.render_targets(points,(64,64,64),C,'clip') and passed through the TorchIO transforms as a tio.LabelMap); class_available [B,C] bool (class annotated exhaustively in the sample's dataset AND lo_c <= d_vox <= band_max at this chunk's working voxel size, after zoom); class_d_vox [B,C] float32 (diameter_ang / apix_work for every class, available or not, after zoom); apix_work [B,1] float32 (A per working voxel after zoom); dataset_id [B] int64 (index of the prepare_data dataset: dataset_<k>_... -> k-1). Pipeline v1 batches keep only input_data/target_data. ZOOM (train.scale.zoom_aug_max > 1, training split only, before the augmentation transforms): s ~ U(1, zoom_aug_max); the volume is zoomed by s and a random 64^3 cube cropped (output voxel j samples input (j+o)/s); point positions -> p*s - o, d_vox -> d_vox*s; class_d_vox = chunk value * s; apix_work = chunk value / s; a class whose zoomed d_vox exceeds band_max becomes unavailable. Validation never zooms. CHUNK LAYOUT (chunks_dir/chunk_layout.json for v2): v1 keys (layout, dir_names, split) plus pipeline_version: 2, band: [band_min_vox, band_max_vox], resample, scales_per_level, target_storage ('points'|'dense'), label_border_policy, chunk_size, chunk_stride, seed, class_table: list of dicts {number:int, name:str, diameter_ang:float, kind:'particle'|'filament'} in channel order (= dataclasses.asdict(ClassSpec); use labels.multiclass.class_table_from_json / class_table_to_json), val_tomograms: list of {tomogram_path, coords_path, dataset_id, apix_native, class_available:[bool per class]} for the validation split (coords CSV columns x,y,z,class_number,diameter_ang in native voxels). Missing pipeline_version means 1; training refuses a mismatch with ValueError('chunk format mismatch ...') in _prepare_data_if_needed and in Data.setup, and _prepare_data_if_needed raises ValueError if class_table_from_config(mainConfig.prepData) differs from the manifest's class_table. Chunk dirs: <split>/<dir name>__L{level}s{k}/ with volumes/volumes_{i}_{z}_{y}_{x}.nii.gz, points/points_{i}_{z}_{y}_{x}.npy (float32 [N,5] z,y,x,class_index,d_vox in chunk voxels, every particle whose sphere box overlaps the chunk, all classes) or labels_supervised/ (dense, C channels), and chunk_meta.json (metadata.ChunkMeta: tomo_name, dataset_id, level, scale_index, apix_native, apix_work, class_available, class_d_vox, pipeline_version, resample). CHECKPOINTS: train.scale (ScaleConfig), train.data_pipeline_version and prepData (multiclass, class_diameters, class_names, class_annotated, apix_override, label_border_policy) are fields of MainConfig, so Lightning saves them in hyper_parameters with the rest of the config; old checkpoints get defaults through backfill_missing_fields. The class table is NOT stored separately in the checkpoint: rebuild it with labels.multiclass.class_table_from_config(model.hparams.config.prepData) (the only supported way; it uses safe_getattr for older configs). Gate 3: C = len(class table); use class_available to mask the loss, class_d_vox for the Hessian scale (Section 5.4) and apix_work for FiLM (t = log(apix/10)). Gate 4: plan inference with dataManager.scaling.plan_levels(apix_native, class_table, band_min, band_max) using train.scale from the checkpoint and read_apix(path, infer.apix_override); resample_volume(vol, working_shape(...), checkpoint train.scale.resample); positions map back with the inverse of coordinate_map (see COORDINATES). COORDINATES: chunk points use scaling.coordinate_map(native_shape, working_shape, resample) (exact map of the resample run), not apix_native/apix_work. Gate 4: map peaks back to native with the inverse of the same map: native = (work - pad_front - offset) / scale.",
+  "round_2_change": "Human decision 27 Oct 2026 (spec amended, tests re-frozen at eab96c2): the up-to-1-voxel point offset is fixed. New scaling.coordinate_map(native_shape, work_shape, method) -> (scale_zyx, offset_zyx) (fourier: N_out/N_in, 0; trilinear align_corners=False: N_out/N_in, 0.5*scale-0.5; equal shapes: identity). points_to_working gains coord_map=None (position = c*scale + offset; d_vox stays diameter/apix_work). The v2 chunker passes the map of the resample it actually ran (identity when no resample). The zoom augmentation already mapped points with the exact map of its grid_sample (p*s - o, voxel 0 at the origin), so it needed no change; its earlier drift came from the chunk points."
+}
