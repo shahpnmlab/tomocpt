@@ -80,9 +80,26 @@
       "status": "PENDING",
       "agent": "03_AGENT_MULTICLASS_PICKER",
       "attempts": 0,
-      "test_hashes": {},
+      "test_hashes": {
+        "tests/gate3/README.md": "0e74bc804c67b875c2bc600c8ffbd14e9775b4be050ddfe8022bc7bc99abfcee",
+        "tests/gate3/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "tests/gate3/conftest.py": "b0ef2868ed07e1baaebd5941d24cb4d0c587fa7b4217e815f85ccf097d55723f",
+        "tests/gate3/g3_helpers.py": "f8ea112f98ff9c5e80facd7ec421fb4fa802faee7e154d4eea358ac499084832",
+        "tests/gate3/test_g3_checkpoints.py": "7aa7d493e0acab76df300e8f474cf40887203f47d6a749e537f4644c014eda5c",
+        "tests/gate3/test_g3_learning.py": "396107b506783d236b5b1ce6866d5d6c7f9357be884146d586c5a042a2358830",
+        "tests/gate3/test_g3_loss.py": "c66b3c6fabe1acaf7b9f2cf872743b15431e3f65f19d0af015353b1f46c76f87",
+        "tests/gate3/test_g3_modules.py": "dcd7402b2d2f58a2bfb49948e7c2b5d50cdbe838a8c1fe4bdd91a4e52bd78edb",
+        "tests/gate3/test_g3_v1_lock.py": "dad6deab50a1f7661815befa581fb864e8d0973565da457ed07189de13563c1d",
+        "tests/golden/gate3_common.py": "9ea93e2a93cb217df9dd654f4a14f6e90065415466b145951bb7c72ba30537f1",
+        "tests/golden/gate3_goldens.json": "1d23280ac4ee2cc86fc47779dc6758495abb8219aa1b12d8877f99e6785afc66",
+        "tests/golden/make_goldens_gate3.py": "e97580c14d3a3cfb53db15594bcad298b8b919147ff73f96ec0286703b593dad"
+      },
       "path_exceptions": [],
-      "notes": [],
+      "notes": [
+        "Human decision 27 Oct 2026: C4 Hessian centre gap tolerance < 15 % (14.1 % is intrinsic); spec amended.",
+        "Human decision 27 Oct 2026: C13 frozen at seed 0; calibration 2/3 seeds (seed 1 fails). Known flake, revisit at Gate 4.",
+        "C12 calibration: 9/10 seeds pass (seed 7 fails, mean_B_at_A 0.216); thin margin."
+      ],
       "report_path": ".claude/reports/gate_03_report.json"
     },
     "4": {

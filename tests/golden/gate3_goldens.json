@@ -1,0 +1,13 @@
+{
+  "G3_C1_input_sum": -156.77191117596294,
+  "G3_C1_logits_sum": 220012.98399285076,
+  "G3_C1_target_sum": 3440.555630557239,
+  "G3_C1_training_step_loss": 7.267982482910156,
+  "provenance": {
+    "base_commit": "ce6f7b0ce856f19556266e7ad3143bfb66cdb7e2",
+    "base_ref": "v2-gate-0-base",
+    "numpy": "1.26.4",
+    "tomocpt_file": "/home/pranav/Desktop/pranav/software/tomocpt-base/tomocpt/__init__.py",
+    "torch": "2.5.1+cu124"
+  }
+}

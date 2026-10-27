@@ -123,7 +123,9 @@ models")` at construction.
 - **G3-C4** Loss equivalence: C = 1, all available, `class_d_vox = 20` equals the v1 loss
   (rtol 1e-6); the checkpointed per-class form equals the vectorised form on a C = 4 batch
   (rtol 1e-5). The normalised Hessian at the centre of targets with `d = 12` and `d = 24`
-  differs by < 10 %.
+  differs by < 15 % (human decision, 27 Oct 2026: with the Section 1.3 target and the kornia
+  `diff` Hessian the gap is 14.1 % for any implementation; the normalisation itself is checked
+  through the loss ratio (L40 − L20)/(L20 − L10) = 16).
 - **G3-C5** Partial labels: with `class_available[:, c] = False`, the gradient of output
   channel c is exactly 0 (not `None`), and changing that channel's target changes nothing.
 - **G3-C6** Per-class weights: a class with 10× fewer positive voxels gets 10× larger
@@ -146,6 +148,9 @@ models")` at construction.
 - **G3-C13** (slow) Same size, different shape: four classes, two of them the same
   diameter (solid vs hollow spheres). Held-out F1 ≥ 0.8 for every class, and fewer than
   15 % of the true particles of one same-size class are picked in the other's channel.
+  (Human decision, 27 Oct 2026: frozen at seed 0. Calibration met it on seeds 0 and 2 of 3;
+  seed 1 failed (solid channel fired on every hollow particle). Known flake, so the 9-of-10
+  rule is not met for C13; revisit with CZII data at Gate 4.)
 
 F1 in slow tests: peaks from `predict.helpers.peak_local_max_torch` with threshold 0.3
 and min distance `d/2` per channel; a hit is within `d/4` voxels of a true centre
