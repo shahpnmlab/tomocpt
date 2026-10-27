@@ -11,7 +11,7 @@ import pytest
 import torch
 
 from gate2 import g2_helpers as H
-from gate2.conftest import MAIN_APIX, MAIN_DIAMETERS, MAIN_NAMES
+from gate2.conftest import MAIN_APIX, MAIN_DIAMETERS, MAIN_NAMES, MAIN_SHAPE
 from utils.tiny import applied_main_config, tiny_main_config
 
 SECTION_5_1 = {
@@ -112,8 +112,11 @@ def test_G2_C8_batches_match_section_5_1(v2main):
 # G2-C9
 # ------------------------------------------------------------------------------------------
 
-def _tomo_points_working(inputs, tomo, apix_work):
-    from tomocpt.dataManager.scaling import working_shape
+def _tomo_points_working(inputs, tomo, apix_work, resample):
+    """Tomogram-level points at the working scale with the exact map of the resample the
+    chunks used (G2-C20), shifted by the v1 padding."""
+    from tomocpt.dataManager.scaling import coordinate_map, working_shape
+    from tomocpt.defaultConfigs.scale_config import ResampleMethod
     from tomocpt.labels.helpers import points_to_working
 
     row = inputs["df"][inputs["df"]["tomogram_path"].map(_stem) == tomo["name"]].iloc[0]
@@ -121,7 +124,9 @@ def _tomo_points_working(inputs, tomo, apix_work):
     ws = tuple(int(s) for s in working_shape(tomo["shape"], tomo["apix"], apix_work))
     padded = tuple(max(H.CHUNK, s) for s in ws)
     pad = np.array([H.v1_pad_front(s) for s in ws], dtype=np.float64)
-    pts = np.asarray(points_to_working(coords, tomo["apix"], apix_work, inputs["table"]), dtype=np.float64)
+    cmap = coordinate_map(tuple(tomo["shape"]), ws, ResampleMethod(str(getattr(resample, "value", resample))))
+    pts = np.asarray(points_to_working(coords, tomo["apix"], apix_work, inputs["table"], coord_map=cmap),
+                     dtype=np.float64)
     assert pts.shape == (len(coords), 5)
     pts = pts.copy()
     pts[:, :3] += pad
@@ -131,7 +136,16 @@ def _tomo_points_working(inputs, tomo, apix_work):
 def test_G2_C9_stored_points_render_the_tomogram_crop(v2main):
     """For every chunk, render_targets of its stored points equals the crop of a
     tomogram-level render_targets at the same scale (atol 1e-6), particles crossing the chunk
-    border included. Each points file must match a distinct TorchIO grid position."""
+    border included. Each points file must match a distinct TorchIO grid position.
+
+    The tomogram-level points use the exact resample map (G2-C20). v2main resamples 7 -> 9.375 A
+    with working shape (47, 95, 95) from (64, 128, 128): N_out/N_in = 0.734 / 0.742 against
+    apix_native/apix_work = 0.7467, so the approximate scaling is off by up to ~0.8 voxel."""
+    from tomocpt.dataManager.scaling import working_shape
+
+    ws = working_shape(MAIN_SHAPE, MAIN_APIX, 9.375)
+    for n_in, n_out in zip(MAIN_SHAPE, ws):
+        assert abs(n_out / n_in - MAIN_APIX / 9.375) > 1e-3
     from tomocpt.labels.helpers import render_targets
 
     C = len(v2main["table"])
@@ -142,7 +156,7 @@ def test_G2_C9_stored_points_render_the_tomogram_crop(v2main):
         assert dirs, tomo["name"]
         for d in dirs:
             apix_work = ms[d].apix_work
-            pts, padded = _tomo_points_working(v2main, tomo, apix_work)
+            pts, padded = _tomo_points_working(v2main, tomo, apix_work, ms[d].resample)
             big = render_targets(pts.astype(np.float32), padded, C, border_policy="clip")
             starts = [H.grid_starts(s) for s in padded]
             files = H.points_files(d)

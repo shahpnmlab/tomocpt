@@ -67,6 +67,14 @@ Scalar fields get Typer `Annotated` help text like the existing fields.
   CLAUDE.md Section 3; compare with a relative tolerance of 1e-6). Gate 4 uses the same function.
 - `working_shape(native_shape_zyx, apix_native, apix_work) -> tuple[int, int, int]`:
   `int(s * apix_native / apix_work)` per axis (the v1 rounding).
+- `coordinate_map(native_shape_zyx, work_shape_zyx, method: ResampleMethod) -> (scale_zyx, offset_zyx)`
+  (two float64 arrays of length 3): the exact per-axis map from native to working voxel
+  coordinates of the resample `resample_volume` performs. `fourier`: `scale = N_out / N_in`,
+  `offset = 0`. `trilinear` (`align_corners=False`): `scale = N_out / N_in`,
+  `offset = 0.5 · scale − 0.5`. Equal shapes (no resample): `scale = 1`, `offset = 0`.
+  (Human decision, 27 Oct 2026: `working_shape` truncates, so `N_out / N_in` differs from
+  `apix_native / apix_work`; scaling points by the apix ratio misaligns targets by up to
+  1 working voxel at the far edge.)
 - `resample_volume(vol: Tensor[D,H,W], target_shape, method: ResampleMethod) -> Tensor`.
   `trilinear` calls the existing `preprocessing.resize_volume` (unchanged). `fourier`
   crops or zero-pads the centred spectrum (`torch.fft.fftn` / `ifftn`), keeps the mean,
@@ -103,7 +111,10 @@ Scalar fields get Typer `Annotated` help text like the existing fields.
   Draws the CLAUDE.md Section 1.3 profile with float radius `R = d_vox / 2` centred at the
   float position (not rounded), max-combined per channel. `"clip"` draws the in-bounds
   part; `"skip"` drops particles whose box touches the array border (the v1 rule).
-- `points_to_working(coords_df, apix_native, apix_work, class_table) -> np.ndarray[N, 5]`.
+- `points_to_working(coords_df, apix_native, apix_work, class_table, coord_map=None) -> np.ndarray[N, 5]`.
+  Without `coord_map`, positions scale by `apix_native / apix_work`. With
+  `coord_map = (scale_zyx, offset_zyx)` (from `scaling.coordinate_map`), position on axis `a`
+  is `c_a · scale_a + offset_a`. `d_vox = diameter_ang / apix_work` in both cases.
 - `prepData.label_border_policy` (`skip` default) also applies to v1 label MRCs.
 
 ### T2.3 Chunking v2 (`dataManager/chunking.py`, `transforms.py`, `metadata.py`)
@@ -122,7 +133,8 @@ Scalar fields get Typer `Annotated` help text like the existing fields.
   band at native size), the `k > 0` directories are not written; log it. Normalise as v1 at native size,
   resample with `scale_cfg.resample`, pad to ≥ 64 (as v1).
 - Targets are stored as points (`target_storage = "points"`): convert coordinates with
-  `points_to_working`, shift by the padding, apply `label_border_policy` once at tomogram
+  `points_to_working(..., coord_map=coordinate_map(native_shape, working_shape, resample))`
+  (the map of the resample actually run), shift by the padding, apply `label_border_policy` once at tomogram
   level, then per chunk save `points/<chunk stem>.npy` (CLAUDE.md Section 5.2) for every
   particle whose sphere overlaps the chunk (centre within `[-R, 64 + R)` on each axis).
   `target_storage = "dense"` writes dense multi-channel label chunks instead.
@@ -164,7 +176,8 @@ def write_chunk_layout(chunks_dir, info: dict) / read_chunk_layout(chunks_dir) -
   - Recommended v2 settings (not defaults): `label_interpolation="linear"`,
     `rotation_mode="flips"`, `flip_p=0.5`.
 - Zoom augmentation (`zoom_aug_max > 1`): draw `s ~ U(1, zoom_aug_max)`, zoom the volume
-  by `s` (trilinear), crop a random 64³, scale the point positions and `d_vox` by `s`,
+  by `s` (trilinear), crop a random 64³, map the point positions with the exact coordinate
+  map of the zoom that was run (as `coordinate_map`, then subtract the crop origin), scale `d_vox` by `s`,
   divide `apix_work` by `s`, then draw the target. Mark a class unavailable if its zoomed
   `d_vox` exceeds `band_max` (zoom only enlarges, so classes below the band stay available). Zoom runs **before** `build_training_transforms`.
 - `VolumeDatsetIO` v2 reads the volume chunk, its points file and `chunk_meta.json`, draws
@@ -203,7 +216,7 @@ replaced by defaults during chunking (while `predict` uses the checkpoint's valu
 - Default values give byte-identical chunks (G2-C1).
 
 ## Public names
-`tomocpt.dataManager.scaling.{read_apix, choose_working_apix, group_lengths, plan_levels, Level, working_shape, resample_volume}`,
+`tomocpt.dataManager.scaling.{read_apix, choose_working_apix, group_lengths, plan_levels, Level, working_shape, resample_volume, coordinate_map}`,
 `tomocpt.dataManager.metadata.{ChunkMeta, write_chunk_meta, read_chunk_meta, write_chunk_layout, read_chunk_layout}`,
 `tomocpt.labels.multiclass.{ClassSpec, parse_class_diameters, parse_class_names, build_class_table, class_table_from_config}`,
 `tomocpt.labels.helpers.{render_targets, points_to_working}`,
@@ -274,6 +287,14 @@ replaced by defaults during chunking (while `predict` uses the checkpoint's valu
   `desired_particle_pixel_size` and `alpha_drop_empty` (passed explicitly, and through the
   parent's config with the kwargs left at `None`), the chunks reflect them when workers run
   in separate processes (a real Dask `LocalCluster`, CPU).
+
+- **G2-C20** Target alignment after resampling (human decision, 27 Oct 2026): for a
+  tomogram whose native shape makes `N_out / N_in != apix_native / apix_work` on every axis,
+  with small blobs at points spread over the volume including within 3 voxels of the far
+  edge, the stored chunk points sit on the centroid of the resampled blob within 0.1 working
+  voxel for `fourier` and 0.15 for `trilinear`. `coordinate_map` gives the stated maps. With
+  zoom augmentation at a fixed `s`, the drawn target peak sits on the zoomed blob within
+  0.15 voxel.
 
 ## Notes for the next gate
 Document the exact batch keys, the meaning of `apix_work` and `class_d_vox` after zoom,

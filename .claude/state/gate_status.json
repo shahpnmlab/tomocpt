@@ -48,11 +48,11 @@
       "agent": "02_AGENT_SCALE_DATA",
       "attempts": 0,
       "test_hashes": {
-        "tests/gate2/README.md": "286330828b6f14a9b20ff58763a1d7f69f097ac85fd219e42699d6e8d37f048a",
+        "tests/gate2/README.md": "82569896ddd2089fe15b1b4fe3911cb9ce6d20da85143ddd6c68eb39ad4d3e4e",
         "tests/gate2/__init__.py": "95275f395f458c8a03fd11f59de62eadbcd92fdd96836c44022c5dab2e9876c5",
         "tests/gate2/conftest.py": "2d8e4cb7f465f358b18f05fc12250d94ed6d82b40c5238b09d1f5e214155d8ff",
         "tests/gate2/g2_helpers.py": "497d5c319d33e014b4ad5902c61dbb40b53731fb6a2107c3288d8e01a658c3ab",
-        "tests/gate2/test_g2_chunking.py": "7248a1c1b625398516f0f22b26cb4ed9bb1abeb9722e41188a241ab7729608d6",
+        "tests/gate2/test_g2_chunking.py": "ca8f02e5c605d2c7d672fc1b37f70068ab4e6cc9367d0a209287da5d53a603b7",
         "tests/gate2/test_g2_dataloading.py": "d04b4838b689c6dbb4155f4fde759c3e1a6b0b218ad0afeee48f00303e586c2b",
         "tests/gate2/test_g2_labels.py": "2f01eedb4e39eeb74230df5ebf17654258c8a384c4db744e4653d7c332987d9c",
         "tests/gate2/test_g2_scaling.py": "7332fae9e4938999cfd8c74819d05dedf6c98df9d23c1080e26654549126080c",
@@ -60,7 +60,8 @@
         "tests/gate2/test_g2_worker_config.py": "2f09d079d8737c037d97b113cee9366adf5fb88c5772e859e180315633443db3",
         "tests/golden/gate2_common.py": "9a9d24d964973de6fd136e21c79e4d48cfdc7ad20105bcb672fb8949d994c286",
         "tests/golden/gate2_v1_chunks.json": "0abaa112cb1dd49f6deb7314b636b80a6b1b1ebd9d817d78cb04b849d9c60a3e",
-        "tests/golden/make_goldens_gate2.py": "deb631ebe0ab3c828d20795bbd017b78d4e0587af992041bbaa86cbd0cdc19c3"
+        "tests/golden/make_goldens_gate2.py": "deb631ebe0ab3c828d20795bbd017b78d4e0587af992041bbaa86cbd0cdc19c3",
+        "tests/gate2/test_g2_alignment.py": "8d420de20d81d8770c049e515578c77ec58cf71c2e746da0dd1a56f85369647a"
       },
       "path_exceptions": [
         "tomocpt/training/helpers.py::_prepare_data_if_needed",
@@ -69,7 +70,8 @@
       "notes": [
         "Human decisions (27 Oct 2026): (1) fix the Dask-worker config defect in Gate 2 (T2.6, G2-C19; v1 and v2); (2) G2-C15 tolerance 5 % peak / max err <= 0.06; (3) rotation_mode=flips drops RandomElasticDeformation (G2-C14 tests default config). Spec and CLAUDE.md 1.10 updated.",
         "G2-C1 golden built with gate2_common.inprocess_chunking (in-process Dask, CUDA hidden, chunking.random seeded) because legacy chunking is unseeded and GPU-dependent.",
-        "TA choices: C18 sampler test uses threshold 1.0 and train_dataloader().sampler must be a WeightedRandomSampler; C13/C5 guard tested through training.run.train (guard may live in _prepare_data_if_needed or Data.setup); CZII diameters 120,130,180,300,260,270 A."
+        "TA choices: C18 sampler test uses threshold 1.0 and train_dataloader().sampler must be a WeightedRandomSampler; C13/C5 guard tested through training.run.train (guard may live in _prepare_data_if_needed or Data.setup); CZII diameters 120,130,180,300,260,270 A.",
+        "Human decision (27 Oct 2026): exact point mapping after resampling (scaling.coordinate_map, points_to_working coord_map, zoom map; G2-C20). TA fixed the C9 reference (it encoded the apix-ratio approximation) and added tests/gate2/test_g2_alignment.py; re-frozen. Far-edge blobs within 3 vox are on Z only (skip policy drops y/x border particles); y/x blobs at 10 native vox still see ~0.5 vox drift under the old map. Orchestrator accepted without spec change."
       ],
       "report_path": ".claude/reports/gate_02_report.json"
     },

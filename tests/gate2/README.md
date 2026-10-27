@@ -18,6 +18,7 @@ new-behaviour tests still run on code that does not have the new names yet.
 | `test_g2_chunking.py` | C5 (manifest and training start), C8, C9, C10, C11, C13, slow GPU test |
 | `test_g2_dataloading.py` | C14, C15, C16, C18 |
 | `test_g2_worker_config.py` | C19 (real separate-process Dask cluster, CPU) |
+| `test_g2_alignment.py` | C20 (exact coordinate map after resampling and zoom) |
 | `../golden/gate2_common.py` | Shared by the golden generator and the C1 test: dataset, controlled chunking environment, summaries |
 | `../golden/make_goldens_gate2.py` | Golden generator (run in the `v2-gate-0-base` worktree) |
 | `../golden/gate2_v1_chunks.json` | C1 golden (183 kB) |
@@ -44,9 +45,10 @@ new-behaviour tests still run on code that does not have the new names yet.
 | G2-C16 Zoom | `test_G2_C16_zoom_augmentation` |
 | G2-C17 `read_apix` | `test_G2_C17_read_apix_header_zero_raises_naming_apix_override`, `test_G2_C17_read_apix_override_wins` |
 | G2-C19 Workers use the caller's values (T2.6) | `test_G2_C19_explicit_values_reach_separate_process_workers`, `test_G2_C19_parent_config_reaches_separate_process_workers`, `test_G2_C19_chunk_size_and_stride_kwargs` |
+| G2-C20 Target alignment after resampling | `test_G2_C20_coordinate_map_values`, `test_G2_C20_points_to_working_with_coord_map`, `test_G2_C20_stored_points_sit_on_resampled_blobs[fourier-0.1, trilinear-0.15]`, `test_G2_C20_zoomed_target_peak_sits_on_the_zoomed_blob`; the C9 crop reference also uses the exact map |
 | G2-C18 Repeat-factor sampling | `test_G2_C18_repeat_factor_weights_numbers`, `test_G2_C18_repeat_factor_train_loader`, `test_G2_C18_uniform_gives_the_legacy_chunk_order`, `test_G2_C18_v1_data_order_is_a_plain_shuffled_loader`, `test_G2_C18_v1_with_repeat_factor_raises`, `test_G2_C18_manifest_lists_validation_tomograms` |
 
-That is 62 test functions: 86 fast test cases plus 1 slow one.
+That is 66 test functions: 91 fast test cases plus 1 slow one.
 
 ## Golden (G2-C1)
 
@@ -73,9 +75,19 @@ That is 62 test functions: 86 fast test cases plus 1 slow one.
 - For the `default_alpha` variant, v1 must keep drawing its drop decision with `random.random()` from the
   chunking module, in the same order (the v1 code path unchanged, as the spec requires).
 
+## Results on the working-tree implementation (27 Oct 2026, uncommitted, before the coordinate-map fix)
+
+`pytest tests/gate2 -m "not slow"`: 85 passed, 6 failed (about 95 s). The failures are expected:
+- `test_G2_C20_coordinate_map_values`, `test_G2_C20_points_to_working_with_coord_map`, `test_G2_C9_stored_points_render_the_tomogram_crop`:
+  `coordinate_map` and the `coord_map` argument do not exist yet.
+- `test_G2_C20_stored_points_sit_on_resampled_blobs[fourier]` / `[trilinear]`: stored points are off the resampled
+  blobs by up to 0.83 / 1.03 working voxels (points scaled by `apix_native / apix_work`, not `N_out / N_in`).
+- `test_G2_C20_zoomed_target_peak_sits_on_the_zoomed_blob`: 0.71 voxel (the chunk points are already off).
+
 ## Results on current HEAD (7cb354e = `v2-gate-1-passed`; the same as `v2-gate-0-base` for every Gate 2 path)
 
-`pytest tests/gate2 -m "not slow"`: **5 passed, 70 failed, 11 errors** (the errors are fixtures that call
+`pytest tests/gate2 -m "not slow"` (before C20 was added; the 5 C20 cases also fail on HEAD, since
+`coordinate_map` does not exist and points are not exactly mapped): **5 passed, 70 failed, 11 errors** (the errors are fixtures that call
 `do_chunking(..., pipeline_version=2, ...)` or import new modules). The slow test errors as well.
 
 These tests pass on HEAD. They lock legacy behaviour and must keep passing:
@@ -112,8 +124,10 @@ Full fast suite on HEAD (`pytest tests -m "not slow"`): 282 passed (the previous
 
 To make sure a correct implementation can pass every new-behaviour test, I wrote a minimal throwaway reference
 implementation of the Gate 2 spec in a scratch copy of the package (not in the repo). Against it:
-`pytest tests/gate2 -m "not slow"` gave 86 passed, and `-m slow` gave 1 passed (after the 27 Oct spec update:
-flips mode drops elastic deformation, T2.6 worker values; C1 still matches the base golden). Mutations of the reference were
+`pytest tests/gate2 -m "not slow"` gave 91 passed, and `-m slow` gave 1 passed (after the 27 Oct spec updates:
+flips mode drops elastic deformation, T2.6 worker values, exact coordinate map; C1 still matches the base golden).
+C20 margins with the reference: blob centroid errors < 0.06 voxel for both methods (tolerances 0.10 / 0.15);
+zoom peak errors up to about 0.09–0.10 voxel (tolerance 0.15). Mutations of the reference were
 caught as follows:
 - chunks storing only particles centred inside them: C9 crop test fails;
 - zoom that does not scale `d_vox` in the target: C16 fails;
@@ -123,7 +137,8 @@ caught as follows:
 
 ## Runtime (RTX A6000 box, 64 cores, CPU tests)
 
-- `pytest tests/gate2 -m "not slow"`: about 95 s with the reference implementation, about 50 s on HEAD
+- `pytest tests/gate2 -m "not slow"`: about 95 s with the reference implementation and with the working-tree
+  implementation, about 50 s on HEAD. C20 adds about 7 s (two chunking runs).
   (most v2 fixtures error out early there). The C1 golden runs (two legacy chunking runs plus decoding about
   640 chunk files) take about 25 s of that.
 - C19 starts three separate-process Dask clusters: about 12 s in total with the reference, so it stays in the
@@ -195,3 +210,24 @@ caught as follows:
   same shape (trilinear)") describes exactly this, but it is not listed as a defect in 1.10.
 - **The legacy empty-chunk drop is unseeded** (`random.random()` in the workers), so v1 chunk sets are not
   reproducible between runs. The C1 golden controls this as described above.
+
+## G2-C20 design notes
+
+- `coordinate_map` values are tested on (64, 128, 127) -> (47, 95, 94) and on equal shapes (identity).
+- Dataset: native (64, 128, 128) at 7 A/px, working (47, 95, 95) at 9.375 A: N_out/N_in = 0.734 / 0.742 / 0.742
+  against apix_native/apix_work = 0.7467 on every axis. Class 1 (300 A, one point, no density) sets the working
+  voxel size. Class 2 (100 A) marks 27 small tapered Gaussian blobs; fewer than 5 % of voxels are non-zero, so
+  robust normalisation takes its `data - mean` branch and does not clip.
+- Far edge: the default "skip" border policy drops particles whose box touches the border, and `do_chunking`
+  has no spec'd way to choose another policy. The blobs within 3 native voxels of the far edge are therefore on
+  the Z axis, which is padded 47 -> 64 so skip keeps them. The far Y/X blobs are 10 native voxels from the edge
+  (the closest skip keeps for d_vox 10.7); the approximate map still misses them by about 0.5 voxel.
+- (b) Blob centroids come from the resampled tomogram (v1 normalisation, `resample_volume`, v1 padding), not
+  from chunk files, so no chunk-file naming is assumed. Each points file is placed at the TorchIO grid offset
+  that best fits the centroids; every stored blob point must then be within the tolerance of a centroid. The
+  test also checks that the approximate map would miss by more than 3x the tolerance.
+- (c) There is no public hook to fix the zoom factor `s`, so (as for C16) `s = apix_in / apix_work` is read per
+  sample, with `zoom_aug_max = 1.5`; the test requires `max(s) > 1.05` and at least 5 interior peaks.
+- C9: `_tomo_points_working` now uses `points_to_working(..., coord_map=coordinate_map(native, working,
+  resample))` with the resample method recorded in `chunk_meta.json`; v2main's shapes make the approximate map
+  fail at atol 1e-6.
