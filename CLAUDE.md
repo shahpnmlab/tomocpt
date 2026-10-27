@@ -191,6 +191,9 @@ Huber delta is 1.0. The second term is the full Hessian, not a Laplacian.
 | Several species of one tomogram are separate datasets, each rescaled differently, and each species is a negative for the others | Gate 2 (one multi-class dataset per tomogram set) |
 | SSL 4-way rotation task is ill-posed with a missing wedge (see Gate 5 spec) | Gate 5 (SSL v2) |
 | SSL chunks need a particle size and see one scale | Gate 5 (SSL v2) |
+| Chunking workers read a fresh default `mainConfig`, ignoring non-default `desired_particle_pixel_size`, `ALPHA_FOR_DROPPING_EMPTY_CUBES`, `CHUNK_SIZE`, `CHUNK_STRIDE` | Gate 2 (T2.6, v1 and v2) |
+| v1 label is resized straight to the padded tomogram shape, so it is misaligned on padded axes (only when an axis is < 64 after rescale) | not fixed (v2 points path does not have it) |
+| v1 empty-chunk dropping is unseeded (`random.random()`) | not fixed |
 | `pyproject.toml` pins `numpy==1.26.4`, `scipy==1.14.1`; the Fourier code was developed on newer versions | Gate 1 (run the suite on the pins) |
 
 ---

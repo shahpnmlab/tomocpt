@@ -156,8 +156,11 @@ def write_chunk_layout(chunks_dir, info: dict) / read_chunk_layout(chunks_dir) -
   - `label_interpolation="linear"` passes `label_interpolation="linear"` to `RandomAffine`
     and `RandomElasticDeformation`. The target **stays a `tio.LabelMap`** (invariant 10).
   - `rotation_mode="flips"` replaces `RandomAffine` with
-    `RandomFlip(axes=(0,1,2), flip_probability=flip_p)`. Axis flips keep the real missing
-    wedge where it is; `RandomFourierDegradation` then adds its oriented wedge as before.
+    `RandomFlip(axes=(0,1,2), flip_probability=flip_p)` **and drops
+    `RandomElasticDeformation`** (the `OneOf` keeps only `RandomBlur`; human decision,
+    27 Oct 2026: elastic deformation moves wedge power by up to 0.16). Axis flips keep the
+    real missing wedge where it is; `RandomFourierDegradation` then adds its oriented wedge
+    as before. `rotation_mode="affine"` is unchanged.
   - Recommended v2 settings (not defaults): `label_interpolation="linear"`,
     `rotation_mode="flips"`, `flip_p=0.5`.
 - Zoom augmentation (`zoom_aug_max > 1`): draw `s ~ U(1, zoom_aug_max)`, zoom the volume
@@ -184,6 +187,20 @@ Repeat-factor sampling (Gupta et al., LVIS, 2019) for the training loader when
   seeded from the training seed. Lightning wraps it for DDP (`use_distributed_sampler`,
   the default). Validation stays unweighted. Log `f_c` and `r_c` per class at setup.
 - `uniform` keeps today's loader exactly.
+
+### T2.6 Chunking workers use the caller's values (v1 defect fix; human decision, 27 Oct 2026)
+`do_chunking` runs `process_single_tomo_task` in Dask worker processes, which import a fresh
+default `mainConfig`. At `v2-gate-0-base` the worker ignores the `desired_particle_pixel_size`
+argument and reads `desired_particle_pixel_size`, `ALPHA_FOR_DROPPING_EMPTY_CUBES`,
+`CHUNK_SIZE` and `CHUNK_STRIDE` from that default config, so non-default values are silently
+replaced by defaults during chunking (while `predict` uses the checkpoint's value).
+- New keyword arguments on `do_chunking`: `alpha_drop_empty: Optional[float] = None`,
+  `chunk_size: Optional[int] = None`, `chunk_stride: Optional[int] = None`. `None` means the
+  value of the caller's (parent process) config, resolved **before** tasks are submitted.
+- Every value the worker needs travels in the task dict (v1 and v2). Workers do not read
+  `mainConfig` (`PreprocessTomogramd` takes `target_px` and `chunk_size` as arguments).
+- `_prepare_data_if_needed` passes the values from the config explicitly.
+- Default values give byte-identical chunks (G2-C1).
 
 ## Public names
 `tomocpt.dataManager.scaling.{read_apix, choose_working_apix, group_lengths, plan_levels, Level, working_shape, resample_volume}`,
@@ -233,10 +250,13 @@ Repeat-factor sampling (Gupta et al., LVIS, 2019) for the training loader when
   (matches v1) and partly drawn with `clip`.
 - **G2-C13** Format guard errors in both directions.
 - **G2-C14** Wedge preservation: on a wedged noise volume, `wedge_power_fraction` stays
-  < 0.02 for 50 draws of the spatial part of the pipeline with `rotation_mode="flips"`,
-  and also with `use_mw_aug=True` added.
+  < 0.02 for 50 draws of the spatial part of the pipeline with `rotation_mode="flips"`
+  (default `AugmentationConfig` otherwise, so elastic deformation must be absent), and also
+  with `use_mw_aug=True` added.
 - **G2-C15** The target is a `tio.LabelMap` in v1 and v2. With `label_interpolation="linear"`,
-  a rotated target keeps its maximum within 1 % of the analytic peak after a 30° rotation,
+  a rotated target (d_vox 20, 30° rotation) keeps its maximum within 5 % of the analytic peak
+  and its max abs error ≤ 0.06 against the analytic rotated profile, and is closer to it than
+  nearest-neighbour (human decision, 27 Oct 2026: TorchIO trilinear loses 1.3–4.5 %),
   and the full pipeline with every intensity and Fourier augmentation at `p=1` leaves the
   target unchanged except for the spatial transforms.
 - **G2-C16** Zoom: with a fixed `s`, `class_d_vox` = input × `s`, `apix_work` = input / `s`
@@ -249,6 +269,11 @@ Repeat-factor sampling (Gupta et al., LVIS, 2019) for the training loader when
   1's share of chunks is within 10 % (relative) of the expected value; with `uniform` the
   train loader yields the same chunk order as a `Data` built without the new arguments; v1 with
   `repeat_factor` → `ValueError`; the v2 manifest lists the validation tomograms.
+
+- **G2-C19** Chunking honours the caller's values: with a non-default
+  `desired_particle_pixel_size` and `alpha_drop_empty` (passed explicitly, and through the
+  parent's config with the kwargs left at `None`), the chunks reflect them when workers run
+  in separate processes (a real Dask `LocalCluster`, CPU).
 
 ## Notes for the next gate
 Document the exact batch keys, the meaning of `apix_work` and `class_d_vox` after zoom,
