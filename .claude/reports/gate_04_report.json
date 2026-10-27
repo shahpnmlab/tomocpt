@@ -1,0 +1,100 @@
+{
+  "gate_id": 4,
+  "agent_name": "04_AGENT_INFER_BENCHMARK",
+  "status": "READY_FOR_REVIEW",
+  "base_ref": "v2-gate-3-passed",
+  "files_created": [
+    "tomocpt/predict/multiclass.py",
+    "tomocpt/predict/calibration.py",
+    "benchmarks/common.py",
+    "benchmarks/synthetic_multisize.py",
+    "benchmarks/czii_multiclass.py",
+    "benchmarks/report.py"
+  ],
+  "files_modified": [
+    "tomocpt/predict/helpers.py",
+    "tomocpt/predict/run.py",
+    "tomocpt/defaultConfigs/infer_config.py",
+    "tomocpt/training/run.py",
+    "README.md"
+  ],
+  "exported_symbols": {
+    "tomocpt.predict.helpers": [
+      "plan_inference",
+      "InferenceLevel",
+      "cross_class_suppression",
+      "merge_class_maps",
+      "_extract_peaks_from_mask (new kwargs length, distance_threshold, threshold)",
+      "fpad_to_zyx",
+      "write_relion_star_file (new kwarg class_number)"
+    ],
+    "tomocpt.predict.calibration": [
+      "calibrate_thresholds",
+      "calibrate_checkpoint",
+      "read_calibration",
+      "CALIBRATION_KEY",
+      "DEFAULT_GRID"
+    ],
+    "tomocpt.predict.multiclass": [
+      "read_checkpoint_settings",
+      "CheckpointSettings",
+      "selected_classes",
+      "parse_class_thresholds",
+      "resolve_thresholds",
+      "predict_class_maps",
+      "peaks_from_class_maps",
+      "save_class_maps",
+      "infer_tomos_v2",
+      "peaks_from_saved_maps",
+      "write_class_outputs"
+    ]
+  },
+  "config_fields_added": [
+    "infer.apix_override",
+    "infer.classes",
+    "infer.cross_class_nms",
+    "infer.accumulate_dtype",
+    "infer.accumulate_device",
+    "infer.class_thresholds",
+    "infer.calibration_beta",
+    "infer.calibration_min_particles",
+    "infer.length changed: Optional[float] = None (was MISSING); required (ValueError) for v1 checkpoints only"
+  ],
+  "legacy_equivalence": {
+    "G4-C1 v1 infer_tomos vs base+unpad-fix golden": {
+      "result": "pass",
+      "tolerance": "map atol 1e-5, coords atol 1e-3 voxel"
+    },
+    "v1 output change": "only the human-approved unpad axis-order fix (fpad_to_zyx before unpad in _predict_single_tomogram)"
+  },
+  "metrics": {
+    "tiny_benchmark": "all four arms ran 1 epoch; scores ~0 as expected for 1 epoch (smoke run only)"
+  },
+  "pytest_fast": {
+    "command": "pytest tests -m 'not slow' -q",
+    "exit_code": 0,
+    "result": "492 passed, 27 skipped (pre-existing), 5 deselected"
+  },
+  "pytest_slow": {
+    "command": "pytest tests/gate4 -m slow -q",
+    "exit_code": 0,
+    "ran": true,
+    "result": "1 passed (178 s on the RTX A6000)",
+    "reason": "first run failed (arm c loaded as conditioned, see known_limitations); fixed in benchmarks/common.py and re-run"
+  },
+  "benchmarks": {
+    "synthetic_multisize --tiny": "benchmarks/out/synthetic_multisize_tiny_20261027_212230/ (git-ignored)",
+    "full runs": "not run (as instructed)"
+  },
+  "known_limitations": [
+    "Legacy config pollution (BaseModel.__init__, outside Gate 4 paths): loading a checkpoint writes its train settings into the global mainConfig.train, and a later load in the same process takes them as CLI changes (for example scale_conditioning=True from a previous conditioned checkpoint makes an unconditioned checkpoint fail the strict load). predict is unaffected (one model per Dask worker); the benchmark restores mainConfig around every evaluation (benchmarks.common.isolated_main_config). Worth a fix in a gate that owns networks/baseModel.py.",
+    "calibrate_thresholds returns threshold None (fallback) when the best F-beta is 0 (no threshold finds a true particle), besides the min_particles rule; otherwise the tie rule would store 0.95 for an untrained class.",
+    "Per-class threshold calibration in training/run.py reads calibration_beta/min_particles/cross_class_nms from mainConfig.infer (entry point, the infer section of the same config); validation tomograms use the apix_native recorded in chunk_layout.json, no contrast inversion, no masks.",
+    "skip_inference for v2 needs `weights` (for the class table) and runs in the main process (no Dask). Without weights the maps are treated as v1.",
+    "Hann weights of the v2 accumulator are clamped at 1e-2 (float16 safety), so v2 border blending differs slightly from TorchIO's GridAggregator; v1 still uses GridAggregator unchanged.",
+    "v2 class maps are resampled back to native with the checkpoint's scale.resample and clamped to [0, 1] (Fourier ringing).",
+    "Arm (d) of the benchmarks: the public model is used only with --pretrained / $TOMOCPT_ZENODO_CKPT in a full run; a tiny run (feature_size 12) always warm-starts from arm (a)'s first v1 model, recorded under warm_start in report.json.",
+    "TomoCPT training is not seeded; benchmark seeds label repeated runs (synthetic data are seeded)."
+  ],
+  "notes_for_next_agent": "Gate 5: predict/calibration do not touch SSL; training/run.py only adds _calibrate_best_checkpoint after trainer.fit for mode == picking and data_pipeline_version == 2 on global rank 0 (errors logged, never raised). Inference entry points: tomocpt.predict.multiclass.predict_class_maps(model, tomo, infer_cfg, device, classes) -> ({row: native map}, apix_native) and peaks_from_class_maps(...); model must come from InferenceModel.load_from_checkpoint (strict). infer_tomos dispatches on model.is_pipeline_v2(). The v2 predict path calls model.predict_step(x, 0, apix=level.apix_work) for every level, so a network that wraps or replaces MySwinUNETR must keep forward(x, apix=None) -> (logits, hidden4). Calibration is stored under the top-level checkpoint key 'tomocpt_calibration' ({version 1, beta, grid, classes {number: {threshold|None, fbeta, n_true}}, val_tomograms}); Lightning ignores unknown top-level keys, so strict loads still work. Beware the mainConfig pollution limitation when loading several checkpoints in one process (see known_limitations). infer.length is now Optional (None default)."
+}

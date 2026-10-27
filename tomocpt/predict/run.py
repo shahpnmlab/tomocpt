@@ -14,6 +14,13 @@ from tomocpt.predict.helpers import (
     infer_tomos,
     process_extracted_coordinates,
 )
+from tomocpt.predict.multiclass import (
+    parse_class_thresholds,
+    peaks_from_saved_maps,
+    read_checkpoint_settings,
+    selected_classes,
+    write_class_outputs,
+)
 from tomocpt.logger import get_logger
 from tomocpt.mainConfig import mainConfig
 
@@ -66,6 +73,23 @@ def _collect_confidence_maps(infer_config) -> List[Path]:
     return sorted(predictions_dir.glob("*.mrc"))
 
 
+def _v2_map_stems(infer_config, settings) -> List[Path]:
+    """``skip_inference`` without tomograms (pipeline v2): the tomogram stems of the
+    ``<stem>_<class name>.mrc`` maps in ``predictions_dir``."""
+    predictions_dir = Path(infer_config.predictions_dir).resolve()
+    if not predictions_dir.is_dir():
+        raise NotADirectoryError(
+            f"Predictions directory not found: {predictions_dir}. "
+            "It must contain the confidence maps from a previous run."
+        )
+    stems = set()
+    for row in settings.class_table:
+        suffix = f"_{row.name}"
+        for path in predictions_dir.glob(f"*{suffix}.mrc"):
+            stems.add(path.stem[: -len(suffix)])
+    return [predictions_dir / f"{stem}.mrc" for stem in sorted(stems)]
+
+
 def predict(
     plot: Annotated[bool, typer.Option(help="Plotting not implemented")] = False,
     config: DictConfig = None,
@@ -75,6 +99,35 @@ def predict(
     """
     infer_config = mainConfig.infer
     skip_inference = getattr(infer_config, "skip_inference", False)
+
+    # Pipeline v2 is decided by the checkpoint (its training settings, never mainConfig.train).
+    settings = read_checkpoint_settings(infer_config.weights) if infer_config.weights else None
+    v2 = settings is not None and settings.pipeline_version == 2
+    if v2:
+        # Configuration errors surface here, before any worker starts.
+        selected_classes(settings.class_table, infer_config.classes)
+        parse_class_thresholds(infer_config.class_thresholds, settings.class_table)
+        logger.info(
+            "Pipeline-v2 checkpoint with classes "
+            f"{[row.name for row in settings.class_table]}; `infer.length` is not used."
+        )
+    elif infer_config.length is None:
+        raise ValueError("`infer.length` (particle diameter in Angstroms) is required for this checkpoint.")
+
+    if skip_inference and v2:
+        if not infer_config.save_predicted_coords:
+            raise ValueError(
+                "`skip_inference` requires `save_predicted_coords` to be enabled, "
+                "otherwise there is nothing left to do."
+            )
+        tomo_fnames = _collect_tomograms(infer_config) if (
+            infer_config.tomogram_file or infer_config.tomogram_dir) else _v2_map_stems(infer_config, settings)
+        results = peaks_from_saved_maps(tomo_fnames, settings, infer_config)
+        if results:
+            write_class_outputs(results, settings.class_table, infer_config)
+        else:
+            logger.warning(f"No per-class confidence maps found in {infer_config.predictions_dir}.")
+        return
 
     if skip_inference:
         if not infer_config.save_predicted_coords:
@@ -143,14 +196,20 @@ def predict(
     # Progress is now shown by the individual worker progress bars.
     results = []
     logger.info(f"Waiting for {len(futures)} worker batches to complete...")
-    for future in as_completed(futures):
-        worker_result_list = future.result()
-        if worker_result_list:
-            results.extend(worker_result_list)
-    logger.info("All worker batches completed.")
+    try:
+        for future in as_completed(futures):
+            worker_result_list = future.result()
+            if worker_result_list:
+                results.extend(worker_result_list)
+        logger.info("All worker batches completed.")
+    finally:
+        client.close()
+        cluster.close()
 
-    client.close()
-    cluster.close()
+    if v2:
+        if infer_config.save_predicted_coords and results:
+            write_class_outputs(results, settings.class_table, infer_config)
+        return
 
     if infer_config.save_predicted_coords and results:
         logger.info("Aggregating and saving extracted coordinates...")

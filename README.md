@@ -181,9 +181,123 @@ without paying for inference again:
 tomocpt predict --config_file my_config.yaml --skip_inference --confidence_threshold 0.5
 ```
 
-In this mode `weights` is not required. Every MRC file in `predictions_dir` is treated as a
+In this mode `weights` is not required (pipeline-v1 maps; for pipeline-v2 maps see section 5). Every MRC file in `predictions_dir` is treated as a
 confidence map, unless `tomogram_dir`/`tomogram_file` is set, in which case only the maps
 matching those tomogram names are used.
+
+## 5. Multi-class picking (pipeline v2)
+
+Pipeline v2 picks several species of different sizes in one model and one `predict` run, from
+tomograms of different voxel sizes. It is opt-in: with the default
+`train.data_pipeline_version: 1` everything above works as before.
+
+What changes compared with pipeline v1:
+
+- **No fixed-particle rescale.** A tomogram is resampled only as far as needed to keep every
+  class inside a band of voxel diameters (`train.scale.band_min_vox`/`band_max_vox`, default
+  10-32), never finer than native. If the classes span more than the band allows (for example
+  80 A and 500 A at 10 A/px), they are split into *levels*, one working voxel size each.
+- **All species of a tomogram are labelled together** (one STAR file with `rlnClassNumber`),
+  so a species is no longer a negative for the others. The model has one output channel per
+  class.
+- **Per-class thresholds.** After training, the thresholds are calibrated on the validation
+  tomograms and stored in the checkpoint; `predict` uses them.
+
+### Example config
+
+A complete example for the CZII 10440 dataset (6 species at 10.012 A/px) is
+`data/czii/v2_config.yaml`. The parts that matter:
+
+```yaml
+prepData:
+  raw_data_dir: data/czii/tomograms
+  coordinate_files: data/czii/coords/all_objects.star   # one STAR, rlnClassNumber per particle
+  coordinate_file_type: star
+  class_id: all
+  multiclass: true
+  class_diameters: "1:130,2:180,3:260,4:300,5:120,6:270"   # Angstrom, per class number
+  class_names: "1:beta-amylase,2:beta-galactosidase,3:thyroglobulin,4:ribosome,5:apo-ferritin,6:virus-like-particle"
+  label_border_policy: clip        # keep particles cut by the tomogram border
+train:
+  data_pipeline_version: 2
+  chunk_sampling: repeat_factor    # oversample chunks with rare classes
+  augmentation:
+    label_interpolation: linear    # smooth targets under rotation
+  network:
+    scale_conditioning: false      # see below
+infer:
+  predictions_dir: predictions_v2
+  weights: <model_dir>/<experiment>/checkpoints/weights.ckpt
+```
+
+### Commands
+
+```bash
+tomocpt prepare_data --config_file v2_config.yaml   # one multi-class dataset per STAR file
+tomocpt train --config_file v2_config.yaml          # chunks with the band rule, trains, calibrates
+tomocpt predict --config_file v2_config.yaml        # every class in one run
+```
+
+`prepare_data` writes one coordinate table per tomogram with every class. `train` chunks the
+data into the levels the band rule gives (the chunk format is versioned: v1 chunks are
+refused by a v2 run and vice versa), trains one output channel per class, and finally
+calibrates a threshold per class on the validation tomograms (the F-beta optimum, beta = 4,
+for classes with at least `infer.calibration_min_particles` true particles). A failed
+calibration is logged and leaves the checkpoint uncalibrated; training does not fail.
+
+`predict` reads everything it needs (class table, band, resampling, conditioning) from the
+checkpoint; `infer.length` is not used. Each class is read at the working voxel size that fits
+it, and its map is resampled back to the native voxel size. Outputs:
+
+- one coordinate file per class in every format: `<name>_<class name>.star` for RELION 3.1/5.0
+  (with `rlnClassNumber`, the original class number, and `rlnAutopickFigureOfMerit`, the
+  peak score) and Warp, where `<name>` is the stem of `predictions_coord_filename`;
+  `<tomogram>_<class name>.mod` for IMOD. There is no merged file;
+- with `save_prediction_confidence_map: true`: `<tomogram>_<class name>.mrc` per class,
+  `<tomogram>_heatmap.mrc` (maximum over the classes) and `<tomogram>_classmap.mrc` (the class
+  number of the strongest class above its threshold, else 0). `--skip_inference` (with
+  `weights` set, for the class table) re-reads the per-class maps.
+
+Useful `infer` options for v2:
+
+| Option | Meaning |
+|---|---|
+| `classes` | Comma-separated class names to pick (default: all). |
+| `class_thresholds` | `"ribosome:0.4,apo-ferritin:0.35"`; overrides the calibration. Unknown names are an error. |
+| `confidence_threshold` | Used for classes with neither of the above (and for every class of an uncalibrated checkpoint). |
+| `cross_class_nms` | Default on: peaks of different classes closer than half the smaller radius keep only the higher score. Removed counts per class pair are logged. |
+| `apix_override` | Voxel size in A when the MRC header is wrong or 0. |
+| `accumulate_dtype`, `accumulate_device` | `float16` and/or `cpu` reduce GPU memory for large tomograms with many classes (`auto` uses the GPU when the maps fit). |
+
+### Scale conditioning (`train.network.scale_conditioning`)
+
+**What it does.** The working voxel size of each input is fed to the network as
+`t = log(apix / 10)` through a small embedding into FiLM layers (a per-channel scale and
+shift) at 6 points of the decoder. The FiLM layers start at zero, so a conditioned model
+starts out computing exactly what the unconditioned one does.
+
+**Why.** Pipeline v2 no longer rescales particles to a fixed size, so one class appears at
+different voxel diameters across datasets and levels. Without the voxel size, the network
+cannot tell a 30-voxel object at 10 A/px (300 A) from a 30-voxel object at 20 A/px (600 A).
+
+**When to enable it.** Training data with mixed voxel sizes, classes split into several
+levels, or `train.scale.zoom_aug_max` > 1. It is pointless for a dataset at a single voxel
+size whose classes fit one level, such as CZII (all six species fit the band at 10.012 A/px).
+
+**It is fixed at training start.** `--resume_from` refuses a change of the setting.
+Fine-tuning (`--fine_tune_from`) from an unconditioned or pipeline-v1 checkpoint into a
+conditioned model works: the new FiLM layers start at zero.
+
+### Benchmarks
+
+`benchmarks/synthetic_multisize.py` (phantoms from 80 to 500 A, two levels) and
+`benchmarks/czii_multiclass.py` (CZII 10440, paths given by you) compare four arms: one v1
+model per species, a conditioned v2 model, an unconditioned v2 model, and a conditioned v2
+model warm-started from the public TomoCPT model (`--pretrained`). They write
+`benchmarks/out/<run>/report.json` and `report.md` (per-class F-beta, precision and recall,
+cross-class suppression counts, time per tomogram, GPU memory, thresholds and their source).
+`python benchmarks/synthetic_multisize.py --tiny` is a quick smoke run (1 epoch, small network;
+arm (d) then warm-starts from the tiny v1 model of the first arm instead of the public model).
 
 ## Downloading data from the CryoET Data Portal
 
@@ -217,6 +331,22 @@ or alignment mismatch.
 4.  **Gradient Accumulation**: If you have limited GPU memory, use `gradient_accumulation_steps` in your config to train with a larger effective batch size.
 
 # Changelog
+
+## Unreleased (v2, multi-class picking)
+- Pipeline v2 (opt-in, `train.data_pipeline_version: 2`): band scale policy instead of the
+  fixed-particle rescale, multi-class datasets (`prepData.multiclass`), one output channel per
+  class, optional FiLM conditioning on the voxel size (`train.network.scale_conditioning`).
+- `tomocpt predict` runs pipeline-v2 checkpoints: every class in one run, each at the level
+  that fits it, one coordinate file per class in every format, per-class and merged maps.
+- Per-class threshold calibration after v2 training, stored in the checkpoint; overridable
+  with `infer.class_thresholds`. Cross-class suppression (`infer.cross_class_nms`).
+- New `infer` options: `apix_override`, `classes`, `cross_class_nms`, `accumulate_dtype`,
+  `accumulate_device`, `class_thresholds`, `calibration_beta`, `calibration_min_particles`.
+  `infer.length` is now optional (still required for pipeline-v1 checkpoints).
+- Fixed: for thin tomograms (an axis shorter than 64 voxels after the rescale), the prediction
+  map was cropped on the wrong axis before being resized back, which displaced or lost picks
+  on such tomograms. Other v1 predictions are unchanged.
+- Benchmarks in `benchmarks/` (synthetic multi-size phantoms, CZII 10440).
 
 ## 0.7.1
 - Self-supervised training (`train.mode = selfSupervised`) works again. It had been broken

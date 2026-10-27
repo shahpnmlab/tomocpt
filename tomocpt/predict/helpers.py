@@ -1,8 +1,9 @@
 import gc
+import math
 import re
 import warnings
 from pathlib import Path
-from typing import Union, List, Tuple, Optional, Dict, Any
+from typing import Union, List, Tuple, Optional, Dict, Any, NamedTuple, Sequence
 
 import mrcfile
 import numpy as np
@@ -30,8 +31,11 @@ logger = get_logger()
 
 def unpad(inp_tensor: torch.Tensor, padding_values: Tuple[int, ...]) -> torch.Tensor:
     """
-    Removes padding from a tensor given the padding values from F.pad.
-    The padding tuple is expected in the order (pad_x1, pad_x2, pad_y1, pad_y2, ...).
+    Removes padding from a ``(Z, Y, X)`` tensor.
+
+    The padding tuple is read in axis order ``(z0, z1, y0, y1, x0, x1)``. The tuple that
+    ``symmetrize_and_pad`` returns is in ``F.pad`` order ``(x0, x1, y0, y1, z0, z1)``;
+    convert it with :func:`fpad_to_zyx` first.
     """
     if padding_values is None or all(p == 0 for p in padding_values):
         return inp_tensor
@@ -43,6 +47,13 @@ def unpad(inp_tensor: torch.Tensor, padding_values: Tuple[int, ...]) -> torch.Te
     y_slice = slice(y_pad_begin, inp_tensor.shape[1] - y_pad_end)
     x_slice = slice(x_pad_begin, inp_tensor.shape[2] - x_pad_end)
     return inp_tensor[z_slice, y_slice, x_slice]
+
+
+def fpad_to_zyx(padding_values: Tuple[int, ...]) -> Tuple[int, ...]:
+    """Converts an ``F.pad`` padding tuple ``(x0, x1, y0, y1, z0, z1)`` (as returned by
+    ``symmetrize_and_pad``) to the ``(z0, z1, y0, y1, x0, x1)`` order of :func:`unpad`."""
+    x0, x1, y0, y1, z0, z1 = padding_values
+    return (z0, z1, y0, y1, x0, x1)
 
 
 def write_segmentation_mask(
@@ -93,8 +104,13 @@ def write_relion_star_file(
     voxel_size: float,
     output_filename: str = "tomocpt_coords.star",
     version: Union[float, int] = 3.1,
+    class_number: Optional[int] = None,
 ) -> Path:
-    """Write particle coordinates to a Relion-compatible star file."""
+    """Write particle coordinates to a Relion-compatible star file.
+
+    With ``class_number`` (pipeline v2, one file per class) every particle row gets an
+    ``rlnClassNumber`` column with that value.
+    """
     if version == 3.1:
         tomo_label = "rlnMicrographName"
     elif version == 5.0:
@@ -122,6 +138,8 @@ def write_relion_star_file(
         "rlnAutopickFigureOfMerit": [],
         "rlnOpticsGroup": [],
     }
+    if class_number is not None:
+        particles_data["rlnClassNumber"] = []
     for tomoName, centroid in zip(tomo_names, predicted_centroids_with_scores):
         particles_data[tomo_label].append(tomoName)
         particles_data["rlnCoordinateX"].append(centroid[2])
@@ -129,6 +147,8 @@ def write_relion_star_file(
         particles_data["rlnCoordinateZ"].append(centroid[0])
         particles_data["rlnAutopickFigureOfMerit"].append(centroid[3])
         particles_data["rlnOpticsGroup"].append(1)
+        if class_number is not None:
+            particles_data["rlnClassNumber"].append(int(class_number))
 
     df_particles = pd.DataFrame(data=particles_data)
     star_data = {"optics": df_optics, "particles": df_particles}
@@ -593,23 +613,38 @@ def _extract_peaks_from_mask(
     tomo_name: str,
     voxel_size: float,
     infer_config: InferConfig,
+    length: Optional[float] = None,
+    distance_threshold: Optional[float] = None,
+    threshold: Optional[float] = None,
 ) -> Optional[Dict[str, Any]]:
     """
     Extracts particle centroids from a prediction confidence map.
 
     Peaks are found with a non-maximum suppression, refined to sub-pixel accuracy
     and pruned again to enforce the minimum distance after refinement.
+
+    ``length`` (particle diameter, Angstrom), ``distance_threshold`` (Angstrom) and
+    ``threshold`` (confidence) default to ``infer_config.length``,
+    ``infer_config.distance_threshold`` and ``infer_config.confidence_threshold``.
+    Pipeline v2 passes the class diameter and the class threshold.
     """
+    if length is None:
+        length = infer_config.length
+    if distance_threshold is None:
+        distance_threshold = infer_config.distance_threshold
+    if threshold is None:
+        threshold = infer_config.confidence_threshold
+    if length is None:
+        raise ValueError("A particle diameter is required: set `infer.length`.")
+
     # Calculate min_distance in pixels as a float for precision
-    min_dist_px = (
-        infer_config.distance_threshold or infer_config.length
-    ) / voxel_size
+    min_dist_px = (distance_threshold or length) / voxel_size
 
     # peak_local_max_torch requires an integer distance; use ceiling for safety
     int_coords_gpu = peak_local_max_torch(
         image=pred_mask_gpu,
         min_distance=int(np.ceil(min_dist_px)),
-        threshold_abs=infer_config.confidence_threshold,
+        threshold_abs=threshold,
         exclude_border=True,
     )
     if int_coords_gpu.shape[0] == 0:
@@ -618,7 +653,7 @@ def _extract_peaks_from_mask(
     # The particle radius, in the pixels of the map being searched. `length` is
     # the diameter in Angstroms; `distance_threshold` is deliberately not used
     # here, as it is a picking constraint rather than the size of the blob.
-    radius_px = infer_config.length / (2.0 * voxel_size)
+    radius_px = length / (2.0 * voxel_size)
     refined_coords_gpu, refined_scores_gpu = _refine_peaks_subpixel_gpu(
         pred_mask_gpu, int_coords_gpu, patch_size=_patch_size_for_particle(radius_px)
     )
@@ -735,7 +770,8 @@ def _predict_single_tomogram(
         gpu_id=gpu_id,
         pbar=pbar,  # Pass the pbar object
     )
-    unpadded_mask = unpad(aggregated_mask, padding_values)
+    # `padding_values` is in F.pad order (x, y, z); unpad reads (z, y, x).
+    unpadded_mask = unpad(aggregated_mask, fpad_to_zyx(padding_values))
     pred_mask_gpu = resize_volume(unpadded_mask, original_shape)
 
     if infer_config.masks_dir:
@@ -860,6 +896,13 @@ def infer_tomos(
         logger.error(f"Failed to load model on worker {worker_id}: {e}")
         return []
 
+    if model.is_pipeline_v2():
+        # Pipeline v2: every class of the model, at the level that fits it. Errors
+        # (for example a voxel size of 0 in a header) propagate to the caller.
+        from tomocpt.predict.multiclass import infer_tomos_v2
+
+        return infer_tomos_v2(model, tomo_fnames, gpu_id, worker_id, model_fname, infer_config, device)
+
     try:
         target_px_from_model = model.hparams.config.prepData.desired_particle_pixel_size
     except AttributeError:
@@ -900,3 +943,146 @@ def infer_tomos(
                     torch.cuda.empty_cache()
 
     return results_aggregator
+
+
+# --------------------------------------------------------------------------------------
+# Pipeline v2: planning, cross-class suppression, merged maps
+# --------------------------------------------------------------------------------------
+
+#: Bounds of the per-level grid overlap of pipeline v2, in working voxels.
+V2_MIN_OVERLAP = 16
+V2_MAX_OVERLAP = 32
+
+
+class InferenceLevel(NamedTuple):
+    """One working voxel size of an inference run.
+
+    ``classes``: class-table rows read at this level (each class at exactly one level).
+    ``overlap``: grid-sampler overlap in working voxels.
+    """
+    apix_work: float
+    classes: List[int]
+    overlap: int
+
+
+def plan_inference(
+    apix_native: float,
+    class_table: Sequence,
+    scale_cfg,
+    desired_px: float,
+    pipeline_version: int,
+    length: Optional[float] = None,
+) -> List[InferenceLevel]:
+    """Plans the working voxel sizes of one tomogram.
+
+    * Pipeline v1: one level from the fixed-particle rule (the particle of diameter
+      ``length`` becomes ``desired_px`` voxels; no resize within 1 voxel of the target),
+      overlap ``64 // PATCH_OVERLAP_FACTOR`` = 16, class ``[0]``.
+    * Pipeline v2: ``dataManager.scaling.plan_levels`` with the band of ``scale_cfg`` (from
+      the checkpoint); each level reads only its assigned classes, with overlap
+      ``min(32, max(16, ceil(max d_vox of its classes)))``.
+    """
+    apix_native = float(apix_native)
+    if int(pipeline_version or 1) != 2:
+        if length is None:
+            raise ValueError("Pipeline-v1 checkpoints need the particle diameter: set `infer.length`.")
+        native_px = float(length) / apix_native
+        if abs(native_px - float(desired_px)) < 1:
+            apix_work = apix_native
+        else:
+            apix_work = float(length) / float(desired_px)
+        overlap = 64 // InferConfig.PATCH_OVERLAP_FACTOR
+        return [InferenceLevel(apix_work=float(apix_work), classes=[0], overlap=overlap)]
+
+    from tomocpt.dataManager.scaling import plan_levels
+
+    levels = []
+    for lv in plan_levels(apix_native, class_table, scale_cfg.band_min_vox, scale_cfg.band_max_vox):
+        d_max = max(float(class_table[c].diameter_ang) / lv.apix_work for c in lv.assigned)
+        # The tolerance keeps an exact integer diameter (float noise above it) from rounding up.
+        overlap = min(V2_MAX_OVERLAP, max(V2_MIN_OVERLAP, math.ceil(d_max - 1e-9)))
+        levels.append(InferenceLevel(apix_work=float(lv.apix_work), classes=list(lv.assigned), overlap=overlap))
+    return levels
+
+
+def cross_class_suppression(
+    peaks_by_class: Dict[Any, Any],
+    radii: Dict[Any, float],
+    factor: float = 0.5,
+) -> Tuple[Dict[Any, np.ndarray], Dict[Tuple[Any, Any], int]]:
+    """Removes peaks of different classes that are too close to each other.
+
+    ``peaks_by_class[c]``: ``[N, 4]`` rows ``(z, y, x, score)``; ``radii[c]``: radius of class
+    ``c`` in the same unit as the coordinates. When peaks of classes ``a != b`` are closer than
+    ``factor * min(r_a, r_b)``, the higher score stays (greedy, highest score first; peaks of
+    the same class are never compared). Returns ``(peaks_by_class, removed_counts)`` where
+    ``removed_counts[(kept_class, removed_class)]`` counts the removed peaks of
+    ``removed_class`` suppressed by a peak of ``kept_class``.
+    """
+    from scipy.spatial import cKDTree
+
+    keys = list(peaks_by_class)
+    arrays = [np.asarray(peaks_by_class[k], dtype=np.float64).reshape(-1, 4) for k in keys]
+    out = {k: a for k, a in zip(keys, arrays)}
+    counts: Dict[Tuple[Any, Any], int] = {}
+    n_total = sum(len(a) for a in arrays)
+    if n_total == 0 or len(keys) < 2:
+        return out, counts
+
+    pts = np.concatenate(arrays)
+    cls = np.concatenate([np.full(len(a), i) for i, a in enumerate(arrays)])
+    local = np.concatenate([np.arange(len(a)) for a in arrays])
+    r = np.asarray([float(radii[k]) for k in keys])
+
+    # Candidate pairs within the largest possible distance, then the exact rule per pair.
+    tree = cKDTree(pts[:, :3])
+    pairs = tree.query_pairs(r=float(factor) * float(r.max()), output_type="ndarray")
+    neighbours: List[List[int]] = [[] for _ in range(n_total)]
+    for i, j in pairs:
+        ci, cj = cls[i], cls[j]
+        if ci == cj:
+            continue
+        if np.linalg.norm(pts[i, :3] - pts[j, :3]) < float(factor) * min(r[ci], r[cj]):
+            neighbours[i].append(j)
+            neighbours[j].append(i)
+
+    order = np.argsort(-pts[:, 3], kind="stable")
+    kept = np.zeros(n_total, dtype=bool)
+    removed = np.zeros(n_total, dtype=bool)
+    for i in order:
+        winner = next((j for j in neighbours[i] if kept[j]), None)
+        if winner is None:
+            kept[i] = True
+        else:
+            removed[i] = True
+            key = (keys[cls[winner]], keys[cls[i]])
+            counts[key] = counts.get(key, 0) + 1
+
+    for ci, k in enumerate(keys):
+        sel = (cls == ci) & ~removed
+        out[k] = arrays[ci][np.sort(local[sel])]
+    return out, counts
+
+
+def merge_class_maps(
+    maps,
+    class_numbers: Sequence[int],
+    thresholds: Sequence[float],
+) -> Tuple[np.ndarray, np.ndarray]:
+    """Merges per-class maps ``[C, D, H, W]`` (channel order = ``class_numbers``).
+
+    Returns ``(heatmap, classmap)``: ``heatmap = max_c p_c`` (float32) and ``classmap`` = the
+    class number of ``argmax_c p_c`` among the classes with ``p_c >= thresholds[c]``, else 0
+    (uint8 when every class number is <= 255, else uint16).
+    """
+    if torch.is_tensor(maps):
+        maps = maps.detach().float().cpu().numpy()
+    maps = np.asarray(maps, dtype=np.float32)
+    heatmap = maps.max(axis=0)
+    thr = np.asarray(thresholds, dtype=np.float32).reshape(-1, 1, 1, 1)
+    passed = maps >= thr
+    best = np.where(passed, maps, -np.inf).argmax(axis=0)
+    numbers = np.asarray(class_numbers, dtype=np.int64)
+    dtype = np.uint8 if int(numbers.max()) <= 255 else np.uint16
+    classmap = np.where(passed.any(axis=0), numbers[best], 0).astype(dtype)
+    return heatmap, classmap

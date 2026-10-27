@@ -88,3 +88,42 @@ def train(config: DictConfig = None):
     logging.info("Starting trainer.fit()...")
     trainer.fit(model, datamodule=data, ckpt_path=resume_from_ckpt)
     logging.info("Training finished.")
+
+    # 8. Per-class threshold calibration (pipeline-v2 picking only, global rank 0)
+    if config.mode == "picking" and int(config.data_pipeline_version) == 2 and trainer.is_global_zero:
+        _calibrate_best_checkpoint(config, trainer)
+
+
+def _calibrate_best_checkpoint(config, trainer) -> None:
+    """Calibrates the class thresholds of the best checkpoint on the validation tomograms of
+    ``chunk_layout.json``. A failure is logged and leaves the checkpoint uncalibrated."""
+    try:
+        import copy
+
+        from tomocpt.dataManager.metadata import read_chunk_layout
+        from tomocpt.mainConfig import mainConfig
+        from tomocpt.predict.calibration import calibrate_checkpoint
+
+        callback = trainer.checkpoint_callback
+        ckpt_path = getattr(callback, "best_model_path", "") or getattr(callback, "last_model_path", "")
+        if not ckpt_path or not Path(ckpt_path).is_file():
+            logging.error("Threshold calibration skipped: no saved checkpoint found.")
+            return
+        layout = read_chunk_layout(config.chunks_dir) or {}
+        val_tomograms = layout.get("val_tomograms") or []
+        if not val_tomograms:
+            logging.error("Threshold calibration skipped: chunk_layout.json lists no val_tomograms.")
+            return
+        # The calibration settings (beta, minimum particles, cross-class NMS) of the infer section.
+        infer_cfg = copy.deepcopy(mainConfig.infer)
+        infer_cfg.use_cuda = torch.cuda.is_available()
+        infer_cfg.save_prediction_confidence_map = False
+        # Validation tomograms are read as the chunking read them.
+        infer_cfg.invert_contrast = False
+        infer_cfg.masks_dir = None
+        infer_cfg.classes = None
+        logging.info(f"Calibrating per-class thresholds of {ckpt_path} on {len(val_tomograms)} tomogram(s)...")
+        calibrate_checkpoint(ckpt_path, val_tomograms, infer_cfg)
+        logging.info("Threshold calibration stored in the checkpoint.")
+    except Exception as e:
+        logging.error(f"Threshold calibration failed; the checkpoint stays uncalibrated: {e}", exc_info=True)

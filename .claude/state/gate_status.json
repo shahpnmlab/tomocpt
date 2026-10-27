@@ -2,7 +2,7 @@
   "base_ref": "v2-gate-0-base",
   "base_commit": "ce6f7b0ce856f19556266e7ad3143bfb66cdb7e2",
   "base_note": "first commit of branch v2-dev (released main + fix/v1-patches + plan); set by the orchestrator",
-  "current_gate": 4,
+  "current_gate": 5,
   "gpu_available": true,
   "gates": {
     "1": {
@@ -110,9 +110,9 @@
       "report_path": ".claude/reports/gate_03_report.json"
     },
     "4": {
-      "status": "IN_PROGRESS",
+      "status": "PASSED",
       "agent": "04_AGENT_INFER_BENCHMARK",
-      "attempts": 0,
+      "attempts": 1,
       "test_hashes": {
         "tests/gate4/README.md": "960bbc6da9816429e20eaa36b4afa49efa1fa128b80819507068416de1d9d6b7",
         "tests/gate4/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
@@ -143,7 +143,10 @@
         "User test 27 Oct 2026: CZII v2 multi-class training (data/czii/v2_config.yaml) ran and predicted several classes; run interrupted by user.",
         "Human decision 27 Oct 2026: per-class STAR files, no merged STAR (spec T4.4/C6 amended).",
         "Human decision 27 Oct 2026: upgrade imodmodel to 0.1.0 (0.0.13 lacks write; v1 IMOD output was silently empty).",
-        "Human decision 27 Oct 2026: fix v1 inference unpad axis-order defect in Gate 4 (v1 and v2); breaks legacy equivalence only for Z-padded tomograms; C1 golden generated with the fix. CLAUDE.md 1.10 updated."
+        "Human decision 27 Oct 2026: fix v1 inference unpad axis-order defect in Gate 4 (v1 and v2); breaks legacy equivalence only for Z-padded tomograms; C1 golden generated with the fix. CLAUDE.md 1.10 updated.",
+        "Verification 27 Oct 2026: fast 492 passed/27 skipped; hashes intact; gate4 slow (C9) passed in implementer run 2 (run 1 exposed mainConfig leak, worked around in benchmarks/common.py).",
+        "Open legacy defect (outside Gate 4 paths, networks/baseModel.py): loading a checkpoint writes its train settings into global mainConfig.train; a second load in the same process can fail strict load. predict unaffected (one model per Dask worker). Needs a human-approved fix in a later gate.",
+        "Implementer choice: calibrate_thresholds stores threshold None when no grid threshold finds any true particle (falls back to confidence_threshold)."
       ],
       "report_path": ".claude/reports/gate_04_report.json"
     },
