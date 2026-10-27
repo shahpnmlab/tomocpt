@@ -194,6 +194,8 @@ Huber delta is 1.0. The second term is the full Hessian, not a Laplacian.
 | Chunking workers read a fresh default `mainConfig`, ignoring non-default `desired_particle_pixel_size`, `ALPHA_FOR_DROPPING_EMPTY_CUBES`, `CHUNK_SIZE`, `CHUNK_STRIDE` | Gate 2 (T2.6, v1 and v2) |
 | v1 label is resized straight to the padded tomogram shape, so it is misaligned on padded axes (only when an axis is < 64 after rescale) | not fixed (v2 points path does not have it) |
 | v1 empty-chunk dropping is unseeded (`random.random()`) | not fixed |
+| v1 inference un-pads with the padding tuple in `F.pad` order (x, y, z) read as (z, y, x): thin tomograms that need Z padding are cropped on the wrong axis and coordinates shift | Gate 4 (v1 and v2; human decision 27 Oct 2026, C1 golden made with the fix) |
+| `imodmodel==0.0.13` has no `write`, so IMOD output wrote nothing | Gate 4 (pin `imodmodel==0.1.0`, human-approved) |
 | `pyproject.toml` pins `numpy==1.26.4`, `scipy==1.14.1`; the Fourier code was developed on newer versions | Gate 1 (run the suite on the pins) |
 
 ---
@@ -278,7 +280,7 @@ class is available at every level where `lo_c <= d_vox <= band_max`.
    Never encode the class in the peak height.
 8. **Dependencies.** Use only the packages pinned in `pyproject.toml`
    (torch 2.5.1, MONAI 1.4.0, Kornia 0.7.4, TorchIO 0.20.2, Lightning 2.4.0,
-   scikit-image 0.24.0, scikit-learn 1.6.0, scipy 1.14.1, and the others; the `portal`
+   scikit-image 0.24.0, scikit-learn 1.6.0, scipy 1.14.1, imodmodel 0.1.0 (from Gate 4), and the others; the `portal`
    extra for portal access). Any new dependency needs human approval.
 9. **Tests are frozen.** You never edit a test file that the orchestrator froze.
    The tests that exist at `v2-gate-0-base` (`tests/test_*.py`) are frozen from the start

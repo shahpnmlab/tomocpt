@@ -110,14 +110,41 @@
       "report_path": ".claude/reports/gate_03_report.json"
     },
     "4": {
-      "status": "LOCKED",
+      "status": "IN_PROGRESS",
       "agent": "04_AGENT_INFER_BENCHMARK",
       "attempts": 0,
-      "test_hashes": {},
+      "test_hashes": {
+        "tests/gate4/README.md": "960bbc6da9816429e20eaa36b4afa49efa1fa128b80819507068416de1d9d6b7",
+        "tests/gate4/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "tests/gate4/conftest.py": "290f8e7e868f84c37e68fe02be6ee269fdbaa5f57c83bdf5fd7ba89adff205ad",
+        "tests/gate4/g4_helpers.py": "85de054239896e8d67f66e458bb952712b76204531a1aa82a7659f9a5ea821a7",
+        "tests/gate4/test_g4_benchmark.py": "204df85c6c146a2e02954888579a876b6774364afbe29bb1a170e3204a8cf269",
+        "tests/gate4/test_g4_calibration.py": "3ef311e55b0a19895c668e4f3d879edcaaf03fbd9346cce7442d30a4472cc33b",
+        "tests/gate4/test_g4_nms_merge.py": "2bcd096e97a8d4e001114f6327670a82d77ad0d2d721f81364e1d85c39441b72",
+        "tests/gate4/test_g4_plan.py": "0904305785f1aa8fcbc9689b253ea300e280189c46f309d94cd59a740bb2f5ba",
+        "tests/gate4/test_g4_roundtrip.py": "7e5826b9e5140ec48ebda524cb8a2894d6ca2725387a15a7afb90615f34ba916",
+        "tests/gate4/test_g4_v1_lock.py": "7da1cb796ed6e18ba00724bdb81457a11478bb32bfbf219764969f4566ac8788",
+        "tests/golden/gate4_common.py": "e131978d51d2b20ada98bfabbe2cfd1ca8e40c69e3878012612a819b484f5d89",
+        "tests/golden/gate4_v1_infer.json": "48eb04e48a0d54946b08207c208dd639655f211e789db2b93e0214f76d92c348",
+        "tests/golden/gate4_v1_infer.npz": "6e2a2fd4be28b5cfa5e8ae36ed1eeb521945345bd718431af3e54ed1f49184c3",
+        "tests/golden/make_goldens_gate4.py": "807b6b00662f60971bdab183ff3e2fcd09384229e19b01667f3119748ef5050f"
+      },
       "path_exceptions": [
-        "tomocpt/training/run.py::post-fit calibration call"
+        "tomocpt/training/run.py::post-fit calibration call",
+        {
+          "path": "pyproject.toml",
+          "scope": "imodmodel pin 0.0.13 -> 0.1.0 (done by orchestrator, human-approved)",
+          "granted": "2026-10-27"
+        }
       ],
-      "notes": [],
+      "notes": [
+        "User request 27 Oct 2026: Gate 4 README must explain train.network.scale_conditioning (what it does: FiLM on log(apix/10), zero-init; when to enable: mixed voxel sizes, multiple levels, or zoom augmentation; off for a single-apix dataset such as CZII; fixed at training start, resume refuses a change, fine-tune into it works).",
+        "Revisit C13 flake (Gate 3) with CZII results.",
+        "User test 27 Oct 2026: CZII v2 multi-class training (data/czii/v2_config.yaml) ran and predicted several classes; run interrupted by user.",
+        "Human decision 27 Oct 2026: per-class STAR files, no merged STAR (spec T4.4/C6 amended).",
+        "Human decision 27 Oct 2026: upgrade imodmodel to 0.1.0 (0.0.13 lacks write; v1 IMOD output was silently empty).",
+        "Human decision 27 Oct 2026: fix v1 inference unpad axis-order defect in Gate 4 (v1 and v2); breaks legacy equivalence only for Z-padded tomograms; C1 golden generated with the fix. CLAUDE.md 1.10 updated."
+      ],
       "report_path": ".claude/reports/gate_04_report.json"
     },
     "5": {

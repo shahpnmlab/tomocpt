@@ -61,9 +61,10 @@ With `safe_getattr` on `model.hparams.config`: `train.data_pipeline_version`, `t
   score. Log removed counts per class pair (the confusion signal).
 - Outputs, v1: unchanged names and formats.
 - Outputs, v2:
-  - RELION 3.1 / 5.0: one STAR file with `rlnClassNumber` (original class numbers) and
+  - Every format, RELION 3.1 / 5.0 included, writes one file per class,
+    `<name>_<class name>.<ext>` (human decision, 27 Oct 2026: no merged STAR file).
+    RELION files keep `rlnClassNumber` (the original class number) and add
     `rlnAutopickFigureOfMerit` (peak score);
-  - Warp and IMOD: one file per class, `<name>_<class name>.<ext>`;
   - `save_prediction_confidence_map`: one map per class, `<stem>_<class name>.mrc`;
     `skip_inference` re-reads them. Also the two merged maps from
     `merge_class_maps(maps, class_numbers, thresholds) -> (heatmap, classmap)`:
@@ -132,8 +133,9 @@ stored in the checkpoint.
   centre within 0.5 native voxel.
 - **G4-C5** `cross_class_suppression`: peaks of different classes 1 voxel apart → the higher
   stays; 3 radii apart → both stay; same-class peaks are untouched; counts are correct.
-- **G4-C6** STAR round trip: the RELION output has `rlnClassNumber` with the original
-  numbers and reads back with `tomocpt.labels.star.Star`; Warp/IMOD per-class names;
+- **G4-C6** STAR round trip: RELION output is one STAR file per class
+  (`<name>_<class name>.star`, no merged file); each has `rlnClassNumber` with that class's
+  original number and reads back with `tomocpt.labels.star.Star`; Warp/IMOD per-class names;
   `skip_inference` re-reads per-class maps.
 - **G4-C7** `float16` CPU accumulation gives maps within 1e-3 of `float32` and the same peaks.
 - **G4-C8** Header voxel size 0 → `ValueError` naming `apix_override`.
