@@ -24,7 +24,12 @@ from tomocpt.networks.distillationModel import DistillationPickingModel
 from tomocpt.networks.selfSupervisedModel import SelfSupervisedModel
 from tomocpt.training.callbacks import LRVerificationCallback
 from tomocpt.logger import get_logger
-from tomocpt.mainConfig import mainConfig
+from tomocpt.mainConfig import mainConfig, _mainConfigNoChanges
+from tomocpt.configManager.configManager import (
+    backfill_missing_fields,
+    safe_getattr,
+    update_config_with_changed_values,
+)
 
 logging = get_logger()
 
@@ -132,6 +137,114 @@ def _train_continue_kwargs(checkpoint_path: str, is_resuming: bool) -> dict:
     return {} if is_resuming else {"train_continue": checkpoint_path}
 
 
+# --------------------------------------------------------------------------------------
+# Pipeline v2 model creation (Gate 3): architecture checks and warm starts
+# --------------------------------------------------------------------------------------
+
+def _model_architecture(cfg) -> tuple:
+    """``(scale_conditioning, class table rows or None)`` of a full ``MainConfig``. The class
+    table is part of the architecture only for pipeline v2 (a v1 model has one channel)."""
+    from tomocpt.labels.multiclass import class_table_from_config, class_table_to_json
+
+    train_cfg = cfg.train
+    scale_conditioning = bool(safe_getattr(train_cfg.network, "scale_conditioning", False))
+    is_v2 = int(safe_getattr(train_cfg, "data_pipeline_version", 1) or 1) == 2
+    table = class_table_to_json(class_table_from_config(cfg.prepData)) if is_v2 else None
+    return scale_conditioning, table
+
+
+def _is_v2_architecture(arch: tuple) -> bool:
+    return bool(arch[0]) or arch[1] is not None
+
+
+def _load_checkpoint_config(checkpoint_path):
+    """Raw read of a checkpoint: ``(state_dict, constants_dict, config)``. The config is
+    backfilled with current defaults for fields the checkpoint predates."""
+    import torch
+
+    checkpoint = torch.load(checkpoint_path, map_location="cpu", weights_only=False)
+    hparams = checkpoint["hyper_parameters"]
+    config = backfill_missing_fields(hparams["config"], _mainConfigNoChanges)
+    return checkpoint["state_dict"], hparams.get("constants_dict"), config
+
+
+def _effective_config(checkpoint_config):
+    """The config a model loaded from this checkpoint gets: the checkpoint's config with the
+    values changed on the command line applied (as ``BaseModel.__init__`` does)."""
+    return update_config_with_changed_values(
+        target=checkpoint_config, originaConfig=_mainConfigNoChanges, configAfterCli=mainConfig
+    )
+
+
+def _check_resume_architecture(checkpoint_config) -> None:
+    """``resume_from`` never changes the architecture (class table, scale conditioning)."""
+    saved = _model_architecture(checkpoint_config)
+    requested = _model_architecture(_effective_config(checkpoint_config))
+    if saved != requested:
+        raise ValueError(
+            "resume_from cannot change the model architecture; use fine_tune_from instead. "
+            f"Checkpoint (scale_conditioning, class table) = {saved}, requested = {requested}"
+        )
+
+
+def _map_output_channels(state_dict: dict, old_table, new_table) -> dict:
+    """Re-index the ``out`` layer of a v2 state dict from ``old_table`` to ``new_table``.
+
+    Classes present in both tables (matched by class number) keep their channel; new
+    classes start from the mean of the old channels."""
+    import torch
+
+    old_index = {row.number: i for i, row in enumerate(old_table)}
+    mapping = {row.name: (old_table[old_index[row.number]].name if row.number in old_index else "mean")
+               for row in new_table}
+    logging.info(f"Fine-tune class mapping (new class <- old channel): {mapping}")
+    state_dict = dict(state_dict)
+    for key in [k for k in state_dict if k.startswith("out.")]:
+        old = state_dict[key]
+        rows = [old[old_index[row.number]] if row.number in old_index else old.mean(0)
+                for row in new_table]
+        state_dict[key] = torch.stack(rows)
+    return state_dict
+
+
+def _fine_tune_into_v2(checkpoint_path, lr, state_dict, constants_dict, checkpoint_config):
+    """Fine-tune into a pipeline-v2 picking model (multi-class and/or scale-conditioned).
+
+    Source: a legacy single-class picker, a v2 picker (possibly with another class table) or
+    a self-supervised checkpoint. Builds the new model and loads the weights; the run starts
+    fresh (no optimizer state)."""
+    from tomocpt.labels.multiclass import class_table_from_config
+    from tomocpt.networks.swinunetr import load_legacy_state_dict, load_single_class_into_multiclass
+
+    from_picking = checkpoint_config.train.mode == TrainingModes.picking
+    if from_picking:
+        # Like load_from_checkpoint: the checkpoint's config with the command-line changes.
+        model = BasePickingModel(train_continue=checkpoint_path, lr=lr,
+                                 config=checkpoint_config, constants_dict=constants_dict)
+    else:
+        # Self-supervised source: the picking config comes from the command line, as for v1.
+        model = BasePickingModel(train_continue=checkpoint_path, lr=lr)
+    network = model.model
+    weights = {k[len("model."):]: v for k, v in state_dict.items() if k.startswith("model.")}
+
+    source_is_v2 = from_picking and _model_architecture(checkpoint_config)[1] is not None
+    if source_is_v2 and model.is_pipeline_v2():
+        weights = _map_output_channels(weights, class_table_from_config(checkpoint_config.prepData),
+                                       model.class_table())
+        load_legacy_state_dict(network, weights)
+    elif network.out.conv.conv.out_channels == 1:
+        load_legacy_state_dict(network, weights)
+    else:
+        # One-channel source (legacy picker or SSL): every class starts as the old output.
+        load_single_class_into_multiclass(network, weights)
+    n_new = sum(1 for k in network.state_dict() if k.startswith("cond.") and "model." + k not in state_dict)
+    logging.info(
+        f"Fine-tuning {model.model_name} from {checkpoint_path}: new run, no optimizer state; "
+        f"{n_new} new conditioning tensors start at zero."
+    )
+    return model
+
+
 def _create_model(config: DictConfig):
     """Factory function to create the appropriate model based on the config."""
     lr = config.optimizer.lr
@@ -168,7 +281,24 @@ def _create_model(config: DictConfig):
                 # Start a new training run, don't resume optimizer state etc. from teacher
                 return model, None, checkpointer
 
+        use_v2_fine_tune = False
         if checkpoint_path:
+            state_dict, constants_dict, checkpoint_config = _load_checkpoint_config(checkpoint_path)
+            from_picking = checkpoint_config.train.mode == TrainingModes.picking
+            if is_resuming and from_picking:
+                _check_resume_architecture(checkpoint_config)
+            # The picking model a fine-tune builds: from the checkpoint's config with the
+            # command-line changes, or from the command line for a self-supervised source.
+            target_config = _effective_config(checkpoint_config) if from_picking else mainConfig
+            use_v2_fine_tune = not is_resuming and (
+                _is_v2_architecture(_model_architecture(target_config))
+                or (from_picking and _is_v2_architecture(_model_architecture(checkpoint_config)))
+            )
+
+        if checkpoint_path and use_v2_fine_tune:
+            model = _fine_tune_into_v2(checkpoint_path, lr, state_dict, constants_dict, checkpoint_config)
+            resume_from_ckpt = None
+        elif checkpoint_path:
             logging.info(f"Loading model from checkpoint: {checkpoint_path}")
             try:
                 model = BasePickingModel.load_from_checkpoint(

@@ -8,6 +8,7 @@ import torch
 from tomocpt import constants
 from tomocpt.configManager.configManager import (
     backfill_missing_fields,
+    safe_getattr,
     update_config,
     update_config_with_changed_values,
 )
@@ -64,8 +65,30 @@ class BaseModel(pl.LightningModule):
         # Default only: SelfSupervisedModel passes require_labels=True itself, because it
         # needs MySwinUNETR's (logits, hidden) tuple even though the mode is selfSupervised.
         kwargs.setdefault("require_labels", self.hparams.config.train.mode == TrainingModes.picking)
+        if self.hparams.config.train.mode == TrainingModes.picking and self.is_pipeline_v2():
+            # One output channel per class-table row (CLAUDE.md invariant 7). A v1 model keeps
+            # one channel even when several single-class datasets are configured.
+            kwargs.setdefault("out_channels", len(self.class_table()))
         model_name, model = network_config.build_model(img_size=self.patch_size, **kwargs)
         return model_name, model
+
+    def is_pipeline_v2(self) -> bool:
+        """True when this model was configured for data pipeline v2."""
+        return int(safe_getattr(self.hparams.config.train, "data_pipeline_version", 1) or 1) == 2
+
+    def class_table(self):
+        """The class table (channel c = row c), rebuilt from the model's own config."""
+        from tomocpt.labels.multiclass import class_table_from_config
+        return class_table_from_config(self.hparams.config.prepData)
+
+    def scale_conditioning(self) -> bool:
+        """True when the network is FiLM-conditioned on the working voxel size. Once the
+        network is built, the network itself decides (a model built from the global config
+        shares that object, which can change after construction)."""
+        network = self.__dict__.get("_modules", {}).get("model")
+        if network is not None:
+            return getattr(network, "cond", None) is not None
+        return bool(safe_getattr(self.hparams.config.train.network, "scale_conditioning", False))
 
     def forward_and_zero_edges(self, x):
         pred = self.forward(x)

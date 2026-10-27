@@ -1,0 +1,138 @@
+{
+  "gate_id": 3,
+  "agent_name": "03_AGENT_MULTICLASS_PICKER",
+  "status": "READY_FOR_REVIEW",
+  "base_ref": "v2-gate-2-passed",
+  "files_created": [
+    "tomocpt/networks/conditioning.py",
+    "tomocpt/training/multiclass_loss.py",
+    "tomocpt/defaultConfigs/particles_config.py",
+    ".claude/reports/gate_03_report.json",
+    ".claude/reports/gate_03_escalation.md"
+  ],
+  "files_modified": [
+    "tomocpt/networks/swinunetr.py",
+    "tomocpt/networks/pickingModel.py",
+    "tomocpt/networks/baseModel.py",
+    "tomocpt/networks/distillationModel.py",
+    "tomocpt/defaultConfigs/network_config.py",
+    "tomocpt/training/helpers.py (_create_model and new helpers only; _prepare_data_if_needed untouched)"
+  ],
+  "escalations": [
+    "gate_03_escalation.md: TrainConfig.particles must be declared in tomocpt/defaultConfigs/train_config.py (Gate 2's file). The 4-line patch is in the escalation. Until it is applied, 2 frozen tests fail: test_G3_C4_v2_training_step_loss_is_the_multiclass_loss[False,True], which set cfg.train.particles. The Gate 3 code reads the field with safe_getattr and falls back to the ParticlesConfig defaults."
+  ],
+  "exported_symbols": {
+    "tomocpt.networks.conditioning": [
+      "ScaleEmbedding",
+      "FiLM"
+    ],
+    "tomocpt.networks.swinunetr": [
+      "ScaleConditionedSwinUNETR",
+      "load_legacy_state_dict",
+      "load_single_class_into_multiclass"
+    ],
+    "tomocpt.training.multiclass_loss": [
+      "multiclass_picking_loss"
+    ],
+    "tomocpt.networks.pickingModel": [
+      "BasePickingModel (forward(x, apix=None), predict_step(batch, batch_idx=0, dataloader_idx=0, apix=None), multiclass_loss)",
+      "parse_class_weights"
+    ],
+    "tomocpt.networks.baseModel": [
+      "BaseModel.is_pipeline_v2",
+      "BaseModel.class_table",
+      "BaseModel.scale_conditioning"
+    ],
+    "tomocpt.defaultConfigs.particles_config": [
+      "ParticlesConfig"
+    ]
+  },
+  "config_fields_added": [
+    "train.network.scale_conditioning",
+    "train.particles.class_weights (needs the escalated TrainConfig field)",
+    "train.particles.loss_checkpoint (needs the escalated TrainConfig field)"
+  ],
+  "legacy_equivalence": {
+    "G3_C1_v1_training_step_loss_vs_base_golden": {
+      "tolerance": 1e-06,
+      "result": "pass"
+    },
+    "G3_C2_zero_init_logits_vs_MySwinUNETR": {
+      "tolerance": 1e-06,
+      "result": "pass for apix 5, 10, 20 and None"
+    },
+    "G3_C4_C1_multiclass_loss_vs_v1_loss": {
+      "tolerance": 1e-06,
+      "result": "pass"
+    },
+    "G3_C9_v1_parameter_groups": {
+      "result": "unchanged"
+    }
+  },
+  "metrics": {
+    "G3_C12_seed0_final_code": {
+      "cond": {
+        "f1_A": 0.954,
+        "f1_B": 1.0,
+        "mean_B_at_A": 0.125
+      },
+      "uncond_report_only": {
+        "f1_A": 1.0,
+        "f1_B": 1.0,
+        "mean_B_at_A": 0.235
+      },
+      "result": "pass"
+    },
+    "G3_C13_seed0": {
+      "run_1": {
+        "f1": {
+          "small": 0.621,
+          "solid": 0.545,
+          "hollow": 0.98,
+          "large": 1.0
+        },
+        "cross": {
+          "hollow_in_solid": 1.0,
+          "solid_in_hollow": 0.042
+        },
+        "result": "FAIL (the known flake: the solid channel fires on every hollow particle, as reference seed 1 did)"
+      },
+      "run_2": {
+        "f1": {
+          "small": 1.0,
+          "solid": 1.0,
+          "hollow": 1.0,
+          "large": 1.0
+        },
+        "cross": {
+          "hollow_in_solid": 0.0,
+          "solid_in_hollow": 0.0
+        },
+        "result": "pass"
+      },
+      "note": "Same seed and the same C13-relevant code (conditioning off), but different outcomes. bf16 GPU training is not deterministic, so seed 0 does not pin the result. C13 passed 1 of 2 runs."
+    }
+  },
+  "pytest_fast": {
+    "command": "pytest tests -m 'not slow'",
+    "exit_code": 0,
+    "result": "435 passed, 27 skipped (pre-existing skips); run in a scratch copy of the repo with the escalated train_config.py patch applied",
+    "repo_as_is": "pytest tests/gate3 -m 'not slow': 42 passed, 2 failed (the two tests that need TrainConfig.particles; see the escalation)"
+  },
+  "pytest_slow": {
+    "command": "pytest tests/gate3 -m slow",
+    "ran": true,
+    "exit_code": 1,
+    "reason": "3 slow runs in total. Run 1: both tests failed. The C12 failure was caused by a code edit made while the run was going (the unconditioned report-only model got apix and raised); C13 hit the known flake. Run 2: C13 passed; C12 failed and exposed a real bug: a model built with config=None keeps a reference to the global mainConfig, so after the config was restored the model read scale_conditioning=False and skipped FiLM at evaluation. Fix: BaseModel.scale_conditioning() now reads the built network (presence of model.cond). Run 3 (C12 only, final code): passed. Final state: C12 pass; C13 passed in 1 of 2 runs (known flake)."
+  },
+  "benchmarks": {},
+  "known_limitations": [
+    "G3-C13 is flaky at seed 0 (known, human decision of 27 Oct 2026). Here it failed once and passed once on the same seed, because bf16 GPU training is not deterministic.",
+    "C12 margin on mean_B_at_A is thin (0.125 against the < 0.2 limit), consistent with the reference sweep. The unconditioned model reached 0.235 (report only).",
+    "BaseModel built with config=None aliases the global mainConfig in hparams (legacy behaviour). Gate 3 decides conditioning from the network itself; class_table() still reads hparams.config.prepData.",
+    "An unconditioned model ignores apix in forward/predict_step: the output does not depend on it, and Gate 4 can pass it unconditionally.",
+    "Fine-tuning a conditioned checkpoint into an unconditioned model raises (unexpected cond.* keys). Scale conditioning cannot be dropped by fine-tuning.",
+    "val_loss_<class name> is logged only for batches where that class is available (batch_size = number of available samples), so classes never available in validation have no metric."
+  ],
+  "notes_for_next_agent": "INFERENCE CALL PATTERN (Gate 4): model = InferenceModel.load_from_checkpoint(ckpt, strict=True) (v2 checkpoints load strictly, G3-C11). For each level from plan_levels: probs = model.predict_step(x, 0, apix=level.apix_work), with x [B,1,64,64,64] and apix a Python float or a [B,1] float32 tensor (a float is broadcast over the batch). This returns sigmoid(logits) [B,C,64,64,64], with channel c = class-table row c. Equivalently, logits = model(x, apix=level.apix_work). Passing apix to an unconditioned model is allowed and ignored. apix=None gives exactly the unconditioned computation, also for a conditioned model, so always pass apix to a conditioned model. CONDITIONING FLAG: use model.scale_conditioning(), which is True if the built network has the FiLM modules (model.model.cond). From a raw checkpoint config, use safe_getattr(cfg.train.network, 'scale_conditioning', False). CLASS TABLE: labels.multiclass.class_table_from_config(model.hparams.config.prepData), or model.class_table(). It is used only when model.is_pipeline_v2() (train.data_pipeline_version == 2); a v1 model has one channel (the legacy heatmap). len(table) == model.model.out.conv.conv.out_channels. CHECKPOINT KEYS ADDED: state_dict 'model.cond.scale_embed.mlp.{0,2}.{weight,bias}' and 'model.cond.film.{0..5}.lin.{weight,bias}' (only when scale_conditioning=True); 'model.out.conv.conv.{weight,bias}' has C output channels for v2. Config fields in hyper_parameters: train.network.scale_conditioning, train.particles (class_weights, loss_checkpoint; once the escalated TrainConfig field lands). Older checkpoints get the defaults through backfill_missing_fields. FiLM: t = log(apix/10), six FiLM points in the decoder (after encoder10, decoder5, decoder4, decoder3, decoder2, decoder1), zero-initialised. The Swin encoder and hidden_states_out[4] are unconditioned, so forward returns (logits, hidden4) for both models. TRAINING: v2 batches are recognised by the 'class_available'/'class_d_vox' keys and use multiclass_picking_loss. A conditioned model raises ValueError if 'apix_work' is missing. Fine-tune paths live in training/helpers._create_model: _fine_tune_into_v2 (legacy single-class -> copy out into every channel; v2 with another class table -> match channels by class number, new classes start from the mean; SSL -> the same). Resume compares (scale_conditioning, class table) of the checkpoint with the checkpoint config plus CLI changes, and raises ValueError on any difference."
+}

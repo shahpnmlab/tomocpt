@@ -39,6 +39,9 @@ class DistillationPickingModel(BasePickingModel):
 
         # Continue with normal initialization
         super().__init__(lr, model, config_dict, *args, **kwargs)
+        # Distillation stays a v1 feature: the teacher is a single-class, unconditioned picker.
+        if self.is_pipeline_v2() or self.scale_conditioning():
+            raise NotImplementedError("distillation supports single-class v1 models")
 
         # Load teacher model from checkpoint and freeze it
         logging.info(f"Loading teacher model from {self.teacher_checkpoint_path}")

@@ -53,14 +53,24 @@ class NetworkConfig:
 
     SELF_SUPERVISED_EMBEDING_SIZE: int = 256
 
+    scale_conditioning: Annotated[
+        bool,
+        typer.Option(help="FiLM conditioning of the decoder on the working voxel size (SwinUNETR, pipeline v2)"),
+    ] = False
+
     def build_model(self, require_labels=False, **kwargs):
         import importlib
 
+        from tomocpt.configManager.configManager import safe_getattr
+
         model_type = self.model_type
         model_name = str(model_type.value)
+        scale_conditioning = bool(safe_getattr(self, "scale_conditioning", False))
+        if scale_conditioning and not model_name.startswith("SwinUNETR"):
+            raise NotImplementedError("scale conditioning needs SwinUNETR")
         if model_name.startswith("SwinUNETR"):
             if require_labels:
-                model_name = "MySwinUNETR"
+                model_name = "ScaleConditionedSwinUNETR" if scale_conditioning else "MySwinUNETR"
             # if version.parse(monai.__version__) > version.parse("1.3"):
             #     kwargs.pop("img_size")
 

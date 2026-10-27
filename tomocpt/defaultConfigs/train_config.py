@@ -8,6 +8,7 @@ from omegaconf import MISSING
 
 from tomocpt.defaultConfigs.network_config import NetworkConfig
 from tomocpt.defaultConfigs.scale_config import ScaleConfig
+from tomocpt.defaultConfigs.particles_config import ParticlesConfig
 
 
 class TrainingModes(str, Enum):
@@ -263,6 +264,9 @@ class TrainConfig:
     scale: Annotated[
         ScaleConfig, typer.Option(help="Scale policy of data pipeline v2")
     ] = field(default_factory=ScaleConfig)
+    particles: Annotated[
+        ParticlesConfig, typer.Option(help="Multi-class picking settings (pipeline v2)")
+    ] = field(default_factory=ParticlesConfig)
     chunk_sampling: Annotated[
         ChunkSampling,
         typer.Option(help="Training chunk sampling: 'uniform' (legacy) or 'repeat_factor' (pipeline v2 only)"),

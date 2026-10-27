@@ -2,7 +2,7 @@
   "base_ref": "v2-gate-0-base",
   "base_commit": "ce6f7b0ce856f19556266e7ad3143bfb66cdb7e2",
   "base_note": "first commit of branch v2-dev (released main + fix/v1-patches + plan); set by the orchestrator",
-  "current_gate": 3,
+  "current_gate": 4,
   "gpu_available": true,
   "gates": {
     "1": {
@@ -77,9 +77,9 @@
       "report_path": ".claude/reports/gate_02_report.json"
     },
     "3": {
-      "status": "PENDING",
+      "status": "PASSED",
       "agent": "03_AGENT_MULTICLASS_PICKER",
-      "attempts": 0,
+      "attempts": 1,
       "test_hashes": {
         "tests/gate3/README.md": "0e74bc804c67b875c2bc600c8ffbd14e9775b4be050ddfe8022bc7bc99abfcee",
         "tests/gate3/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
@@ -94,11 +94,18 @@
         "tests/golden/gate3_goldens.json": "1d23280ac4ee2cc86fc47779dc6758495abb8219aa1b12d8877f99e6785afc66",
         "tests/golden/make_goldens_gate3.py": "e97580c14d3a3cfb53db15594bcad298b8b919147ff73f96ec0286703b593dad"
       },
-      "path_exceptions": [],
+      "path_exceptions": [
+        {
+          "path": "tomocpt/defaultConfigs/train_config.py",
+          "scope": "declare TrainConfig.particles: ParticlesConfig (CLAUDE.md \u00a76 assigns train.particles to Gate 3; \u00a77 ownership omitted the file)",
+          "granted": "2026-10-27"
+        }
+      ],
       "notes": [
         "Human decision 27 Oct 2026: C4 Hessian centre gap tolerance < 15 % (14.1 % is intrinsic); spec amended.",
         "Human decision 27 Oct 2026: C13 frozen at seed 0; calibration 2/3 seeds (seed 1 fails). Known flake, revisit at Gate 4.",
-        "C12 calibration: 9/10 seeds pass (seed 7 fails, mean_B_at_A 0.216); thin margin."
+        "C12 calibration: 9/10 seeds pass (seed 7 fails, mean_B_at_A 0.216); thin margin.",
+        "Verification 27 Oct 2026: fast 435 passed/27 skipped; slow gate1+2 2 passed; gate3 slow (implementer): C12 passed on final code (mean_B_at_A 0.125), C13 passed 1 of 2 runs at seed 0 (bf16 GPU nondeterminism; known flake)."
       ],
       "report_path": ".claude/reports/gate_03_report.json"
     },
