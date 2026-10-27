@@ -2,7 +2,7 @@
   "base_ref": "v2-gate-0-base",
   "base_commit": "ce6f7b0ce856f19556266e7ad3143bfb66cdb7e2",
   "base_note": "first commit of branch v2-dev (released main + fix/v1-patches + plan); set by the orchestrator",
-  "current_gate": 5,
+  "current_gate": "3b",
   "gpu_available": true,
   "gates": {
     "1": {
@@ -169,6 +169,17 @@
       "path_exceptions": [],
       "notes": [],
       "report_path": ".claude/reports/gate_06_report.json"
+    },
+    "3b": {
+      "status": "PENDING",
+      "agent": "03b_AGENT_CROSS_CLASS_NEG",
+      "attempts": 0,
+      "test_hashes": {},
+      "path_exceptions": [],
+      "notes": [
+        "Human decision 27 Oct 2026: add cross-class negative weighting (CZII channels of similar species fire together); side gate before Gate 5. Softmax class head deferred."
+      ],
+      "report_path": null
     }
   }
 }
