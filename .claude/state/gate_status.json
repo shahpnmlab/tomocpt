@@ -174,10 +174,23 @@
       "status": "PENDING",
       "agent": "03b_AGENT_CROSS_CLASS_NEG",
       "attempts": 0,
-      "test_hashes": {},
+      "test_hashes": {
+        "tests/gate3b/README.md": "98181100ee54ee5a0a0e332b5b67eaac77f8c8ca79b5acbd8635f63dbca0d956",
+        "tests/gate3b/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "tests/gate3b/conftest.py": "ece50f9a8312c1275ecda32d36b850152b2b52485248ce9ebb7556d400231ca0",
+        "tests/gate3b/g3b_reference.py": "7c9f0b6aebb6d27b34d6e55f3b754f8bc58e9dcf66b8e865d13204cc6fc5880a",
+        "tests/gate3b/test_g3b_learning.py": "37603b757084844ce39895e74fc75a39eeb3b6f1eb5f1a510550ae087a6f5c69",
+        "tests/gate3b/test_g3b_loss.py": "1f54119f59d8dc1ac97d29477070ecad12129cb65f9ba859b7df104adff03c85",
+        "tests/gate3b/test_g3b_model.py": "4a2af72eee91f03ec161121af367a157a1c71d661130a7107d091063fc3b67c9",
+        "tests/golden/gate3b_c1_loss.npz": "4846398c00054f587fe61f53399407edf466e39d923143649a2335b668828492",
+        "tests/golden/gate3b_common.py": "773db7d1f9f25b076ade342204b40922b87cac1669cf6c88c504d86fd7fc1876",
+        "tests/golden/make_goldens_gate3b.py": "06191510a8c046d0d5aad29f0d5038853df7f76d1289300df5b0d65afb5439a8"
+      },
       "path_exceptions": [],
       "notes": [
-        "Human decision 27 Oct 2026: add cross-class negative weighting (CZII channels of similar species fire together); side gate before Gate 5. Softmax class head deferred."
+        "Human decision 27 Oct 2026: add cross-class negative weighting (CZII channels of similar species fire together); side gate before Gate 5. Softmax class head deferred.",
+        "TA calibration: k=0.25 and 1.0 both pass C13 seeds 0-2 (cross-pick 0); k=0 seed 1 fails. K_RECOMMENDED=0.25; CZII start 0.25.",
+        "C5 caveat: if k=0 seed 1 passes by chance, the 'lower cross-pick' assertion fails (known)."
       ],
       "report_path": null
     }
