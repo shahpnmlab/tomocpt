@@ -45,6 +45,17 @@ def _prepare_data_if_needed(config: DictConfig):
     from tomocpt.dataManager.metadata import layout_pipeline_version, read_chunk_layout
 
     logging.info("Checking for prepared data...")
+    if config.mode == TrainingModes.selfSupervised:
+        if _ssl_version(config) == 2:
+            _prepare_ssl_v2_data_if_needed(config)
+            return
+        layout = read_chunk_layout(config.chunks_dir)
+        if Path(get_chunking_name_done(config.chunks_dir, require_labels=False)).is_file() \
+                and layout and layout.get("kind") == "ssl":
+            raise ValueError(
+                f"chunk format mismatch: {config.chunks_dir} holds SSL v2 source chunks but "
+                "train.ssl.version=1. Use another chunks_dir, or set train.ssl.version=2."
+            )
     require_labels = config.mode == TrainingModes.picking
     pipeline_version = int(getattr(config, "data_pipeline_version", 1) or 1)
     chunking_name_done = get_chunking_name_done(
@@ -129,6 +140,47 @@ def _prepare_data_if_needed(config: DictConfig):
         **chunk_kwargs,
     )
     logging.info("Data preparation complete.")
+
+
+def _ssl_version(config) -> int:
+    """``train.ssl.version`` of a train config (1 when the field is absent)."""
+    ssl = safe_getattr(config, "ssl", None)
+    return int(getattr(ssl, "version", 1) or 1) if ssl is not None else 1
+
+
+def _prepare_ssl_v2_data_if_needed(config) -> None:
+    """SSL v2 source chunks (``dataManager.ssl_views``): built if the done file is absent;
+    existing chunks must be SSL v2 chunks."""
+    from tomocpt.dataManager.metadata import read_chunk_layout
+    from tomocpt.dataManager.ssl_views import is_ssl_layout, list_ssl_tomograms, make_ssl_source_chunks
+
+    done = get_chunking_name_done(config.chunks_dir, require_labels=False)
+    if Path(done).is_file():
+        if not is_ssl_layout(read_chunk_layout(config.chunks_dir)):
+            raise ValueError(
+                f"chunk format mismatch: {config.chunks_dir} holds no SSL v2 source chunks but "
+                f"train.ssl.version=2. Delete {done} to rebuild the chunks, or use another chunks_dir."
+            )
+        logging.info("Found existing SSL v2 source chunks. Skipping data preparation.")
+        return
+    ssl = config.ssl
+    training_data_dir = config.training_data_dir or mainConfig.prepData.training_data_dir
+    if not Path(training_data_dir).is_dir():
+        raise FileNotFoundError(f"Error, training_data_dir {training_data_dir} not found")
+    logging.info("SSL v2 source chunks not found. Starting data preparation...")
+    make_ssl_source_chunks(
+        list_ssl_tomograms(training_data_dir), config.chunks_dir,
+        apix_ref_min=ssl.apix_ref_min, apix_ref_max=ssl.apix_ref_max, source_chunk=ssl.source_chunk,
+        apix_override=safe_getattr(mainConfig.prepData, "apix_override", None),
+        seed=getattr(config, "SEED_FOR_TRAIN_VAL_SPLIT", 42), use_gpus=config.use_gpus,
+    )
+    logging.info("Data preparation complete.")
+
+
+def _is_ssl_v2_checkpoint(checkpoint_config) -> bool:
+    """True for a checkpoint written by SSL v2 (self-supervised mode, ``train.ssl.version = 2``)."""
+    return (checkpoint_config.train.mode == TrainingModes.selfSupervised
+            and _ssl_version(checkpoint_config.train) == 2)
 
 
 def _train_continue_kwargs(checkpoint_path: str, is_resuming: bool) -> dict:
@@ -228,6 +280,10 @@ def _fine_tune_into_v2(checkpoint_path, lr, state_dict, constants_dict, checkpoi
         model = BasePickingModel(train_continue=checkpoint_path, lr=lr)
     network = model.model
     weights = {k[len("model."):]: v for k, v in state_dict.items() if k.startswith("model.")}
+    if getattr(network, "cond", None) is None and any(k.startswith("cond.") for k in weights):
+        # SSL v2 source into an unconditioned picker: its FiLM weights have no place there.
+        weights = {k: v for k, v in weights.items() if not k.startswith("cond.")}
+        logging.info("Source conditioning weights (cond.*) dropped: the picker is not scale-conditioned.")
 
     source_is_v2 = from_picking and _model_architecture(checkpoint_config)[1] is not None
     if source_is_v2 and model.is_pipeline_v2():
@@ -295,6 +351,9 @@ def _create_model(config: DictConfig):
             use_v2_fine_tune = not is_resuming and (
                 _is_v2_architecture(_model_architecture(target_config))
                 or (from_picking and _is_v2_architecture(_model_architecture(checkpoint_config)))
+                # Self-supervised branch: an SSL v2 network is scale-conditioned, so it always
+                # goes through the explicit weight transfer (heads dropped, cond kept or dropped).
+                or _is_ssl_v2_checkpoint(checkpoint_config)
             )
 
         if checkpoint_path and use_v2_fine_tune:

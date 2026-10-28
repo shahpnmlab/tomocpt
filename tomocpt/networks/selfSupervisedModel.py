@@ -13,6 +13,8 @@ from torch.nn import functional as F
 from tomocpt import constants
 from tomocpt.networks.baseModel import BaseModel
 from tomocpt.mainConfig import mainConfig
+from tomocpt.configManager.configManager import safe_getattr
+from tomocpt.defaultConfigs.ssl_config import SSLConfig
 
 class SelfSupervisedModel(BaseModel):
 
@@ -24,6 +26,13 @@ class SelfSupervisedModel(BaseModel):
         # argument is `config`, which load_from_checkpoint also passes by keyword.
         super(SelfSupervisedModel, self).__init__(lr, *args, **kwargs)
 
+        # train.ssl (Gate 5); a checkpoint without it is SSL v1. resolved() raises ValueError
+        # for version 2 with use_rotation=True.
+        self.ssl_cfg = safe_getattr(self.hparams.config.train, "ssl", None) or SSLConfig()
+        self.ssl_cfg = self.ssl_cfg.resolved()
+        if self.ssl_cfg.version == 2:
+            self._init_v2(lr, model)
+            return
 
         n_voxels = mainConfig.train.CHUNK_SIZE
 
@@ -55,12 +64,138 @@ class SelfSupervisedModel(BaseModel):
         self.loss_function = LossPretrain()
 
     def build_model(self):
+        if self.is_ssl_v2():
+            return self._build_model_v2()
         return super().build_model(require_labels=True)
+
+    def is_ssl_v2(self) -> bool:
+        cfg = self.__dict__.get("ssl_cfg")
+        return cfg is not None and cfg.version == 2
+
+    # ----------------------------------------------------------------------------------
+    # SSL v2 (Gate 5): scale pairs, masked reconstruction of the clean view, global and
+    # dense contrastive learning, relative scale. The heads live on this module, so a
+    # transfer to the picker drops exactly them.
+    # ----------------------------------------------------------------------------------
+
+    def _build_model_v2(self):
+        """The Gate 3 ``ScaleConditionedSwinUNETR`` with one output channel (reconstruction),
+        whatever ``train.network.scale_conditioning`` says: the decoder receives ``apix_view``."""
+        import copy
+
+        from tomocpt.defaultConfigs.network_config import ModelType
+
+        network_config = copy.copy(self.hparams.config.train.network)
+        if ModelType(network_config.model_type) != ModelType.SwinUNETR:
+            raise ValueError("train.ssl.version=2 needs train.network.model_type=SwinUNETR")
+        network_config.scale_conditioning = True
+        return network_config.build_model(img_size=self.patch_size, require_labels=True, out_channels=1)
+
+    def _init_v2(self, lr, model):
+        from tomocpt.networks.ssl.heads import DenseProjectionHead, ProjectionHead, RelativeScaleHead
+        from tomocpt.networks.swinunetr import ScaleConditionedSwinUNETR
+
+        if model is None:
+            self.model_name, self.model = self.build_model()
+        else:
+            self.model_name = model.model_name
+            self.model = model.model
+        if not isinstance(self.model, ScaleConditionedSwinUNETR):
+            raise ValueError("SSL v2 needs a ScaleConditionedSwinUNETR network")
+        fs = self.model.out.conv.conv.in_channels
+        ssl = self.ssl_cfg
+        network_config = self.hparams.config.train.network
+        self.rotation_head = None
+        # Invariant 5: a task with weight 0 has no module.
+        self.contrastive_head = ProjectionHead(16 * fs, network_config.SELF_SUPERVISED_EMBEDING_SIZE) \
+            if ssl.contrast_weight > 0 else None
+        self.dense_head = DenseProjectionHead(fs, int(ssl.dense_dim)) if ssl.dense_weight > 0 else None
+        self.scale_head = RelativeScaleHead(8 * fs + 16 * fs) if ssl.scale_weight > 0 else None
+        self.contrast_temperature = float(network_config.CONTRAST_LOSS_TEMPERATURE)
+        self.contrast_l1 = float(network_config.CONTRAST_LOSS_L1_EMB_REGULARIZATION)
+        self.dense_temperature = 0.1
+        self.lr = lr
+        print(f"SelfSupervisedModel (SSL v2) using {self.model_name}")
+
+    def _forward_v2(self, x, apix):
+        """``(reconstruction logits, swinViT hidden states, decoder2 output)``; the decoder is
+        FiLM-conditioned on ``apix`` as in ``ScaleConditionedSwinUNETR.forward``."""
+        net = self.model
+        e = net.cond.scale_embed(apix)
+        film = net.cond.film
+        hs = net.swinViT(x, net.normalize)
+        enc0 = net.encoder1(x)
+        enc1 = net.encoder2(hs[0])
+        enc2 = net.encoder3(hs[1])
+        enc3 = net.encoder4(hs[2])
+        dec4 = film[0](net.encoder10(hs[4]), e)
+        dec3 = film[1](net.decoder5(dec4, hs[3]), e)
+        dec2 = film[2](net.decoder4(dec3, enc3), e)
+        dec1 = film[3](net.decoder3(dec2, enc2), e)
+        dec0 = film[4](net.decoder2(dec1, enc1), e)
+        out = film[5](net.decoder1(dec0, enc0), e)
+        return net.out(out), hs, dec0
+
+    @staticmethod
+    def _vol5(t):
+        t = torch.as_tensor(t)
+        return t.unsqueeze(1) if t.ndim == 4 else t
+
+    def _step_v2(self, batch):
+        from tomocpt.networks.ssl.losses import dense_info_nce, masked_l1, nt_xent
+
+        ssl = self.ssl_cfg
+        xa, xb = self._vol5(batch["input_a"]).float(), self._vol5(batch["input_b"]).float()
+        n = xa.shape[0]
+        x = torch.cat([xa, xb], dim=0)
+        apix = torch.cat([batch["apix_a"].reshape(-1), batch["apix_b"].reshape(-1)]).float().reshape(-1, 1)
+        target = torch.cat([self._vol5(batch["target_a"]), self._vol5(batch["target_b"])], dim=0).float()
+        mask = torch.cat([self._vol5(batch["mask_a"]), self._vol5(batch["mask_b"])], dim=0).bool()
+
+        recon, hs, dec0 = self._forward_v2(x, apix)
+        losses = {"recon": float(ssl.recon_weight) * masked_l1(recon, target, mask, ssl.recon_visible_weight)}
+        extras = {}
+        if self.contrastive_head is not None:
+            z = self.contrastive_head(hs[4].mean(dim=(2, 3, 4)))
+            losses["contrastive"] = float(ssl.contrast_weight) * nt_xent(
+                z[:n], z[n:], self.contrast_temperature, self.contrast_l1)
+        if self.dense_head is not None:
+            f = self.dense_head(_scale_gradient(dec0, float(ssl.dense_grad_scale)))
+            losses["dense"] = float(ssl.dense_weight) * dense_info_nce(
+                f[:n], f[n:], batch["pts_a"], batch["pts_b"], self.dense_temperature, view_size=xa.shape[-1])
+        if self.scale_head is not None:
+            p = torch.cat([hs[3].mean(dim=(2, 3, 4)), hs[4].mean(dim=(2, 3, 4))], dim=1).float()
+            r = self.scale_head(p[:n], p[n:]).float()
+            t = batch["target_log2"].reshape(-1).float()
+            losses["scale"] = float(ssl.scale_weight) * F.smooth_l1_loss(r, t, beta=0.1)
+            extras["scale_mae"] = (r - t).abs().mean().detach()
+        total = sum(losses.values())
+        return total, losses, extras, (xa, batch["target_a"], recon[:n])
+
+    def _log_v2(self, prefix, batch, batch_idx):
+        total, losses, extras, (xa, ta, ra) = self._step_v2(batch)
+        n = xa.shape[0]
+        self.log(f"{prefix}loss", total, on_step=False, on_epoch=True, prog_bar=True, sync_dist=True, batch_size=n)
+        for name, value in losses.items():
+            self.log(f"{prefix}loss_{name}", value, on_step=False, on_epoch=True, sync_dist=True, batch_size=n)
+        for name, value in extras.items():
+            self.log(f"{prefix}{name}", value, on_step=False, on_epoch=True, sync_dist=True, batch_size=n)
+        experiment = getattr(self.logger, "experiment", None) if self.logger is not None else None
+        if batch_idx == 0 and hasattr(experiment, "add_image"):
+            tag = "train" if prefix == "" else "val"
+            size = xa.shape[2]
+            with torch.no_grad():
+                for name, v in (("input", xa), ("target", self._vol5(ta)), ("recons", ra)):
+                    grid = torchvision.utils.make_grid(v[:, :1, size // 2].detach().float().cpu())
+                    experiment.add_image(f"{name}_{tag}", grid, global_step=self.current_epoch)
+        return total
 
     def resolve_batch(self, batch):
         return batch["input_data"] #[tio.DATA] Seems to be not needed in newer versions
 
-    def forward(self, x):
+    def forward(self, x, apix=None):
+        if self.is_ssl_v2():
+            return self._forward_v2(x, apix)
         out, hid = self.model(x)
         rotp = self.rotation_head(hid)
         contrp = self.contrastive_head(hid)
@@ -86,6 +221,8 @@ class SelfSupervisedModel(BaseModel):
         return loss, losses_tasks, (x, x1, x2), (contrastive1_p, contrastive2_p), imgs_recon
 
     def training_step(self, batch, batch_idx):
+        if self.is_ssl_v2():
+            return self._log_v2("", batch, batch_idx)
         loss, losses_tasks, (x, x1, x2), (contrastive1_p, contrastive2_p), imgs_recon = self._step(batch, batch_idx) #if on_step=True, reconsider sync_dist
         self.log('loss', loss, on_step=False, on_epoch=True, prog_bar=True, sync_dist=True, batch_size=x.shape[0])
         self.log('loss_rot', losses_tasks[0], on_step=False, on_epoch=True, prog_bar=True, sync_dist=True,
@@ -113,6 +250,8 @@ class SelfSupervisedModel(BaseModel):
         return loss
 
     def validation_step(self, batch, batch_idx):
+        if self.is_ssl_v2():
+            return self._log_v2("val_", batch, batch_idx)
 
         loss, losses_tasks, (x, x1, x2), (contrastive1_p, contrastive2_p), imgs_recon = self._step(batch, batch_idx)
         self.log('val_loss', loss, on_step=False, on_epoch=True, prog_bar=True, sync_dist=True, batch_size=x.shape[0])
@@ -152,6 +291,21 @@ class SelfSupervisedModel(BaseModel):
         y_hat = self(x)
         return y_hat
 
+
+
+def _scale_gradient(x: torch.Tensor, scale: float) -> torch.Tensor:
+    """Identity forward; the gradient flowing back into ``x`` is multiplied by ``scale``.
+
+    SSL v2 uses it for the dense contrastive task (``train.ssl.dense_grad_scale``, default 0):
+    with the full gradient, dense instance discrimination between two views that share the
+    source noise drives ``decoder2`` towards instance-specific noise codes and destroys the
+    species separation (Gate 5 report); with 0 the dense head learns on the reconstruction
+    features and the network is shaped by the other tasks."""
+    if scale == 1.0:
+        return x
+    if scale == 0.0:
+        return x.detach()
+    return x.detach() + scale * (x - x.detach())
 
 
 def patch_rand_drop(x, x_rep=None, max_drop=0.3, max_block_sz=0.25, tolr=0.05):

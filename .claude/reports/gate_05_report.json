@@ -1,0 +1,87 @@
+{
+  "gate_id": 5,
+  "agent_name": "05_AGENT_SSL",
+  "status": "READY_FOR_REVIEW",
+  "base_ref": "v2-gate-3c-passed",
+  "files_created": [
+    "benchmarks/ssl_common.py",
+    "benchmarks/ssl_finetune.py",
+    "benchmarks/ssl_probe.py",
+    "tomocpt/dataManager/ssl_views.py",
+    "tomocpt/defaultConfigs/ssl_config.py",
+    "tomocpt/networks/ssl/__init__.py",
+    "tomocpt/networks/ssl/heads.py",
+    "tomocpt/networks/ssl/losses.py",
+    "tomocpt/networks/ssl/views.py"
+  ],
+  "files_modified": [
+    "tomocpt/networks/selfSupervisedModel.py",
+    "tomocpt/training/helpers.py",
+    "tomocpt/training/run.py",
+    "tomocpt/defaultConfigs/train_config.py"
+  ],
+  "exported_symbols": {
+    "tomocpt.networks.ssl.views": [
+      "make_scale_pair",
+      "equalise_noise",
+      "wedge_preserving_augment",
+      "degrade",
+      "corresponding_points",
+      "make_training_pair"
+    ],
+    "tomocpt.networks.ssl.losses": [
+      "masked_l1",
+      "nt_xent",
+      "dense_info_nce"
+    ],
+    "tomocpt.networks.ssl.heads": [
+      "ProjectionHead",
+      "DenseProjectionHead",
+      "RelativeScaleHead"
+    ],
+    "tomocpt.dataManager.ssl_views": [
+      "make_ssl_source_chunks",
+      "ScalePairDataset",
+      "SSLPairData"
+    ],
+    "tomocpt.defaultConfigs.ssl_config": [
+      "SSLConfig"
+    ]
+  },
+  "config_fields_added": [
+    "train.ssl"
+  ],
+  "legacy_equivalence": {
+    "G5-C1 SSL v1 step vs v2-gate-0-base golden": {
+      "tolerance": "rtol 1e-5",
+      "passed": true
+    }
+  },
+  "metrics": {
+    "G5-C15 held-out log2 ratio MAE (seed 0)": 0.1034,
+    "G5-C15 constant-prediction baseline MAE": 0.3288
+  },
+  "pytest_fast": {
+    "command": "pytest tests -m 'not slow'",
+    "exit_code": 0,
+    "result": "587 passed, 27 skipped"
+  },
+  "pytest_slow": {
+    "command": "pytest tests/gate5 -m slow",
+    "exit_code": 0,
+    "ran": true,
+    "result": "3 passed in 24 min (run alongside the fast suite; budget 15 min)"
+  },
+  "benchmarks": {
+    "ssl_probe --tiny": "exit 0",
+    "ssl_finetune --tiny": "exit 0",
+    "full CZII": "not run (human decision)"
+  },
+  "known_limitations": [
+    "Implementer stopped at the usage limit; report written by the orchestrator from verified results.",
+    "Slow tests exceed the 15-min budget when run alongside the fast suite.",
+    "Throughput/memory v2 vs v1 not measured.",
+    "T5.1 has no direct pass criterion."
+  ],
+  "notes_for_next_agent": "Out-of-path changes granted as path exceptions (see gate_05_escalation.md). Full ssl_probe/ssl_finetune on CZII await a human decision (acceptance: macro F-beta gain >= 0.03 with 1-2 tomograms)."
+}

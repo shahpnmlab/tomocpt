@@ -2,7 +2,7 @@
   "base_ref": "v2-gate-0-base",
   "base_commit": "ce6f7b0ce856f19556266e7ad3143bfb66cdb7e2",
   "base_note": "first commit of branch v2-dev (released main + fix/v1-patches + plan); set by the orchestrator",
-  "current_gate": 5,
+  "current_gate": 6,
   "gpu_available": true,
   "gates": {
     "1": {
@@ -151,7 +151,7 @@
       "report_path": ".claude/reports/gate_04_report.json"
     },
     "5": {
-      "status": "TESTS_FROZEN",
+      "status": "PASSED",
       "agent": "05_AGENT_SSL",
       "attempts": 0,
       "test_hashes": {
@@ -171,14 +171,18 @@
         "tests/gate5/test_g5_wedge.py": "7d3f241982cf14e130a700e3ec6ec696de0d93ca5bd59168f5cb04869a82b4c8"
       },
       "path_exceptions": [
-        "tomocpt/training/helpers.py::self-supervised branches"
+        "tomocpt/defaultConfigs/train_config.py (TrainConfig.ssl)",
+        "tomocpt/training/run.py (SSL v2 data module branch)",
+        "tomocpt/training/helpers.py (SSL v2 helpers, SSL v2 -> picker transfer)",
+        "benchmarks/ssl_common.py"
       ],
       "notes": [
         "Orchestrator ruling (28 Oct 2026): G5-C3 for views uses a windowed wedge metric (power beyond 70 deg, kmin 0.1) because a plain 64^3 crop of perfectly wedged noise already measures 0.016-0.025 from edge leakage; the 0.02 limit is kept. C2 uses the plain metric.",
         "Orchestrator ruling: degrade() is the Fourier part of D only (C12 keeps mean/std); intensity a*x+b and Gaussian noise are applied in make_training_pair.",
         "Orchestrator ruling: C11 bitwise-clean target means the shared affine normalisation is computed from the clean view and degradation draws must not shift other random draws.",
         "C15-C17 thresholds are spec values, untried; T5.1 has no pass criterion (checked by C13/C14 and benchmarks).",
-        "User decision 28 Oct 2026: softmax class head to be planned as its own gate after Gate 5."
+        "User decision 28 Oct 2026: softmax class head to be planned as its own gate after Gate 5.",
+        "Gate 5 passed 28 Oct 2026: fast 587 passed/27 skipped; slow 3 passed (C15 MAE 0.103); tiny benchmarks ok. Full CZII benchmarks pending human decision. Pushed v2-dev and v2-* tags at user request."
       ],
       "report_path": ".claude/reports/gate_05_report.json"
     },

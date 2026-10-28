@@ -47,17 +47,25 @@ def train(config: DictConfig = None):
         return
 
     # 3. Set up data loaders
-    data = Data(
-        data_dir=config.chunks_dir,
-        return_labels=(config.mode == "picking"),
-        batch_size=config.batch_size,
-        workers_for_data=config.n_cpus_for_dataloading,
-        augmentation=config.augmentation,
-        pipeline_version=config.data_pipeline_version,
-        scale_cfg=config.scale,
-        chunk_sampling=config.chunk_sampling,
-        repeat_factor_threshold=config.repeat_factor_threshold,
-    )
+    ssl_cfg = getattr(config, "ssl", None)
+    if config.mode == "selfSupervised" and ssl_cfg is not None and int(ssl_cfg.version) == 2:
+        from tomocpt.dataManager.ssl_views import SSLPairData
+
+        data = SSLPairData(chunks_dir=config.chunks_dir, batch_size=config.batch_size,
+                           workers_for_data=config.n_cpus_for_dataloading, ssl_cfg=ssl_cfg,
+                           persistent_workers=config.use_gpus)
+    else:
+        data = Data(
+            data_dir=config.chunks_dir,
+            return_labels=(config.mode == "picking"),
+            batch_size=config.batch_size,
+            workers_for_data=config.n_cpus_for_dataloading,
+            augmentation=config.augmentation,
+            pipeline_version=config.data_pipeline_version,
+            scale_cfg=config.scale,
+            chunk_sampling=config.chunk_sampling,
+            repeat_factor_threshold=config.repeat_factor_threshold,
+        )
     data.setup()
 
     # 4. Set up callbacks

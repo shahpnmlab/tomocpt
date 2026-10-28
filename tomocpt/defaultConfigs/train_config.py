@@ -9,6 +9,7 @@ from omegaconf import MISSING
 from tomocpt.defaultConfigs.network_config import NetworkConfig
 from tomocpt.defaultConfigs.scale_config import ScaleConfig
 from tomocpt.defaultConfigs.particles_config import ParticlesConfig
+from tomocpt.defaultConfigs.ssl_config import SSLConfig
 
 
 class TrainingModes(str, Enum):
@@ -274,6 +275,9 @@ class TrainConfig:
     repeat_factor_threshold: Annotated[
         float, typer.Option(help="Threshold t of repeat-factor sampling: r_c = max(1, sqrt(t / f_c))")
     ] = 0.1
+    ssl: Annotated[
+        SSLConfig, typer.Option(help="Self-supervised pretraining settings (mode=selfSupervised)")
+    ] = field(default_factory=SSLConfig)
 
     # Distillation parameters
     use_distillation: Annotated[

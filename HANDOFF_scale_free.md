@@ -14,9 +14,11 @@ and `.claude/state/gate_status.json` (all on branch `v2-dev`). Nothing has been 
 | `v2-gate-4-passed` | fef5c48 | v2 predict (per-class files), calibration, benchmarks, README |
 | `v2-gate-3b-passed` | d190287 | cross-class negative weighting (`train.particles.cross_class_neg_weight`) |
 | `v2-gate-3c-passed` | b946416 | CLI config snapshot: checkpoint loads no longer leak into each other |
+| `v2-gate-5-passed` | (this commit) | SSL v2: wedge/scale-aware views, masked recon, global + dense contrastive, relative scale |
 
-Fast suite: 534 passed, 27 skipped (~3.5 min). Next gate: **5 (SSL v2)**, spec
-`.claude/agents/05_AGENT_SSL.md`, not started.
+Fast suite: 587 passed, 27 skipped (~4.5 min). Gate 5 passed; full CZII SSL benchmarks
+(`benchmarks/ssl_probe.py`, `ssl_finetune.py`) await a human decision. Next: softmax class head
+(own gate, to plan) or Gate 6 (filaments). v2-dev and v2-* tags are pushed to origin.
 
 Environment: `source /home/pranav/Desktop/pranav/software/miniconda3/etc/profile.d/conda.sh && conda activate tomocpt`
 (RTX A6000). The base worktree `../tomocpt-base` (detached at `v2-gate-0-base`) is used by the
