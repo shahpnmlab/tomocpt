@@ -199,10 +199,22 @@
       "status": "PENDING",
       "agent": "03c_AGENT_CONFIG_SNAPSHOT",
       "attempts": 0,
-      "test_hashes": {},
-      "path_exceptions": [],
+      "test_hashes": {
+        "tests/gate3c/README.md": "8ae0c3b30a0f1ee25f5c4b48c046a2f14cd35125442f43d2e55f99be13b5aac5",
+        "tests/gate3c/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "tests/gate3c/conftest.py": "d256a4bddc00d48abb5287c96a032ba8c76fc87a5312363b72f02a6cb9d957be",
+        "tests/gate3c/test_g3c_config_snapshot.py": "0831d01c4978c087dd77ba07e8785da97ea9817323c7af591942355b89af2ed1"
+      },
+      "path_exceptions": [
+        {
+          "path": "tomocpt/training/helpers.py",
+          "scope": "_effective_config uses the CLI snapshot like BaseModel.__init__",
+          "granted": "2026-10-28"
+        }
+      ],
       "notes": [
-        "Human decision 28 Oct 2026: fix the checkpoint-load config leak before Gate 5."
+        "Human decision 28 Oct 2026: fix the checkpoint-load config leak before Gate 5.",
+        "Orchestrator ruling: the CLI snapshot is scoped to the command (wrapper restores the previous state in finally); derived from 'earlier tests pass unchanged' (gate1 CLI test + gate3 checkpoint tests). Spec amended."
       ],
       "report_path": null
     }

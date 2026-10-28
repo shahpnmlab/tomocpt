@@ -15,13 +15,15 @@ changes alter an existing model's config (seen at Gate 3).
 ## Allowed write paths
 - `tomocpt/configManager/configManager.py` (the snapshot only)
 - `tomocpt/networks/baseModel.py` (`__init__` config handling only)
+- `tomocpt/training/helpers.py` (`_effective_config` only, path exception)
 - `.claude/reports/gate_03c_report.json`
 
 ## Tasks
 1. `configManager.py`: public functions `set_cli_snapshot(config)` (stores a deep copy),
    `get_cli_snapshot() -> Optional[MainConfig-like]` and `clear_cli_snapshot()`. The CLI command
    wrapper calls `set_cli_snapshot(mainConfig)` once, after YAML and CLI values are applied and
-   before the command function runs.
+   before the command function runs, and restores the previous snapshot state when the command
+   returns or raises (`try/finally`), so the snapshot never outlives the command.
 2. `BaseModel.__init__` with a checkpoint config uses `get_cli_snapshot()` as `configAfterCli`
    when a snapshot exists; without a snapshot it uses the live `mainConfig` (legacy behaviour,
    so library and test code that never went through the CLI is unchanged). The injection into
