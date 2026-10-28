@@ -153,3 +153,17 @@ Cross-class suppression (all tomograms):
 - 494 to 509 of about 540 false picks are in background, not on another class.
 - False picks have the same local contrast as true picks (for example beta-amylase -0.22 vs -0.23), and random points have about 0: most false picks sit on real densities.
 - Montage `experiments/figures/fp_montage_k0.png` (k = 0): the top beta-galactosidase false picks are compact, very dark round objects with a bright halo, unlike the elongated true picks; the thyroglobulin and beta-amylase false picks look like the true picks.
+
+### Conclusions (2026-10-28)
+
+- Lower peaks at k = 0.25 are mostly a calibration effect (mean AP unchanged), but the penalty
+  makes the network hedge on the small look-alike classes (beta-amylase, beta-galactosidase AP
+  about halved). Use k = 0 (at most 0.1) on CZII.
+- About 95 % of false picks are in background, on real densities with particle-like contrast,
+  not on another class. Cross-class confusion is minor and inference suppression handles it, so
+  loss reweighting (k, or adaptive boundary / uncertainty weighting) cannot remove them.
+- The top beta-galactosidase false picks look like gold fiducials or dense cores (unverified).
+- Recall at threshold 0.01 is only 0.52 (beta-galactosidase) and 0.70 (beta-amylase): a
+  sensitivity limit separate from the false picks.
+- Levers: check and mask fiducials, more labelled tomograms, SSL pretraining (Gate 5), and a
+  softmax class head (planned) to make classes mutually exclusive without tuning k.

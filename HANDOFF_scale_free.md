@@ -13,8 +13,9 @@ and `.claude/state/gate_status.json` (all on branch `v2-dev`). Nothing has been 
 | `v2-gate-3-passed` | 05641bf | multi-class heads, FiLM scale conditioning, v2 loss |
 | `v2-gate-4-passed` | fef5c48 | v2 predict (per-class files), calibration, benchmarks, README |
 | `v2-gate-3b-passed` | d190287 | cross-class negative weighting (`train.particles.cross_class_neg_weight`) |
+| `v2-gate-3c-passed` | b946416 | CLI config snapshot: checkpoint loads no longer leak into each other |
 
-Fast suite: 525 passed, 27 skipped (~3.5 min). Next gate: **5 (SSL v2)**, spec
+Fast suite: 534 passed, 27 skipped (~3.5 min). Next gate: **5 (SSL v2)**, spec
 `.claude/agents/05_AGENT_SSL.md`, not started.
 
 Environment: `source /home/pranav/Desktop/pranav/software/miniconda3/etc/profile.d/conda.sh && conda activate tomocpt`
@@ -38,6 +39,9 @@ golden generators; leave it.
 ## 4. Open items
 - Checkpoint-load config leak: fixed in Gate 3c (CLI snapshot).
 - README: document `cross_class_neg_weight` (Gate 3b had no README path).
+- **Softmax class head (planned, user request 28 Oct 2026):** classes + background mutually
+  exclusive per voxel, so cross-class behaviour needs no tuned `cross_class_neg_weight`. Plan it as
+  its own gate (spec + frozen tests) after Gate 5.
 - Full benchmarks (`benchmarks/czii_multiclass.py`, `synthetic_multisize.py`) not run, only `--tiny`.
 
 ## 5. CZII v2 results (k = 0)
@@ -54,5 +58,7 @@ Config `data/czii/v2_config.yaml`, model `data/czii/weights/tomocpt_v2/tomocpt/c
 | VLP | 1.00 | 0.85 | 0.86 |
 
 Cross-class confusion after suppression is small; the dominant error is background false picks
-(beta-amylase 275, thyroglobulin 133). Next experiment: retrain with
-`train.particles.cross_class_neg_weight: 0.25` and compare.
+(beta-amylase 275, thyroglobulin 133). k = 0.25 run: mean F4 0.60, mean AP 0.46 (same as k = 0);
+no cross-class double picks but small classes hedge. Use k = 0 (at most 0.1). About 95 % of false
+picks are background densities with particle-like contrast. Details and diagnostics:
+`experiments/czii_v2_results.md`, `experiments/diag_czii_v2.py`.
