@@ -151,14 +151,35 @@
       "report_path": ".claude/reports/gate_04_report.json"
     },
     "5": {
-      "status": "LOCKED",
+      "status": "TESTS_FROZEN",
       "agent": "05_AGENT_SSL",
       "attempts": 0,
-      "test_hashes": {},
+      "test_hashes": {
+        "tests/gate5/README.md": "58245eea2ab12393831fee4c79fc07bf2891ea3bd79ae263354c1548f7094997",
+        "tests/gate5/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "tests/gate5/conftest.py": "8de52758270135462b06e9e068198f879e9d4dff63f49d9ad2e32f35d43cb6be",
+        "tests/gate5/g5_c1_golden.json": "adfaf8e67a67d5145f382acdf494f79b8d3f8cbbd4987c13089cea50ece9a437",
+        "tests/gate5/g5_common.py": "fcc6642718c572ae2c454b95cd193af8512b91b62eaf386118d3808c9721e81d",
+        "tests/gate5/g5_helpers.py": "20a758ac7187bec56687471b9352bd575fc1bc544e4123132189d2f544f2ff94",
+        "tests/gate5/make_golden_g5_c1.py": "cd02e41c65124c2c7135782297e2732ccc715c25c43d9cf0ff823331be24cc7a",
+        "tests/gate5/test_g5_config.py": "9ff0d47d171d03dcad947cae8e37f9b3090cbaff92d41c064e49691ccbeb2c95",
+        "tests/gate5/test_g5_learning.py": "b448b9aa131978c1f3db7fd2debf1ffbee3b61af80e6c56384d5db5a924424db",
+        "tests/gate5/test_g5_losses_heads.py": "7135b0b398fb1a289c058e34dff1a85cf5036b343589bb303ac10a81620dd324",
+        "tests/gate5/test_g5_model.py": "58efaae4c8126152fcf1c3596f9bc218526dd8c6815e1699e768adc8e2061e2f",
+        "tests/gate5/test_g5_v1_lock.py": "e010c91d6907427c76a717b244a158d33f4c92dcd1d6349b484feccbbd2edd50",
+        "tests/gate5/test_g5_views.py": "641d8a7e6e574ebba918e1aac1a6023c411eb4ec2c716defa4de6c4383f32e64",
+        "tests/gate5/test_g5_wedge.py": "7d3f241982cf14e130a700e3ec6ec696de0d93ca5bd59168f5cb04869a82b4c8"
+      },
       "path_exceptions": [
         "tomocpt/training/helpers.py::self-supervised branches"
       ],
-      "notes": [],
+      "notes": [
+        "Orchestrator ruling (28 Oct 2026): G5-C3 for views uses a windowed wedge metric (power beyond 70 deg, kmin 0.1) because a plain 64^3 crop of perfectly wedged noise already measures 0.016-0.025 from edge leakage; the 0.02 limit is kept. C2 uses the plain metric.",
+        "Orchestrator ruling: degrade() is the Fourier part of D only (C12 keeps mean/std); intensity a*x+b and Gaussian noise are applied in make_training_pair.",
+        "Orchestrator ruling: C11 bitwise-clean target means the shared affine normalisation is computed from the clean view and degradation draws must not shift other random draws.",
+        "C15-C17 thresholds are spec values, untried; T5.1 has no pass criterion (checked by C13/C14 and benchmarks).",
+        "User decision 28 Oct 2026: softmax class head to be planned as its own gate after Gate 5."
+      ],
       "report_path": ".claude/reports/gate_05_report.json"
     },
     "6": {
