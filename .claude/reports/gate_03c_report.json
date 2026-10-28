@@ -1,0 +1,18 @@
+{
+  "gate": "3c",
+  "agent": "orchestrator (direct implementation)",
+  "status": "PASSED",
+  "files_changed": [
+    "tomocpt/configManager/configManager.py",
+    "tomocpt/networks/baseModel.py",
+    "tomocpt/training/helpers.py"
+  ],
+  "tests": {
+    "fast": "534 passed, 27 skipped"
+  },
+  "notes_for_next_gate": [
+    "Checkpoint loads inside a CLI command compare against get_cli_snapshot() (YAML+CLI config, scoped to the command); outside the CLI they use the live mainConfig as before.",
+    "BaseModel(config=None) now deep-copies mainConfig.",
+    "Benchmarks' save/restore workaround in benchmarks/common.py is now redundant for CLI runs but harmless."
+  ]
+}

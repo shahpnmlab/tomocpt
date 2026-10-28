@@ -36,9 +36,7 @@ golden generators; leave it.
 - CZII diameters: public values `1:130,2:180,3:260,4:300,5:120,6:270` Å.
 
 ## 4. Open items
-- Legacy defect outside Gate 4 paths: loading a checkpoint writes its train settings into the
-  global `mainConfig.train`; a second load in one process can fail strict load (predict is
-  unaffected). Needs a human-approved fix in `networks/baseModel.py`.
+- Checkpoint-load config leak: fixed in Gate 3c (CLI snapshot).
 - README: document `cross_class_neg_weight` (Gate 3b had no README path).
 - Full benchmarks (`benchmarks/czii_multiclass.py`, `synthetic_multisize.py`) not run, only `--tiny`.
 

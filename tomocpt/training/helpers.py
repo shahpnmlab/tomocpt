@@ -26,6 +26,7 @@ from tomocpt.training.callbacks import LRVerificationCallback
 from tomocpt.logger import get_logger
 from tomocpt.mainConfig import mainConfig, _mainConfigNoChanges
 from tomocpt.configManager.configManager import (
+    get_cli_snapshot,
     backfill_missing_fields,
     safe_getattr,
     update_config_with_changed_values,
@@ -172,7 +173,8 @@ def _effective_config(checkpoint_config):
     """The config a model loaded from this checkpoint gets: the checkpoint's config with the
     values changed on the command line applied (as ``BaseModel.__init__`` does)."""
     return update_config_with_changed_values(
-        target=checkpoint_config, originaConfig=_mainConfigNoChanges, configAfterCli=mainConfig
+        target=checkpoint_config, originaConfig=_mainConfigNoChanges,
+        configAfterCli=get_cli_snapshot() or mainConfig,
     )
 
 

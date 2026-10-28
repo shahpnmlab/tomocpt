@@ -489,7 +489,15 @@ class ConfigurableApp:
                 if "config" in original_sig.parameters:
                     func_kwargs["config"] = config
 
-                return func(*args, **func_kwargs)
+                # Checkpoint loads compare against this snapshot of the YAML+CLI config, not the
+                # live global that each load updates (Gate 3c). Scoped to the command.
+                previous_snapshot = get_cli_snapshot()
+                if mainConfig is not None:
+                    set_cli_snapshot(mainConfig)
+                try:
+                    return func(*args, **func_kwargs)
+                finally:
+                    _restore_cli_snapshot(previous_snapshot)
 
             wrapped.__signature__ = inspect.Signature(
                 parameters=[*required_params, *optional_params]
@@ -584,6 +592,29 @@ def merge_config(yaml_config: DictConfig, config: Any) -> Tuple[Any, Dict]:
 
 
 _ABSENT = object()
+
+_cli_snapshot: Optional[Any] = None
+
+
+def set_cli_snapshot(config: Any) -> None:
+    """Store a deep copy of the config as set by YAML and the command line (Gate 3c)."""
+    global _cli_snapshot
+    _cli_snapshot = copy.deepcopy(config)
+
+
+def get_cli_snapshot() -> Optional[Any]:
+    """The config as set by YAML and the command line, or ``None`` outside a CLI command."""
+    return _cli_snapshot
+
+
+def clear_cli_snapshot() -> None:
+    global _cli_snapshot
+    _cli_snapshot = None
+
+
+def _restore_cli_snapshot(snapshot: Optional[Any]) -> None:
+    global _cli_snapshot
+    _cli_snapshot = snapshot
 
 
 def safe_getattr(obj: Any, name: str, default: Any = None) -> Any:
