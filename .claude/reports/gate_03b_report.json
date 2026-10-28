@@ -1,0 +1,20 @@
+{
+  "gate": "3b",
+  "agent": "orchestrator (direct implementation, user asked to limit agents)",
+  "status": "PASSED",
+  "files_changed": [
+    "tomocpt/training/multiclass_loss.py",
+    "tomocpt/networks/pickingModel.py",
+    "tomocpt/defaultConfigs/particles_config.py"
+  ],
+  "tests": {
+    "fast": "525 passed, 27 skipped",
+    "gate3b_slow": "1 passed (TOMOCPT_G3B_SKIP_K0=1, recorded k=0 numbers)"
+  },
+  "recommended_k": 0.25,
+  "notes_for_next_gate": [
+    "train.particles.cross_class_neg_weight (k), default 0.0 = Gate 3 loss bit-identical. CZII start 0.25.",
+    "Per-class val_loss_<name> is computed per channel, so k has no effect there (o=0 with one channel).",
+    "CZII v2 baseline (k=0, best epoch 17, val tomos TS_5_4/TS_69_2) F4: amylase 0.34, b-gal 0.47, thyroglobulin 0.69, ribosome 0.72, ferritin 0.63, VLP 0.86. Dominant error is background false picks (amylase 275 FP), not cross-class confusion."
+  ]
+}

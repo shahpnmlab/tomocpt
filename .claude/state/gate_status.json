@@ -2,7 +2,7 @@
   "base_ref": "v2-gate-0-base",
   "base_commit": "ce6f7b0ce856f19556266e7ad3143bfb66cdb7e2",
   "base_note": "first commit of branch v2-dev (released main + fix/v1-patches + plan); set by the orchestrator",
-  "current_gate": "3b",
+  "current_gate": 5,
   "gpu_available": true,
   "gates": {
     "1": {
@@ -171,9 +171,9 @@
       "report_path": ".claude/reports/gate_06_report.json"
     },
     "3b": {
-      "status": "PENDING",
+      "status": "PASSED",
       "agent": "03b_AGENT_CROSS_CLASS_NEG",
-      "attempts": 0,
+      "attempts": 1,
       "test_hashes": {
         "tests/gate3b/README.md": "98181100ee54ee5a0a0e332b5b67eaac77f8c8ca79b5acbd8635f63dbca0d956",
         "tests/gate3b/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
@@ -190,9 +190,10 @@
       "notes": [
         "Human decision 27 Oct 2026: add cross-class negative weighting (CZII channels of similar species fire together); side gate before Gate 5. Softmax class head deferred.",
         "TA calibration: k=0.25 and 1.0 both pass C13 seeds 0-2 (cross-pick 0); k=0 seed 1 fails. K_RECOMMENDED=0.25; CZII start 0.25.",
-        "C5 caveat: if k=0 seed 1 passes by chance, the 'lower cross-pick' assertion fails (known)."
+        "C5 caveat: if k=0 seed 1 passes by chance, the 'lower cross-pick' assertion fails (known).",
+        "Verification 28 Oct 2026: fast 525 passed/27 skipped; gate3b slow passed (skip-k0 mode). Implemented directly by the orchestrator at the user's request to limit agents."
       ],
-      "report_path": null
+      "report_path": ".claude/reports/gate_03b_report.json"
     }
   }
 }

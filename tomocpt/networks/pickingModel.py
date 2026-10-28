@@ -154,6 +154,8 @@ class BasePickingModel(BaseModel):
         return multiclass_picking_loss(
             y_pred, y, batch["class_available"], batch["class_d_vox"],
             class_weights=self._class_weights(), checkpoint=use_checkpoint,
+            cross_class_neg_weight=float(safe_getattr(particles, "cross_class_neg_weight", 0.0))
+            if particles is not None else 0.0,
         )
 
     def training_step(self, batch, batch_idx):

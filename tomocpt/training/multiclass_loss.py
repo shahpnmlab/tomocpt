@@ -27,6 +27,16 @@ def _hessian_term(y_pred_c: torch.Tensor, y_true_c: torch.Tensor, scale: torch.T
     return h.flatten(1).mean(1)
 
 
+def _other_class_target(y_true: torch.Tensor, available: torch.Tensor) -> torch.Tensor:
+    """``o[b, c] = max over available classes d != c of y_true[b, d]`` (0 if there is none)."""
+    B, C = available.shape
+    masked = torch.where(available.view(B, C, 1, 1, 1), y_true, torch.zeros_like(y_true))
+    top2, idx = masked.topk(2, dim=1)  # [B, 2, D, H, W]
+    channel = torch.arange(C, device=y_true.device).view(1, C, 1, 1, 1)
+    # the largest target of the other classes: the top value unless channel c holds it
+    return torch.where(idx[:, :1] == channel, top2[:, 1:2], top2[:, :1])
+
+
 def multiclass_picking_loss(
     y_pred: torch.Tensor,
     y_true: torch.Tensor,
@@ -34,6 +44,7 @@ def multiclass_picking_loss(
     class_d_vox: torch.Tensor,
     class_weights: Optional[Union[torch.Tensor, Sequence[float]]] = None,
     checkpoint: bool = True,
+    cross_class_neg_weight: float = 0.0,
 ) -> torch.Tensor:
     """Pipeline-v2 picking loss.
 
@@ -44,6 +55,9 @@ def multiclass_picking_loss(
         class_d_vox: ``[B, C]`` class diameter in working voxels (Hessian scale).
         class_weights: optional, one weight per channel; multiplies each class's term.
         checkpoint: run the Hessian term one class at a time under gradient checkpointing.
+        cross_class_neg_weight: ``k`` of Gate 3b. A voxel outside class c but inside another
+            available class d gets the negative weight ``2·w_neg + k·w_pos·o`` in channel c,
+            where ``o`` is the largest soft target of the other available classes. 0 = off.
 
     Returns the mean over available ``(b, c)`` pairs (0 if none is available). Every output
     channel is part of the graph, so DDP sees a gradient (possibly zero) for every parameter.
@@ -57,7 +71,10 @@ def multiclass_picking_loss(
     s = y_true.flatten(2).sum(2)  # [B, C], sum of soft labels
     w_pos = (n_vox / (s + 1)).view(B, C, 1, 1, 1)
     w_neg = (n_vox / (n_vox - s + 1)).view(B, C, 1, 1, 1)
-    w = torch.where(y_true > 0, w_pos, 2 * w_neg)
+    neg = 2 * w_neg
+    if cross_class_neg_weight and C > 1:
+        neg = neg + cross_class_neg_weight * w_pos * _other_class_target(y_true, available)
+    w = torch.where(y_true > 0, w_pos, neg)
     value_term = (w * nn.functional.huber_loss(y_pred, y_true, reduction="none")).flatten(2).mean(2)
 
     scale = (class_d_vox.to(device=y_pred.device, dtype=y_pred.dtype).view(B, C) / HESSIAN_REFERENCE_D_VOX) ** 2
