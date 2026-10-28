@@ -127,3 +127,29 @@ Cross-class suppression (all tomograms):
 - Calibrated thresholds fall for every class (beta-galactosidase 0.05, ribosome 0.10): peaks are
   lower. beta-galactosidase, which overlapped most with thyroglobulin, loses most.
 - k = 0.25 stopped after 35 epochs (best = last epoch, 34); k = 0 had its best at epoch 17 of 34.
+
+## Threshold-free diagnostics, k = 0 vs k = 0.25 (2026-10-28)
+
+`experiments/diag_czii_v2.py`, from the saved per-class maps (peaks at threshold 0.01, cross-class suppression on). AP = average precision; best F4 over all thresholds. False picks (FP) at the calibrated threshold are classed as: within one radius of another class's true particle, within 2 radii of a found particle of the same class (duplicate), within 2 radii of the border, else background. Contrast = mean of the central cube minus the surrounding shell, in normalised units (median over picks; 200 random points per class and tomogram as reference).
+
+| run | class | AP | best F4 | at threshold | calibrated | recall at 0.01 | FP on other class | FP duplicate | FP border | FP background | contrast TP / FP / random |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| k=0 | beta-amylase | 0.13 | 0.37 | 0.47 | 0.45 | 0.70 | 6 | 3 | 0 | 284 | -0.23 / -0.22 / -0.00 |
+| k=0 | beta-galactosidase | 0.13 | 0.47 | 0.47 | 0.45 | 0.52 | 6 | 0 | 1 | 57 | -0.22 / -0.20 / -0.00 |
+| k=0 | thyroglobulin | 0.43 | 0.68 | 0.30 | 0.35 | 0.78 | 8 | 1 | 0 | 114 | -0.11 / -0.11 / +0.00 |
+| k=0 | ribosome | 0.67 | 0.72 | 0.37 | 0.35 | 0.72 | 0 | 3 | 0 | 18 | -0.18 / -0.13 / +0.00 |
+| k=0 | apo-ferritin | 0.57 | 0.67 | 0.51 | 0.50 | 0.70 | 0 | 2 | 1 | 36 | +0.10 / +0.04 / +0.01 |
+| k=0 | virus-like-particle | 0.85 | 0.86 | 0.62 | 0.60 | 0.85 | 0 | 0 | 0 | 0 | -0.04 / n/a / +0.00 |
+| k=0.25 | beta-amylase | 0.07 | 0.38 | 0.30 | 0.30 | 0.65 | 0 | 1 | 1 | 164 | -0.21 / -0.20 / -0.00 |
+| k=0.25 | beta-galactosidase | 0.08 | 0.32 | 0.06 | 0.05 | 0.44 | 3 | 5 | 0 | 128 | -0.18 / -0.07 / -0.00 |
+| k=0.25 | thyroglobulin | 0.45 | 0.70 | 0.27 | 0.25 | 0.83 | 5 | 1 | 0 | 114 | -0.12 / -0.10 / +0.00 |
+| k=0.25 | ribosome | 0.66 | 0.70 | 0.13 | 0.10 | 0.72 | 1 | 3 | 1 | 41 | -0.18 / -0.13 / +0.00 |
+| k=0.25 | apo-ferritin | 0.65 | 0.74 | 0.33 | 0.30 | 0.75 | 0 | 5 | 1 | 47 | +0.10 / +0.07 / +0.01 |
+| k=0.25 | virus-like-particle | 0.85 | 0.86 | 0.55 | 0.50 | 0.85 | 0 | 0 | 0 | 0 | -0.05 / n/a / +0.00 |
+| k=0 | **mean** | **0.46** | **0.63** | | | | 20 | 9 | 2 | 509 | |
+| k=0.25 | **mean** | **0.46** | **0.61** | | | | 9 | 15 | 3 | 494 | |
+
+- Ranking quality is unchanged on average (mean AP 0.46 for both). k = 0.25 lowers AP for beta-amylase (0.13 to 0.07) and beta-galactosidase (0.13 to 0.08) and raises it for apo-ferritin (0.57 to 0.65).
+- 494 to 509 of about 540 false picks are in background, not on another class.
+- False picks have the same local contrast as true picks (for example beta-amylase -0.22 vs -0.23), and random points have about 0: most false picks sit on real densities.
+- Montage `experiments/figures/fp_montage_k0.png` (k = 0): the top beta-galactosidase false picks are compact, very dark round objects with a bright halo, unlike the elongated true picks; the thyroglobulin and beta-amylase false picks look like the true picks.
