@@ -115,7 +115,7 @@ def main():
            "- calibrated thresholds: " + ", ".join(
                f"{NAMES.get(c, c)} {v['threshold']}" for c, v in calib.items()), "",
            *scalars(run_dir), "", *rows, "", *cm, "", "Cross-class suppression (all tomograms):", "",
-           *[f"- {s}" for s in supp], ""]
+           *([f"- {s}" for s in supp] or ["- none logged"]), ""]
     text = "\n".join(out)
     print(text)
     if not LOG.exists():

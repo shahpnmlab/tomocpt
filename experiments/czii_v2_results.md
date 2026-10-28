@@ -67,3 +67,63 @@ same-size class picked in the other's channel.
 | 1.0 | min F1 0.97 | all F1 1.0 | all F1 1.0 | 0.0 |
 
 Recommended k = 0.25.
+
+## Cross-class negative weighting, k = 0.25 (2026-10-28 13:53)
+
+- run: `/home/pranav/Desktop/pranav/software/tomocpt/data/czii/weights/cross_class`; best epoch 34; cross_class_neg_weight = 0.25
+- validation tomograms: TS_5_4, TS_69_2 (used for early stopping and calibration)
+- calibrated thresholds: beta-amylase 0.3, beta-galactosidase 0.05, thyroglobulin 0.25, ribosome 0.1, apo-ferritin 0.3, virus-like-particle 0.5
+
+| scalar | n | first | min | last |
+|---|---|---|---|---|
+| val_loss | 35 | 0.2298 | 0.01395 | 0.01395 |
+| val_loss_apo-ferritin | 35 | 0.1318 | 0.008236 | 0.008627 |
+| val_loss_beta-amylase | 35 | 0.08313 | 0.007971 | 0.007988 |
+| val_loss_beta-galactosidase | 35 | 0.1191 | 0.01163 | 0.01258 |
+| val_loss_ribosome | 35 | 0.1945 | 0.01637 | 0.01637 |
+| val_loss_smooth | 35 | 13.18 | 0.01516 | 0.0153 |
+| val_loss_thyroglobulin | 35 | 0.3091 | 0.02117 | 0.02117 |
+| val_loss_virus-like-particle | 35 | 0.08954 | 0.003483 | 0.003494 |
+
+| class | TP | FP | FN | P | R | F1 | F4 |
+|---|---|---|---|---|---|---|---|
+| beta-amylase | 10 | 142 | 10 | 0.07 | 0.50 | 0.12 | 0.36 |
+| beta-galactosidase | 9 | 157 | 16 | 0.05 | 0.36 | 0.09 | 0.27 |
+| thyroglobulin | 48 | 126 | 15 | 0.28 | 0.76 | 0.41 | 0.69 |
+| ribosome | 48 | 46 | 20 | 0.51 | 0.71 | 0.59 | 0.69 |
+| apo-ferritin | 61 | 46 | 20 | 0.57 | 0.75 | 0.65 | 0.74 |
+| virus-like-particle | 17 | 0 | 3 | 1.00 | 0.85 | 0.92 | 0.86 |
+| **mean** | | | | | | | **0.60** |
+
+| true \ picked | amy | gal | thy | ribo | ferr | vlp | none |
+|---|---|---|---|---|---|---|---|
+| amy | 10 | 1 | 0 | 0 | 0 | 0 | 9 |
+| gal | 0 | 9 | 1 | 0 | 0 | 0 | 15 |
+| thy | 0 | 0 | 48 | 0 | 0 | 0 | 15 |
+| ribo | 0 | 0 | 0 | 48 | 0 | 0 | 20 |
+| ferr | 0 | 0 | 0 | 0 | 61 | 0 | 20 |
+| vlp | 0 | 0 | 0 | 0 | 0 | 17 | 3 |
+
+Cross-class suppression (all tomograms):
+
+- none logged (no peak of one class fell next to a peak of another)
+
+## Comparison: k = 0.25 vs k = 0 (2026-10-28)
+
+| class | n true | F4 k=0 | F4 k=0.25 | FP k=0 | FP k=0.25 | threshold k=0 | threshold k=0.25 |
+|---|---|---|---|---|---|---|---|
+| beta-amylase | 20 | 0.34 | 0.36 | 275 | 142 | 0.45 | 0.30 |
+| beta-galactosidase | 25 | 0.47 | 0.27 | 62 | 157 | 0.45 | 0.05 |
+| thyroglobulin | 63 | 0.69 | 0.69 | 133 | 126 | 0.35 | 0.25 |
+| ribosome | 68 | 0.72 | 0.69 | 22 | 46 | 0.35 | 0.10 |
+| apo-ferritin | 81 | 0.63 | 0.74 | 29 | 46 | 0.50 | 0.30 |
+| virus-like-particle | 20 | 0.86 | 0.86 | 0 | 0 | 0.60 | 0.50 |
+| **mean** | | **0.62** | **0.60** | 521 | 517 | | |
+
+- Cross-class suppression removed 337 peaks at k = 0 and none at k = 0.25: the loss term
+  stops two classes firing on one particle, as it did on synthetic data.
+- Overall F4 is unchanged within noise (two validation tomograms, 20-81 particles per class).
+  Background false picks, the main error at k = 0, are not reduced in total.
+- Calibrated thresholds fall for every class (beta-galactosidase 0.05, ribosome 0.10): peaks are
+  lower. beta-galactosidase, which overlapped most with thyroglobulin, loses most.
+- k = 0.25 stopped after 35 epochs (best = last epoch, 34); k = 0 had its best at epoch 17 of 34.
