@@ -2,7 +2,7 @@
   "base_ref": "v2-gate-0-base",
   "base_commit": "ce6f7b0ce856f19556266e7ad3143bfb66cdb7e2",
   "base_note": "first commit of branch v2-dev (released main + fix/v1-patches + plan); set by the orchestrator",
-  "current_gate": 5,
+  "current_gate": "3c",
   "gpu_available": true,
   "gates": {
     "1": {
@@ -194,6 +194,17 @@
         "Verification 28 Oct 2026: fast 525 passed/27 skipped; gate3b slow passed (skip-k0 mode). Implemented directly by the orchestrator at the user's request to limit agents."
       ],
       "report_path": ".claude/reports/gate_03b_report.json"
+    },
+    "3c": {
+      "status": "PENDING",
+      "agent": "03c_AGENT_CONFIG_SNAPSHOT",
+      "attempts": 0,
+      "test_hashes": {},
+      "path_exceptions": [],
+      "notes": [
+        "Human decision 28 Oct 2026: fix the checkpoint-load config leak before Gate 5."
+      ],
+      "report_path": null
     }
   }
 }
