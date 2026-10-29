@@ -243,6 +243,22 @@
         "Verification 28 Oct 2026: fast 534 passed/27 skipped."
       ],
       "report_path": ".claude/reports/gate_03c_report.json"
+    },
+    "3d": {
+      "status": "TESTS_FROZEN",
+      "attempts": 0,
+      "test_hashes": {
+        "tests/gate3d/README.md": "9df68dc8ac0b6274173db5902837cd652cd3944601913c68dbc740f26f3753ee",
+        "tests/gate3d/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "tests/gate3d/conftest.py": "72a4c588163d837c45ddb0d368a8623d69dad35c3513f49c2ed92a095ef4b85d",
+        "tests/gate3d/test_g3d_learning.py": "dd6a7b058cabfe1b4132e9825e4a946ef569088d006230eda06e4000ebe2ca0f",
+        "tests/gate3d/test_g3d_model.py": "f9b997b801de60ad271d7ba3454fa626b615afa015c6cc582fac2eac34194f26",
+        "tests/gate3d/test_g3d_probs.py": "874bdb8b0d27750f944e070371c2f4dc52054e7518e5df71394ee66951692834"
+      },
+      "notes": [
+        "User decision 29 Oct 2026: implement softmax class head (implicit background) to avoid tuning cross_class_neg_weight.",
+        "Orchestrator ruling: G3d-C2 strict (0,1) and sum<1 are checked on moderate logits; at +-80 finite, [0,1], sum<=1+1e-6 (float32 rounds exp(80)/(1+exp(80)) to 1)."
+      ]
     }
   }
 }
