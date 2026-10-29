@@ -263,6 +263,23 @@
       "path_exceptions": [
         "benchmarks/common.py, benchmarks/ssl_finetune.py (class_head option for the SSL benchmark, user request)"
       ]
+    },
+    "4b": {
+      "status": "TESTS_FROZEN",
+      "attempts": 0,
+      "test_hashes": {
+        "tests/gate4b/README.md": "7948b5fac61da64bd9705f2305144b080ac58fe8ec01403f82ca8328f5a757f7",
+        "tests/gate4b/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "tests/gate4b/conftest.py": "7994565967a8d7ce1b199c1053b37bdbf4f27ab194ee85c2f1e28e4a331a50a9",
+        "tests/gate4b/g4b_helpers.py": "c15b5a97b11bcd73d034d25668ffb783121d5b94ea14c7181bee2d585116dc03",
+        "tests/gate4b/test_g4b_ensemble.py": "e22ee4bbcf156c83dbe62f5913e2d672a4ece0d1da8252cdf9b21adfc6d9bf9a",
+        "tests/gate4b/test_g4b_folds.py": "2db9ee052c94e35c6ea96cc0a87a936f4c904cedb1a0db0b6947785ccd477eb1",
+        "tests/gate4b/test_g4b_learning.py": "147e97cd4688412e2828b998338caebe3b4696941f0ce32fd37a1d4ebc9c8f8b"
+      },
+      "notes": [
+        "User decision 29 Oct 2026: k-fold training, out-of-fold calibration and fold ensemble.",
+        "Orchestrator ruling: fold members load through InferenceModel.load_from_checkpoint; EnsembleModel(members) constructor; load_ensemble(path) returns an EnsembleModel."
+      ]
     }
   }
 }
