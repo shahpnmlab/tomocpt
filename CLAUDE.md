@@ -350,6 +350,7 @@ time (gradient checkpointing). Pipeline v1 uses Section 1.5 unchanged.
 | `train.network.scale_conditioning` | bool = `False` | 3 |
 | `train.particles` | `ParticlesConfig` (`defaultConfigs/particles_config.py`) | 3 |
 | `train.particles.cross_class_neg_weight` | float = `0.0` (off) | 3b |
+| `train.particles.class_head` | `sigmoid` \| `softmax` = `sigmoid` | 3d |
 | `infer.apix_override` | Optional[float] = `None` | 4 |
 | `infer.classes` | Optional[str] = `None` (subset of class names) | 4 |
 | `infer.cross_class_nms` | bool = `True` | 4 |
@@ -373,6 +374,7 @@ Field details are in each gate spec. A gate may add fields only to the files it 
 | 3 | `03_AGENT_MULTICLASS_PICKER.md` | Multi-class heads, FiLM on voxel size, v2 loss | `tomocpt/networks/{swinunetr,conditioning,pickingModel,distillationModel,inference,baseModel}.py`, `tomocpt/training/**` (except `_prepare_data_if_needed`), `tomocpt/defaultConfigs/{network_config,particles_config}.py` |
 | 3b | `03b_AGENT_CROSS_CLASS_NEG.md` | Cross-class negative weighting in the v2 loss (human decision, 27 Oct 2026) | `tomocpt/training/multiclass_loss.py`, `tomocpt/networks/pickingModel.py` (passing the value only), `tomocpt/defaultConfigs/particles_config.py` |
 | 3c | `03c_AGENT_CONFIG_SNAPSHOT.md` | CLI config snapshot so checkpoint loads do not leak into each other (human decision, 28 Oct 2026) | `tomocpt/configManager/configManager.py` (snapshot only), `tomocpt/networks/baseModel.py` (`__init__` config handling only) |
+| 3d | `03d_AGENT_SOFTMAX_HEAD.md` | Softmax class head with implicit background (human decision, 29 Oct 2026) | `tomocpt/training/multiclass_loss.py`, `tomocpt/networks/pickingModel.py`, `tomocpt/defaultConfigs/particles_config.py`, `tomocpt/predict/multiclass.py` (passing the level's classes only) |
 | 4 | `04_AGENT_INFER_BENCHMARK.md` | v2 inference with levels, per-class outputs, benchmarks | `tomocpt/predict/**`, `tomocpt/defaultConfigs/infer_config.py`, `tomocpt/training/run.py` (post-fit calibration call only), `benchmarks/**`, `README.md` |
 | 5 | `05_AGENT_SSL.md` | Wedge-aware, scale-aware SSL v2 with dense embeddings | `tomocpt/networks/selfSupervisedModel.py`, `tomocpt/networks/ssl/**`, `tomocpt/dataManager/ssl_views.py`, `tomocpt/defaultConfigs/ssl_config.py`, `tomocpt/training/helpers.py` (self-supervised branches only), `benchmarks/ssl_*.py` |
 | 6 | `06_AGENT_FILAMENTS.md` | Microtubules: mask → centrelines, tube targets, tracing, output | `tomocpt/labels/**`, `tomocpt/dataManager/**`, `tomocpt/predict/**`, `tomocpt/defaultConfigs/{prepdata_config,infer_config}.py`, `scripts/download_portal_data.py`, `benchmarks/filaments.py`, `README.md` |
