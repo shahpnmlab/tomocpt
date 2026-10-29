@@ -1,12 +1,15 @@
 #!/usr/bin/env bash
-# Gate 5 CZII benchmarks end to end: SSL pretraining (v2 and v1), picker fine-tuning from
+# All CZII benchmarks in one run, one after the other on the GPU:
+#   cv  (Gate 4b) k-fold training of the picker, out-of-fold calibration, fold ensemble and the
+#       cross-validated F4 (experiments/run_cv.sh, output in $OUT/cv);
+#   ssl (Gate 5) SSL pretraining (v2 and v1), picker fine-tuning from
 # scratch / SSL v2 / SSL v1 with 1, 2 and all training tomograms, inference and scoring on the
 # held-out tomograms, then the dense-embedding probe. Results are appended to
 # experiments/czii_v2_results.md.
 #
 # Usage (from anywhere):
-#   nohup experiments/run_ssl_benchmarks.sh > ssl_bench.log 2>&1 &
-#   TINY=1 experiments/run_ssl_benchmarks.sh          # smoke run on phantoms (minutes)
+#   nohup experiments/run_benchmarks.sh > ssl_bench.log 2>&1 &
+#   TINY=1 experiments/run_benchmarks.sh          # smoke run on phantoms (minutes)
 #
 # Settings (environment variables, defaults in brackets):
 #   OUT [benchmarks/out/czii_ssl_<date>]  reuse an OUT to resume: finished steps are skipped
@@ -16,6 +19,7 @@
 #   BATCH_SIZE [8]  TEST_TOMOS [TS_5_4,TS_69_2]  SSL_V1_CLASS [4 = ribosome]
 #   CLASS_HEAD [softmax] picker class head (sigmoid | softmax, Gate 3d)
 #   SSL_V2_CKPT, SSL_V1_CKPT  existing SSL checkpoints (skip pretraining)
+#   STEPS [cv,ssl]  which benchmarks to run, in this order   CV_FOLDS [5]
 set -euo pipefail
 
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -24,7 +28,7 @@ source /home/pranav/Desktop/pranav/software/miniconda3/etc/profile.d/conda.sh
 conda activate tomocpt
 
 CZII="$REPO/data/czii"
-OUT="${OUT:-$REPO/benchmarks/out/czii_ssl_$(date +%Y%m%d_%H%M)}"
+OUT="${OUT:-$REPO/benchmarks/out/czii_bench_$(date +%Y%m%d_%H%M)}"
 EPOCHS="${EPOCHS:-60}"
 SSL_V1_EPOCHS="${SSL_V1_EPOCHS:-30}"
 SSL_V2_EPOCHS="${SSL_V2_EPOCHS:-90}"
@@ -35,6 +39,8 @@ BATCH_SIZE="${BATCH_SIZE:-8}"
 TEST_TOMOS="${TEST_TOMOS:-TS_5_4,TS_69_2}"
 SSL_V1_CLASS="${SSL_V1_CLASS:-4}"
 CLASS_HEAD="${CLASS_HEAD:-softmax}"
+STEPS="${STEPS:-cv,ssl}"
+CV_FOLDS="${CV_FOLDS:-5}"
 DIAMETERS="1:130,2:180,3:260,4:300,5:120,6:270"
 NAMES="1:beta-amylase,2:beta-galactosidase,3:thyroglobulin,4:ribosome,5:apo-ferritin,6:virus-like-particle"
 mkdir -p "$OUT"
@@ -57,6 +63,21 @@ ckpt_args() {  # SSL checkpoints given or produced by the fine-tuning step
     [[ -n "$v1" ]] && a+=(--ssl_v1 "$v1")
     echo "${a[@]}"
 }
+
+# 0. k-fold cross-validation (resumes finished folds; skipped once its summary exists).
+if [[ ",$STEPS," == *",cv,"* && "${TINY:-0}" != 1 ]]; then
+    if [[ -f "$OUT/cv/cv_summary.md" ]]; then
+        log "k-fold CV already done, skipping"
+    else
+        log "k-fold CV -> $OUT/cv (log: $OUT/cv.log)"
+        OUT="$OUT/cv" FOLDS="$CV_FOLDS" EPOCHS="$EPOCHS" CLASS_HEAD="$CLASS_HEAD" \
+            experiments/run_cv.sh > "$OUT/cv.log" 2>&1
+    fi
+fi
+if [[ ",$STEPS," != *",ssl,"* ]]; then
+    log "done: $OUT"
+    exit 0
+fi
 
 # 1. Pretraining + fine-tuning + inference + scoring. SSL is pretrained on the training
 #    tomograms only, so the test tomograms stay unseen.

@@ -44,7 +44,7 @@ golden generators; leave it.
 - Checkpoint-load config leak: fixed in Gate 3c (CLI snapshot).
 - k-fold CV on CZII: run `experiments/run_cv.sh` (not run yet).
 - Softmax class head: done in Gate 3d (`train.particles.class_head: softmax`); not yet run on CZII.
-- SSL benchmark: relaunch `experiments/run_ssl_benchmarks.sh` (softmax pickers, 60 epochs, SSL v2 90).
+- SSL benchmark: relaunch `experiments/run_benchmarks.sh` (softmax pickers, 60 epochs, SSL v2 90).
 - Full benchmarks (`benchmarks/czii_multiclass.py`, `synthetic_multisize.py`) not run, only `--tiny`.
 
 ## 5. CZII v2 results (k = 0)
