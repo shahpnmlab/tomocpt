@@ -352,6 +352,7 @@ time (gradient checkpointing). Pipeline v1 uses Section 1.5 unchanged.
 | `train.particles.cross_class_neg_weight` | float = `0.0` (off) | 3b |
 | `train.particles.class_head` | `sigmoid` \| `softmax` = `sigmoid` | 3d |
 | `infer.apix_override` | Optional[float] = `None` | 4 |
+| `train.cv_folds`, `train.cv_fold` | int = `0`, `0` (k-fold off) | 4b |
 | `infer.classes` | Optional[str] = `None` (subset of class names) | 4 |
 | `infer.cross_class_nms` | bool = `True` | 4 |
 | `infer.accumulate_dtype`, `infer.accumulate_device` | `float32`, `auto` | 4 |
@@ -376,6 +377,7 @@ Field details are in each gate spec. A gate may add fields only to the files it 
 | 3c | `03c_AGENT_CONFIG_SNAPSHOT.md` | CLI config snapshot so checkpoint loads do not leak into each other (human decision, 28 Oct 2026) | `tomocpt/configManager/configManager.py` (snapshot only), `tomocpt/networks/baseModel.py` (`__init__` config handling only) |
 | 3d | `03d_AGENT_SOFTMAX_HEAD.md` | Softmax class head with implicit background (human decision, 29 Oct 2026) | `tomocpt/training/multiclass_loss.py`, `tomocpt/networks/pickingModel.py`, `tomocpt/defaultConfigs/particles_config.py`, `tomocpt/predict/multiclass.py` (passing the level's classes only) |
 | 4 | `04_AGENT_INFER_BENCHMARK.md` | v2 inference with levels, per-class outputs, benchmarks | `tomocpt/predict/**`, `tomocpt/defaultConfigs/infer_config.py`, `tomocpt/training/run.py` (post-fit calibration call only), `benchmarks/**`, `README.md` |
+| 4b | `04b_AGENT_CV_ENSEMBLE.md` | k-fold training, out-of-fold calibration, fold ensemble (human decision, 29 Oct 2026) | `tomocpt/dataManager/chunking.py` (fold split, `cv` layout entry), `tomocpt/defaultConfigs/train_config.py` (`cv_folds`, `cv_fold`), `tomocpt/training/helpers.py` (`_prepare_data_if_needed`), `tomocpt/predict/**`, `experiments/run_cv.sh`, `README.md` |
 | 5 | `05_AGENT_SSL.md` | Wedge-aware, scale-aware SSL v2 with dense embeddings | `tomocpt/networks/selfSupervisedModel.py`, `tomocpt/networks/ssl/**`, `tomocpt/dataManager/ssl_views.py`, `tomocpt/defaultConfigs/ssl_config.py`, `tomocpt/training/helpers.py` (self-supervised branches only), `benchmarks/ssl_*.py` |
 | 6 | `06_AGENT_FILAMENTS.md` | Microtubules: mask → centrelines, tube targets, tracing, output | `tomocpt/labels/**`, `tomocpt/dataManager/**`, `tomocpt/predict/**`, `tomocpt/defaultConfigs/{prepdata_config,infer_config}.py`, `scripts/download_portal_data.py`, `benchmarks/filaments.py`, `README.md` |
 
