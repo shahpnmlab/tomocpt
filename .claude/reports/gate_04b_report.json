@@ -1,0 +1,62 @@
+{
+  "gate_id": "4b",
+  "agent_name": "04b_AGENT_CV_ENSEMBLE",
+  "status": "READY_FOR_REVIEW",
+  "base_ref": "v2-gate-3d-passed",
+  "files_created": [
+    "tomocpt/predict/ensemble.py",
+    "experiments/run_cv.sh"
+  ],
+  "files_modified": [
+    "tomocpt/dataManager/chunking.py",
+    "tomocpt/defaultConfigs/train_config.py",
+    "tomocpt/training/helpers.py",
+    "tomocpt/predict/calibration.py",
+    "tomocpt/predict/multiclass.py",
+    "tomocpt/predict/helpers.py",
+    "README.md"
+  ],
+  "exported_symbols": {
+    "tomocpt.dataManager.chunking": [
+      "split_rows_by_fold"
+    ],
+    "tomocpt.predict.ensemble": [
+      "build_ensemble",
+      "is_ensemble_file",
+      "load_ensemble",
+      "EnsembleModel",
+      "read_ensemble"
+    ],
+    "tomocpt.predict.calibration": [
+      "collect_validation_picks"
+    ]
+  },
+  "config_fields_added": [
+    "train.cv_folds",
+    "train.cv_fold"
+  ],
+  "metrics": {
+    "G4b-C7 mean F1": {
+      "ensemble": 0.136,
+      "fold0": 0.115,
+      "fold1": 0.034,
+      "fold2": 0.127
+    }
+  },
+  "pytest_fast": {
+    "command": "pytest tests -m 'not slow'",
+    "exit_code": 0,
+    "result": "632 passed, 27 skipped"
+  },
+  "pytest_slow": {
+    "command": "pytest tests/gate4b -m slow",
+    "exit_code": 0,
+    "ran": true
+  },
+  "known_limitations": [
+    "Ensemble thresholds are the pooled OOF thresholds of single fold models.",
+    "OOF F4 reported by run_cv.sh uses thresholds tuned on the same OOF picks (slightly optimistic).",
+    "Per-fold chunks are stored separately (K copies)."
+  ],
+  "notes_for_next_agent": "Run experiments/run_cv.sh on CZII (softmax, 60 epochs, 5 folds by default)."
+}

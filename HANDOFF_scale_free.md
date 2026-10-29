@@ -15,6 +15,7 @@ and `.claude/state/gate_status.json` (all on branch `v2-dev`). Nothing has been 
 | `v2-gate-3b-passed` | d190287 | cross-class negative weighting (`train.particles.cross_class_neg_weight`) |
 | `v2-gate-3c-passed` | b946416 | CLI config snapshot: checkpoint loads no longer leak into each other |
 | `v2-gate-3d-passed` | (tag) | softmax class head with implicit background (`train.particles.class_head`) |
+| `v2-gate-4b-passed` | (tag) | k-fold training, out-of-fold calibration, fold ensembles (`experiments/run_cv.sh`) |
 | `v2-gate-5-passed` | (this commit) | SSL v2: wedge/scale-aware views, masked recon, global + dense contrastive, relative scale |
 
 Fast suite: 587 passed, 27 skipped (~4.5 min). Gate 5 passed; full CZII SSL benchmarks
@@ -41,7 +42,7 @@ golden generators; leave it.
 
 ## 4. Open items
 - Checkpoint-load config leak: fixed in Gate 3c (CLI snapshot).
-- README: document `cross_class_neg_weight` (Gate 3b had no README path).
+- k-fold CV on CZII: run `experiments/run_cv.sh` (not run yet).
 - Softmax class head: done in Gate 3d (`train.particles.class_head: softmax`); not yet run on CZII.
 - SSL benchmark: relaunch `experiments/run_ssl_benchmarks.sh` (softmax pickers, 60 epochs, SSL v2 90).
 - Full benchmarks (`benchmarks/czii_multiclass.py`, `synthetic_multisize.py`) not run, only `--tiny`.

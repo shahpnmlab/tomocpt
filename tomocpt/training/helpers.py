@@ -58,6 +58,10 @@ def _prepare_data_if_needed(config: DictConfig):
             )
     require_labels = config.mode == TrainingModes.picking
     pipeline_version = int(getattr(config, "data_pipeline_version", 1) or 1)
+    cv_folds = int(safe_getattr(config, "cv_folds", 0) or 0)
+    cv = (cv_folds, int(safe_getattr(config, "cv_fold", 0) or 0)) if cv_folds > 0 else None
+    if cv is not None and pipeline_version != 2:
+        raise ValueError("k-fold training (train.cv_folds > 0) needs train.data_pipeline_version=2")
     chunking_name_done = get_chunking_name_done(
         config.chunks_dir, require_labels=require_labels
     )
@@ -84,6 +88,13 @@ def _prepare_data_if_needed(config: DictConfig):
                     "The class table of prepData differs from the one the chunks were built with: "
                     f"prepData gives {class_table_to_json(expected)}, chunk_layout.json records "
                     f"{class_table_to_json(recorded)}. Fix prepData.class_diameters / class_names, or "
+                    f"delete {chunking_name_done} to rebuild the chunks."
+                )
+            requested = {"folds": cv[0], "fold": cv[1]} if cv is not None else None
+            if layout.get("cv") != requested:
+                raise RuntimeError(
+                    f"k-fold mismatch: {config.chunks_dir} was chunked with cv={layout.get('cv')} but "
+                    f"train.cv_folds/cv_fold request cv={requested}. Use one chunks_dir per fold, or "
                     f"delete {chunking_name_done} to rebuild the chunks."
                 )
             return
@@ -128,6 +139,7 @@ def _prepare_data_if_needed(config: DictConfig):
             class_table=class_table_from_config(mainConfig.prepData),
             seed=getattr(config, "SEED_FOR_TRAIN_VAL_SPLIT", 42),
             label_border_policy=mainConfig.prepData.label_border_policy,
+            cv=cv,
         )
     do_chunking(
         tomos_df,

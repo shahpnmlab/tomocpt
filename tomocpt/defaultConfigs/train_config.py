@@ -275,6 +275,12 @@ class TrainConfig:
     repeat_factor_threshold: Annotated[
         float, typer.Option(help="Threshold t of repeat-factor sampling: r_c = max(1, sqrt(t / f_c))")
     ] = 0.1
+    cv_folds: Annotated[
+        int, typer.Option(help="k-fold training by tomogram (pipeline v2): number of folds; 0 = off (random split)")
+    ] = 0
+    cv_fold: Annotated[
+        int, typer.Option(help="k-fold training: the fold used for validation, in [0, cv_folds)")
+    ] = 0
     ssl: Annotated[
         SSLConfig, typer.Option(help="Self-supervised pretraining settings (mode=selfSupervised)")
     ] = field(default_factory=SSLConfig)

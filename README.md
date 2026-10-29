@@ -288,6 +288,26 @@ size whose classes fit one level, such as CZII (all six species fit the band at 
 Fine-tuning (`--fine_tune_from`) from an unconditioned or pipeline-v1 checkpoint into a
 conditioned model works: the new FiLM layers start at zero.
 
+### Class head (`train.particles.class_head`)
+- `sigmoid` (default): one independent probability per class.
+- `softmax`: the classes and an implicit background compete for each voxel, so one particle
+  is not picked as two classes. No extra parameters; with one class it equals `sigmoid`.
+  Classes not annotated in a training sample are left out of the competition.
+- `train.particles.cross_class_neg_weight` (default 0) makes sigmoid models penalise firing on
+  another class's particles. With `softmax` it is not needed.
+
+### k-fold training and fold ensembles
+Train one model per fold of tomograms, calibrate the per-class thresholds on the pooled
+out-of-fold predictions, and predict with the average of the fold models:
+```bash
+# fold k of K (one chunks_dir and model_dir per fold)
+tomocpt train --config_file fold_k.yaml        # with train.cv_folds: K, train.cv_fold: k
+python -m tomocpt.predict.ensemble fold*/model/**/*.ckpt --out ensemble.json --config_file config.yaml
+tomocpt predict --config_file config.yaml --weights ensemble.json --tomogram_dir tomos/ --predictions_dir out/
+```
+`experiments/run_cv.sh` runs all steps for CZII and reports the cross-validated F4. An explicit
+`infer.class_thresholds` still overrides the ensemble's thresholds.
+
 ### Benchmarks
 
 `benchmarks/synthetic_multisize.py` (phantoms from 80 to 500 A, two levels) and
@@ -347,6 +367,10 @@ or alignment mismatch.
   map was cropped on the wrong axis before being resized back, which displaced or lost picks
   on such tomograms. Other v1 predictions are unchanged.
 - Benchmarks in `benchmarks/` (synthetic multi-size phantoms, CZII 10440).
+- Softmax class head (`train.particles.class_head: softmax`) and cross-class negative
+  weighting for sigmoid heads (`train.particles.cross_class_neg_weight`).
+- k-fold training (`train.cv_folds`, `train.cv_fold`), out-of-fold calibration and fold
+  ensembles (`python -m tomocpt.predict.ensemble`, `infer.weights` = ensemble file).
 
 ## 0.7.1
 - Self-supervised training (`train.mode = selfSupervised`) works again. It had been broken

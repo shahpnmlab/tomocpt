@@ -886,9 +886,14 @@ def infer_tomos(
 
     try:
         # InferenceModel will automatically filter teacher weights from checkpoints
-        model = InferenceModel.load_from_checkpoint(
-            model_fname, map_location=device, strict=True
-        ).eval()
+        from tomocpt.predict.ensemble import is_ensemble_file, load_ensemble
+
+        if is_ensemble_file(model_fname):
+            model = load_ensemble(model_fname, device)
+        else:
+            model = InferenceModel.load_from_checkpoint(
+                model_fname, map_location=device, strict=True
+            ).eval()
         logger.info(
             f"PickingModel using {type(model.model).__name__} loaded on {device} (Worker {worker_id})"
         )

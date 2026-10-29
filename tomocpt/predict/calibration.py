@@ -82,7 +82,11 @@ def calibrate_thresholds(
 
 
 def read_calibration(ckpt_path) -> Optional[dict]:
-    """The ``"tomocpt_calibration"`` record of a checkpoint, or None."""
+    """The ``"tomocpt_calibration"`` record of a checkpoint (or of an ensemble file), or None."""
+    from tomocpt.predict.ensemble import is_ensemble_file, read_ensemble
+
+    if is_ensemble_file(ckpt_path):
+        return read_ensemble(ckpt_path).get("calibration")
     ckpt = torch.load(str(ckpt_path), map_location="cpu", weights_only=False)
     return ckpt.get(CALIBRATION_KEY)
 
@@ -92,29 +96,14 @@ def _true_coords(coords_path, class_number: int) -> np.ndarray:
     return df.loc[df["class_number"] == class_number, ["x", "y", "z"]].to_numpy(dtype=np.float64)
 
 
-def calibrate_checkpoint(ckpt_path, val_tomograms: List[dict], infer_cfg: InferConfig) -> dict:
-    """Calibrates the class thresholds of a pipeline-v2 checkpoint and stores them in it.
-
-    ``val_tomograms``: the ``val_tomograms`` entries of ``chunk_layout.json``
-    (``tomogram_path``, ``coords_path`` with columns ``x, y, z, class_number, diameter_ang``
-    in native voxels, ``class_available`` per class). Each tomogram runs through the v2
-    predict path (no Dask) with every class at the lowest grid threshold, after cross-class
-    suppression if ``infer_cfg.cross_class_nms``. The record ``{"version", "beta", "grid",
-    "classes", "val_tomograms"}`` is written under ``"tomocpt_calibration"`` (temporary file,
-    then rename); the other checkpoint keys are kept. Returns the record.
-    """
-    from tomocpt.networks.inference import InferenceModel
+def collect_validation_picks(model, val_tomograms: List[dict], infer_cfg: InferConfig, device: torch.device):
+    """Picks of a pipeline-v2 model on its validation tomograms at the lowest grid threshold
+    (after cross-class suppression if ``infer_cfg.cross_class_nms``), with the true particles.
+    Returns ``(picks, truths, radii, grid)`` in the format of :func:`calibrate_thresholds`."""
     from tomocpt.predict.multiclass import peaks_from_class_maps, predict_class_maps
 
     warnings.filterwarnings("ignore", message=".*Using TorchIO images without a torchio.SubjectsLoader.*",
                             category=UserWarning)
-    if infer_cfg.use_cuda and torch.cuda.is_available():
-        device = torch.device("cuda")
-    else:
-        device = torch.device("cpu")
-    model = InferenceModel.load_from_checkpoint(str(ckpt_path), map_location=device, strict=True).eval()
-    if not model.is_pipeline_v2():
-        raise ValueError(f"{ckpt_path} is not a pipeline-v2 checkpoint; nothing to calibrate.")
     table = model.class_table()
     grid = list(DEFAULT_GRID)
     lowest = {c: min(grid) for c in range(len(table))}
@@ -141,6 +130,31 @@ def calibrate_checkpoint(ckpt_path, val_tomograms: List[dict], infer_cfg: InferC
             p = peaks.get(c, np.zeros((0, 4)))
             picks[row.number].append((p[:, [2, 1, 0]], p[:, 3]))
             truths[row.number].append(_true_coords(entry["coords_path"], row.number) if available[c] else None)
+    return picks, truths, radii, grid
+
+
+def calibrate_checkpoint(ckpt_path, val_tomograms: List[dict], infer_cfg: InferConfig) -> dict:
+    """Calibrates the class thresholds of a pipeline-v2 checkpoint and stores them in it.
+
+    ``val_tomograms``: the ``val_tomograms`` entries of ``chunk_layout.json``
+    (``tomogram_path``, ``coords_path`` with columns ``x, y, z, class_number, diameter_ang``
+    in native voxels, ``class_available`` per class). Each tomogram runs through the v2
+    predict path (no Dask) with every class at the lowest grid threshold, after cross-class
+    suppression if ``infer_cfg.cross_class_nms``. The record ``{"version", "beta", "grid",
+    "classes", "val_tomograms"}`` is written under ``"tomocpt_calibration"`` (temporary file,
+    then rename); the other checkpoint keys are kept. Returns the record.
+    """
+    from tomocpt.networks.inference import InferenceModel
+
+    if infer_cfg.use_cuda and torch.cuda.is_available():
+        device = torch.device("cuda")
+    else:
+        device = torch.device("cpu")
+    model = InferenceModel.load_from_checkpoint(str(ckpt_path), map_location=device, strict=True).eval()
+    if not model.is_pipeline_v2():
+        raise ValueError(f"{ckpt_path} is not a pipeline-v2 checkpoint; nothing to calibrate.")
+    table = model.class_table()
+    picks, truths, radii, grid = collect_validation_picks(model, val_tomograms, infer_cfg, device)
 
     classes = calibrate_thresholds(picks, truths, radii, beta=infer_cfg.calibration_beta,
                                    min_particles=infer_cfg.calibration_min_particles, grid=grid)

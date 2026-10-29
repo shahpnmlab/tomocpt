@@ -265,7 +265,7 @@
       ]
     },
     "4b": {
-      "status": "TESTS_FROZEN",
+      "status": "PASSED",
       "attempts": 0,
       "test_hashes": {
         "tests/gate4b/README.md": "7948b5fac61da64bd9705f2305144b080ac58fe8ec01403f82ca8328f5a757f7",
@@ -278,7 +278,9 @@
       },
       "notes": [
         "User decision 29 Oct 2026: k-fold training, out-of-fold calibration and fold ensemble.",
-        "Orchestrator ruling: fold members load through InferenceModel.load_from_checkpoint; EnsembleModel(members) constructor; load_ensemble(path) returns an EnsembleModel."
+        "Orchestrator ruling: fold members load through InferenceModel.load_from_checkpoint; EnsembleModel(members) constructor; load_ensemble(path) returns an EnsembleModel.",
+        "Gate 4b passed 29 Oct 2026, implemented directly by the orchestrator: fast 632 passed/27 skipped; slow C7 passed (mean F1 ensemble 0.136 vs folds 0.115/0.034/0.127; tiny 1-epoch models, so C7 checks plumbing, not accuracy).",
+        "build_ensemble reads chunks_dir from the raw checkpoint: a loaded model's train section can carry an earlier load's values outside a CLI command (Section 1.10, Gate 3c)."
       ]
     }
   }

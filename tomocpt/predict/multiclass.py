@@ -57,7 +57,13 @@ def read_checkpoint_settings(ckpt_path) -> CheckpointSettings:
     """Pipeline version, class table and calibration of a checkpoint file (raw load; the
     config fields of later gates are read with ``safe_getattr``)."""
     from tomocpt.labels.multiclass import class_table_from_config
+    from tomocpt.predict.ensemble import is_ensemble_file, read_ensemble
 
+    if is_ensemble_file(ckpt_path):
+        # An ensemble: the first member's settings, the ensemble's calibration.
+        record = read_ensemble(ckpt_path)
+        first = read_checkpoint_settings(record["checkpoints"][0])
+        return CheckpointSettings(first.pipeline_version, first.class_table, record.get("calibration"))
     ckpt = torch.load(str(ckpt_path), map_location="cpu", weights_only=False)
     config = ckpt["hyper_parameters"]["config"]
     version = int(safe_getattr(config.train, "data_pipeline_version", 1) or 1)
