@@ -186,7 +186,7 @@ class SelfSupervisedModel(BaseModel):
             size = xa.shape[2]
             with torch.no_grad():
                 for name, v in (("input", xa), ("target", self._vol5(ta)), ("recons", ra)):
-                    grid = torchvision.utils.make_grid(v[:, :1, size // 2].detach().float().cpu())
+                    grid = torchvision.utils.make_grid(v[:, :1, size // 2].detach().float().cpu(), normalize=True)
                     experiment.add_image(f"{name}_{tag}", grid, global_step=self.current_epoch)
         return total
 
