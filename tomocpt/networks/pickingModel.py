@@ -5,7 +5,8 @@ from torch import nn
 from tomocpt.configManager.configManager import safe_getattr
 from tomocpt.networks.baseModel import BaseModel
 from tomocpt.training.losses import gradient3d_loss
-from tomocpt.training.multiclass_loss import multiclass_picking_loss
+from tomocpt.training.multiclass_loss import (CLASS_HEADS, class_probabilities, multiclass_picking_loss,
+                                              renormalise_targets)
 from tomocpt.logger import get_logger
 
 logging = get_logger()
@@ -62,7 +63,20 @@ class BasePickingModel(BaseModel):
             self.model = model.model
 
         self.lr = lr
-    
+        if self.class_head() not in CLASS_HEADS:
+            raise ValueError(f"train.particles.class_head must be one of {CLASS_HEADS}, got {self.class_head()!r}")
+
+    def class_head(self) -> str:
+        """``train.particles.class_head`` of this model's (checkpoint) config; ``sigmoid`` if absent."""
+        particles = safe_getattr(self.hparams.config.train, "particles", None)
+        return str(safe_getattr(particles, "class_head", "sigmoid")) if particles is not None else "sigmoid"
+
+    def _probabilities(self, logits, y, batch):
+        """``(y_pred, y)`` for the loss: sigmoid, or the softmax head on a v2 batch (renormalised targets)."""
+        if self.class_head() == "softmax" and self._is_v2_batch(batch):
+            return class_probabilities(logits, "softmax", batch["class_available"]), renormalise_targets(y)
+        return nn.functional.sigmoid(logits), y
+
     def setup(self, stage: str) -> None:
         """Called after the model is moved to the correct device."""
         if self.global_rank == 0:
@@ -161,7 +175,7 @@ class BasePickingModel(BaseModel):
     def training_step(self, batch, batch_idx):
         x, y = self.resolve_batch(batch)
         logits = self(x, apix=self._batch_apix(batch))
-        y_pred = nn.functional.sigmoid(logits)
+        y_pred, y = self._probabilities(logits, y, batch)
         if self._is_v2_batch(batch):
             loss = self.multiclass_loss(y_pred, y, batch)
         else:
@@ -185,7 +199,7 @@ class BasePickingModel(BaseModel):
     def validation_step(self, batch, batch_idx):
             x, y = self.resolve_batch(batch)
             logits = self(x, apix=self._batch_apix(batch))
-            y_pred = nn.functional.sigmoid(logits)
+            y_pred, y = self._probabilities(logits, y, batch)
             if self._is_v2_batch(batch):
                 loss = self.multiclass_loss(y_pred, y, batch)
                 self._log_per_class_val_loss(y_pred, y, batch)
@@ -214,8 +228,12 @@ class BasePickingModel(BaseModel):
             self.log(f"val_loss_{row.name}", loss_c, on_step=False, on_epoch=True,
                      sync_dist=True, batch_size=n_available)
 
-    def predict_step(self, batch, batch_idx=0, dataloader_idx=0, apix=None):
+    def predict_step(self, batch, batch_idx=0, dataloader_idx=0, apix=None, classes=None):
+        """Per-class probabilities; with the softmax head they are normalised over ``classes``
+        (channel indices, default all)."""
         logits = self(batch, apix=apix)
+        if self.class_head() == "softmax":
+            return class_probabilities(logits, "softmax", classes)
         # y_pred = nn.functional.softplus(logits, beta=BETA_FOR_SOFTPLUS)
         y_pred = nn.functional.sigmoid(logits)
         return y_pred

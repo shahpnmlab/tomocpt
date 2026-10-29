@@ -245,7 +245,7 @@
       "report_path": ".claude/reports/gate_03c_report.json"
     },
     "3d": {
-      "status": "TESTS_FROZEN",
+      "status": "PASSED",
       "attempts": 0,
       "test_hashes": {
         "tests/gate3d/README.md": "9df68dc8ac0b6274173db5902837cd652cd3944601913c68dbc740f26f3753ee",
@@ -257,7 +257,11 @@
       },
       "notes": [
         "User decision 29 Oct 2026: implement softmax class head (implicit background) to avoid tuning cross_class_neg_weight.",
-        "Orchestrator ruling: G3d-C2 strict (0,1) and sum<1 are checked on moderate logits; at +-80 finite, [0,1], sum<=1+1e-6 (float32 rounds exp(80)/(1+exp(80)) to 1)."
+        "Orchestrator ruling: G3d-C2 strict (0,1) and sum<1 are checked on moderate logits; at +-80 finite, [0,1], sum<=1+1e-6 (float32 rounds exp(80)/(1+exp(80)) to 1).",
+        "Gate 3d passed 29 Oct 2026, implemented directly by the orchestrator: fast 609 passed, 27 skipped, 10 deselected, 215 warnings; slow C7 seeds 0 and 1 F1 1.0 all classes, cross-pick 0.0 (9 min)."
+      ],
+      "path_exceptions": [
+        "benchmarks/common.py, benchmarks/ssl_finetune.py (class_head option for the SSL benchmark, user request)"
       ]
     }
   }

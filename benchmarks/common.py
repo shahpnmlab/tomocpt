@@ -72,6 +72,8 @@ class TrainSettings:
     calibration_min_particles: int = 5
     #: Overrides of ``train.network.SwinUNETR`` (tiny runs use ``feature_size=12``).
     swin: Dict[str, object] = field(default_factory=dict)
+    #: ``train.particles.class_head`` of pipeline-v2 pickers (Gate 3d): ``sigmoid`` or ``softmax``.
+    class_head: str = "sigmoid"
 
 
 def _log(msg: str) -> None:
@@ -118,6 +120,8 @@ def _train_section(work: Path, settings: TrainSettings, pipeline_version: int,
     if pipeline_version == 2:
         train["network"]["scale_conditioning"] = bool(conditioning)
         train["augmentation"] = {"label_interpolation": "linear"}
+        if settings.class_head != "sigmoid":
+            train["particles"] = {"class_head": settings.class_head}
     if fine_tune_from is not None:
         train["fine_tune_from"] = str(fine_tune_from)
     return train

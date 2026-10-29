@@ -201,7 +201,7 @@ def _predict_level(model, padded: torch.Tensor, classes: List[int], apix_work: f
             for batch in loader:
                 x = batch["volume"][tio.DATA].to(device)
                 with torch.amp.autocast(device_type=device.type, enabled=infer_config.use_cuda):
-                    probs = model.predict_step(x, 0, apix=float(apix_work))
+                    probs = model.predict_step(x, 0, apix=float(apix_work), classes=classes)
                 probs = probs[:, classes].float().to(acc_device)
                 for p, loc in zip(probs, batch[tio.LOCATION]):
                     i0, j0, k0, i1, j1, k1 = (int(v) for v in loc)

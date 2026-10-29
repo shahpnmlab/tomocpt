@@ -1,0 +1,53 @@
+{
+  "gate_id": "3d",
+  "agent_name": "03d_AGENT_SOFTMAX_HEAD",
+  "status": "READY_FOR_REVIEW",
+  "base_ref": "v2-gate-5-passed",
+  "files_created": [],
+  "files_modified": [
+    "tomocpt/training/multiclass_loss.py",
+    "tomocpt/networks/pickingModel.py",
+    "tomocpt/defaultConfigs/particles_config.py",
+    "tomocpt/predict/multiclass.py",
+    "benchmarks/common.py",
+    "benchmarks/ssl_finetune.py",
+    "experiments/run_ssl_benchmarks.sh"
+  ],
+  "exported_symbols": {
+    "tomocpt.training.multiclass_loss": [
+      "class_probabilities",
+      "renormalise_targets",
+      "CLASS_HEADS"
+    ]
+  },
+  "config_fields_added": [
+    "train.particles.class_head"
+  ],
+  "legacy_equivalence": {
+    "default sigmoid: all earlier tests": {
+      "passed": true
+    }
+  },
+  "metrics": {
+    "G3d-C7 F1 (seeds 0,1)": 1.0,
+    "G3d-C7 mean cross-pick": 0.0
+  },
+  "pytest_fast": {
+    "command": "pytest tests -m 'not slow'",
+    "exit_code": 0,
+    "result": "609 passed, 27 skipped, 10 deselected, 215 warnings"
+  },
+  "pytest_slow": {
+    "command": "pytest tests/gate3d -m slow",
+    "exit_code": 0,
+    "ran": true
+  },
+  "benchmarks": {
+    "ssl_finetune --tiny --class_head softmax": "exit 0"
+  },
+  "known_limitations": [
+    "Distillation keeps sigmoid.",
+    "Softmax at an inference level normalises over the classes assigned to that level; training normalises over classes available at the level (a superset in multi-level plans)."
+  ],
+  "notes_for_next_agent": "experiments/run_ssl_benchmarks.sh defaults to CLASS_HEAD=softmax."
+}

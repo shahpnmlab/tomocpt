@@ -14,6 +14,43 @@ from torch.utils.checkpoint import checkpoint as torch_checkpoint
 
 HESSIAN_REFERENCE_D_VOX = 20.0  # diameter (voxels) at which the Hessian scale is 1
 HESSIAN_WEIGHT = 10.0
+CLASS_HEADS = ("sigmoid", "softmax")
+
+
+def _channel_mask(available, B: int, C: int, device) -> torch.Tensor:
+    """``[B, C]`` bool from a ``[B, C]`` bool tensor, a sequence of channel indices, or ``None``."""
+    if available is None:
+        return torch.ones((B, C), dtype=torch.bool, device=device)
+    if torch.is_tensor(available) and available.dtype == torch.bool:
+        return available.to(device).view(B, C)
+    idx = torch.as_tensor(list(available) if not torch.is_tensor(available) else available,
+                          dtype=torch.long, device=device).reshape(-1)
+    mask = torch.zeros(C, dtype=torch.bool, device=device)
+    mask[idx] = True
+    return mask.view(1, C).expand(B, C)
+
+
+def class_probabilities(logits: torch.Tensor, class_head: str, available=None) -> torch.Tensor:
+    """Per-class probabilities ``[B, C, D, H, W]`` (float32) from logits (Gate 3d).
+
+    ``sigmoid``: independent sigmoids. ``softmax``: softmax over an implicit background logit
+    fixed at 0 and the available channels, ``p_c = exp(l_c) / (1 + sum_d exp(l_d))``;
+    unavailable channels are 0. With one class both heads are equal."""
+    if class_head == "sigmoid":
+        return torch.sigmoid(logits.float())
+    if class_head != "softmax":
+        raise ValueError(f"class_head must be one of {CLASS_HEADS}, got {class_head!r}")
+    x = logits.float()
+    B, C = x.shape[:2]
+    mask = _channel_mask(available, B, C, x.device).view(B, C, *([1] * (x.ndim - 2)))
+    x = torch.where(mask, x, torch.full_like(x, float("-inf")))
+    p = torch.softmax(torch.cat([torch.zeros_like(x[:, :1]), x], dim=1), dim=1)[:, 1:]
+    return torch.where(mask, p, torch.zeros_like(p))
+
+
+def renormalise_targets(y_true: torch.Tensor) -> torch.Tensor:
+    """``y / max(1, sum_c y_c)`` per voxel: softmax probabilities cannot sum above 1."""
+    return y_true / y_true.sum(dim=1, keepdim=True).clamp(min=1)
 
 
 def _hessian_term(y_pred_c: torch.Tensor, y_true_c: torch.Tensor, scale: torch.Tensor) -> torch.Tensor:

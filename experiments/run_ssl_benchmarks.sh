@@ -14,6 +14,7 @@
 #   fewer samples than v1, so 90 v2 epochs ~ the optimiser steps of 30 v1 epochs)
 #   SEEDS [0,1,2]  N_TRAIN [1,2,all]  ARMS [scratch,ssl_v2,ssl_v1]
 #   BATCH_SIZE [8]  TEST_TOMOS [TS_5_4,TS_69_2]  SSL_V1_CLASS [4 = ribosome]
+#   CLASS_HEAD [softmax] picker class head (sigmoid | softmax, Gate 3d)
 #   SSL_V2_CKPT, SSL_V1_CKPT  existing SSL checkpoints (skip pretraining)
 set -euo pipefail
 
@@ -33,6 +34,7 @@ ARMS="${ARMS:-scratch,ssl_v2,ssl_v1}"
 BATCH_SIZE="${BATCH_SIZE:-8}"
 TEST_TOMOS="${TEST_TOMOS:-TS_5_4,TS_69_2}"
 SSL_V1_CLASS="${SSL_V1_CLASS:-4}"
+CLASS_HEAD="${CLASS_HEAD:-softmax}"
 DIAMETERS="1:130,2:180,3:260,4:300,5:120,6:270"
 NAMES="1:beta-amylase,2:beta-galactosidase,3:thyroglobulin,4:ribosome,5:apo-ferritin,6:virus-like-particle"
 mkdir -p "$OUT"
@@ -40,10 +42,12 @@ log() { echo "[$(date '+%F %T')] $*"; }
 
 if [[ "${TINY:-0}" == 1 ]]; then
     common=(--tiny)
+    ft_extra=(--class_head "$CLASS_HEAD")
 else
     common=(--tomo_dir "$CZII/tomograms" --star "$CZII/coords/all_objects.star"
             --class_diameters "$DIAMETERS" --class_names "$NAMES"
             --epochs "$EPOCHS" --batch_size "$BATCH_SIZE" --ssl_v1_class "$SSL_V1_CLASS")
+    ft_extra=(--class_head "$CLASS_HEAD")
 fi
 ckpt_args() {  # SSL checkpoints given or produced by the fine-tuning step
     local a=()
@@ -64,7 +68,7 @@ else
     [[ "${TINY:-0}" == 1 ]] || extra=(--test_tomos "$TEST_TOMOS" --seeds "$SEEDS" --n_train "$N_TRAIN" --arms "$ARMS"
                                     --ssl_v1_epochs "$SSL_V1_EPOCHS" --ssl_v2_epochs "$SSL_V2_EPOCHS")
     # shellcheck disable=SC2046
-    python benchmarks/ssl_finetune.py "${common[@]}" "${extra[@]}" $(ckpt_args) \
+    python benchmarks/ssl_finetune.py "${common[@]}" "${ft_extra[@]}" "${extra[@]}" $(ckpt_args) \
         --out "$OUT/finetune" > "$OUT/finetune.log" 2>&1
 fi
 
@@ -81,8 +85,8 @@ fi
 if [[ "${TINY:-0}" != 1 ]]; then
     {
         printf '\n## SSL benchmarks on CZII (%s)\n\n' "$(date '+%F %H:%M')"
-        printf -- '- output: `%s`; epochs %s (SSL v1 %s, v2 %s), seeds %s, n_train %s, arms %s, test %s\n\n' \
-            "$OUT" "$EPOCHS" "$SSL_V1_EPOCHS" "$SSL_V2_EPOCHS" "$SEEDS" "$N_TRAIN" "$ARMS" "$TEST_TOMOS"
+        printf -- '- output: `%s`; class head %s, epochs %s (SSL v1 %s, v2 %s), seeds %s, n_train %s, arms %s, test %s\n\n' \
+            "$OUT" "$CLASS_HEAD" "$EPOCHS" "$SSL_V1_EPOCHS" "$SSL_V2_EPOCHS" "$SEEDS" "$N_TRAIN" "$ARMS" "$TEST_TOMOS"
         printf '### Fine-tuning\n\n'; cat "$OUT/finetune/report.md" 2>/dev/null || echo "(no report.md)"
         printf '\n### Embedding probe\n\n'; cat "$OUT/probe/report.md" 2>/dev/null || echo "(no report.md)"
     } >> experiments/czii_v2_results.md

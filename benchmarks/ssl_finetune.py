@@ -156,6 +156,8 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
     parser.add_argument("--batch_size", type=int, default=8)
     parser.add_argument("--seeds", default="0,1,2")
     parser.add_argument("--calibration_min_particles", type=int, default=20)
+    parser.add_argument("--class_head", choices=["sigmoid", "softmax"], default="sigmoid",
+                        help="Class head of the pipeline-v2 pickers (train.particles.class_head)")
     parser.add_argument("--out", type=Path, default=None)
     args = parser.parse_args(argv)
     name = f"ssl_finetune_{'tiny' if args.tiny else 'full'}_{time.strftime('%Y%m%d_%H%M%S')}"
@@ -176,7 +178,7 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
         classes = [ClassInfo(n, TINY_NAMES[n], d) for n, d, _, _ in species]
         seeds = [0]
         n_train = ["1"] if args.n_train == "1,2,all" else n_train
-        mk = lambda s: TrainSettings(n_epochs=1, batch_size=2, tiny=True, seed=s, calibration_min_particles=1,  # noqa: E731
+        mk = lambda s: TrainSettings(n_epochs=1, batch_size=2, tiny=True, seed=s, calibration_min_particles=1, class_head=args.class_head,  # noqa: E731
                                      swin=dict(feature_size=12, use_checkpoint=False))
         v1_class = classes[1]
     else:
@@ -189,7 +191,8 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
         classes = parse_classes(args.class_diameters, args.class_names)
         seeds = [int(s) for s in args.seeds.split(",") if s.strip()]
         mk = lambda s: TrainSettings(n_epochs=args.epochs, batch_size=args.batch_size, seed=s,  # noqa: E731
-                                     calibration_min_particles=args.calibration_min_particles)
+                                     calibration_min_particles=args.calibration_min_particles,
+                                     class_head=args.class_head)
         v1_class = next(c for c in classes if c.number == args.ssl_v1_class)
 
     result = run(out_dir, data, tests, classes, {s: mk(s) for s in seeds}, n_train, args.ssl_v2, args.ssl_v1,

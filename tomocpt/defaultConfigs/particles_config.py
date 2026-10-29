@@ -20,3 +20,8 @@ class ParticlesConfig:
         float,
         typer.Option(help="Extra negative weight (x positive weight) for voxels inside another class's particle; 0 = off"),
     ] = 0.0
+    class_head: Annotated[
+        str,
+        typer.Option(help="Class head of pipeline-v2 pickers: 'sigmoid' (independent classes) or 'softmax' "
+                          "(classes and an implicit background compete per voxel)"),
+    ] = "sigmoid"
