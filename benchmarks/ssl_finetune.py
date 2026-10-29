@@ -29,6 +29,7 @@ Usage (from the repository root)::
 from __future__ import annotations
 
 import argparse
+import dataclasses
 import sys
 import time
 from pathlib import Path
@@ -59,18 +60,25 @@ ARMS = ("scratch", "ssl_v2", "ssl_v1")
 MODES = ("global_0.3", "calibrated")
 
 
+def _with_epochs(settings: TrainSettings, n_epochs: Optional[int]) -> TrainSettings:
+    return settings if n_epochs is None else dataclasses.replace(settings, n_epochs=n_epochs)
+
+
 def _macro(per_class: Dict) -> float:
     return float(np.mean([v["fbeta"] for v in per_class.values()]))
 
 
 def run(out_dir: Path, data: TrainSet, tests: Sequence[TestTomogram], classes: Sequence[ClassInfo],
         settings_by_seed: Dict[int, TrainSettings], n_train: Sequence[str], ssl_v2: Optional[Path],
-        ssl_v1: Optional[Path], v1_class: ClassInfo, arms: Sequence[str]) -> Dict:
+        ssl_v1: Optional[Path], v1_class: ClassInfo, arms: Sequence[str],
+        ssl_epochs: Optional[Dict[int, Optional[int]]] = None) -> Dict:
+    ssl_epochs = ssl_epochs or {}
     first = next(iter(settings_by_seed.values()))
     if "ssl_v2" in arms:
-        ssl_v2 = ssl_v2 or pretrain_ssl(out_dir / "pretrain_ssl_v2", data, 2, first)
+        ssl_v2 = ssl_v2 or pretrain_ssl(out_dir / "pretrain_ssl_v2", data, 2, _with_epochs(first, ssl_epochs.get(2)))
     if "ssl_v1" in arms:
-        ssl_v1 = ssl_v1 or pretrain_ssl(out_dir / "pretrain_ssl_v1", data, 1, first, v1_class=v1_class)
+        ssl_v1 = ssl_v1 or pretrain_ssl(out_dir / "pretrain_ssl_v1", data, 1, _with_epochs(first, ssl_epochs.get(1)),
+                                       v1_class=v1_class)
     starts = {"scratch": None, "ssl_v2": ssl_v2, "ssl_v1": ssl_v1}
     stems = tomogram_stems(data.tomo_dir)
     runs = []
@@ -142,6 +150,9 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
     parser.add_argument("--arms", default=",".join(ARMS))
     parser.add_argument("--n_train", default="1,2,all")
     parser.add_argument("--epochs", type=int, default=30)
+    parser.add_argument("--ssl_v1_epochs", type=int, default=None, help="SSL v1 pretraining epochs (default: --epochs)")
+    parser.add_argument("--ssl_v2_epochs", type=int, default=None,
+                        help="SSL v2 pretraining epochs (default: --epochs). An SSL v2 epoch has ~3x fewer samples than v1")
     parser.add_argument("--batch_size", type=int, default=8)
     parser.add_argument("--seeds", default="0,1,2")
     parser.add_argument("--calibration_min_particles", type=int, default=20)
@@ -182,7 +193,7 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
         v1_class = next(c for c in classes if c.number == args.ssl_v1_class)
 
     result = run(out_dir, data, tests, classes, {s: mk(s) for s in seeds}, n_train, args.ssl_v2, args.ssl_v1,
-                 v1_class, arms)
+                 v1_class, arms, ssl_epochs=None if args.tiny else {1: args.ssl_v1_epochs, 2: args.ssl_v2_epochs})
     report = {"benchmark": "ssl_finetune", "tiny": bool(args.tiny),
               "classes": [{"number": c.number, "name": c.name, "diameter_ang": c.diameter_ang} for c in classes],
               "settings": {"tomo_dir": str(data.tomo_dir), "star": str(data.star_path),

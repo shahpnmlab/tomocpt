@@ -10,7 +10,9 @@
 #
 # Settings (environment variables, defaults in brackets):
 #   OUT [benchmarks/out/czii_ssl_<date>]  reuse an OUT to resume: finished steps are skipped
-#   EPOCHS [30]  SEEDS [0,1,2]  N_TRAIN [1,2,all]  ARMS [scratch,ssl_v2,ssl_v1]
+#   EPOCHS [60] picker epochs   SSL_V1_EPOCHS [30]  SSL_V2_EPOCHS [90] (a v2 epoch has ~3x
+#   fewer samples than v1, so 90 v2 epochs ~ the optimiser steps of 30 v1 epochs)
+#   SEEDS [0,1,2]  N_TRAIN [1,2,all]  ARMS [scratch,ssl_v2,ssl_v1]
 #   BATCH_SIZE [8]  TEST_TOMOS [TS_5_4,TS_69_2]  SSL_V1_CLASS [4 = ribosome]
 #   SSL_V2_CKPT, SSL_V1_CKPT  existing SSL checkpoints (skip pretraining)
 set -euo pipefail
@@ -22,7 +24,9 @@ conda activate tomocpt
 
 CZII="$REPO/data/czii"
 OUT="${OUT:-$REPO/benchmarks/out/czii_ssl_$(date +%Y%m%d_%H%M)}"
-EPOCHS="${EPOCHS:-30}"
+EPOCHS="${EPOCHS:-60}"
+SSL_V1_EPOCHS="${SSL_V1_EPOCHS:-30}"
+SSL_V2_EPOCHS="${SSL_V2_EPOCHS:-90}"
 SEEDS="${SEEDS:-0,1,2}"
 N_TRAIN="${N_TRAIN:-1,2,all}"
 ARMS="${ARMS:-scratch,ssl_v2,ssl_v1}"
@@ -57,7 +61,8 @@ if [[ -f "$OUT/finetune/report.json" ]]; then
 else
     log "fine-tuning benchmark -> $OUT/finetune (log: $OUT/finetune.log)"
     extra=()
-    [[ "${TINY:-0}" == 1 ]] || extra=(--test_tomos "$TEST_TOMOS" --seeds "$SEEDS" --n_train "$N_TRAIN" --arms "$ARMS")
+    [[ "${TINY:-0}" == 1 ]] || extra=(--test_tomos "$TEST_TOMOS" --seeds "$SEEDS" --n_train "$N_TRAIN" --arms "$ARMS"
+                                    --ssl_v1_epochs "$SSL_V1_EPOCHS" --ssl_v2_epochs "$SSL_V2_EPOCHS")
     # shellcheck disable=SC2046
     python benchmarks/ssl_finetune.py "${common[@]}" "${extra[@]}" $(ckpt_args) \
         --out "$OUT/finetune" > "$OUT/finetune.log" 2>&1
@@ -76,8 +81,8 @@ fi
 if [[ "${TINY:-0}" != 1 ]]; then
     {
         printf '\n## SSL benchmarks on CZII (%s)\n\n' "$(date '+%F %H:%M')"
-        printf -- '- output: `%s`; epochs %s, seeds %s, n_train %s, arms %s, test %s\n\n' \
-            "$OUT" "$EPOCHS" "$SEEDS" "$N_TRAIN" "$ARMS" "$TEST_TOMOS"
+        printf -- '- output: `%s`; epochs %s (SSL v1 %s, v2 %s), seeds %s, n_train %s, arms %s, test %s\n\n' \
+            "$OUT" "$EPOCHS" "$SSL_V1_EPOCHS" "$SSL_V2_EPOCHS" "$SEEDS" "$N_TRAIN" "$ARMS" "$TEST_TOMOS"
         printf '### Fine-tuning\n\n'; cat "$OUT/finetune/report.md" 2>/dev/null || echo "(no report.md)"
         printf '\n### Embedding probe\n\n'; cat "$OUT/probe/report.md" 2>/dev/null || echo "(no report.md)"
     } >> experiments/czii_v2_results.md
