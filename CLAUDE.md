@@ -361,6 +361,8 @@ time (gradient checkpointing). Pipeline v1 uses Section 1.5 unchanged.
 | `train.ssl` | `SSLConfig` (`defaultConfigs/ssl_config.py`) | 5 |
 | `prepData.filament_masks` | Optional[str] = `None` (`"<class number>:<mask dir>"`) | 6 |
 | `infer.filament_spacing_ang`, `infer.filament_min_length_ang` | float = `40.0`, `200.0` | 6 |
+| `train.discriminative` | `DiscriminativeConfig` (`defaultConfigs/discriminative_config.py`; contrastive and focal off) | 7 |
+| `prepData.negative_masks` | Optional[str] = `None` (`"<name>:<mask dir>"`) | 7 |
 
 Field details are in each gate spec. A gate may add fields only to the files it owns.
 
@@ -380,6 +382,7 @@ Field details are in each gate spec. A gate may add fields only to the files it 
 | 4b | `04b_AGENT_CV_ENSEMBLE.md` | k-fold training, out-of-fold calibration, fold ensemble (human decision, 29 Oct 2026) | `tomocpt/dataManager/chunking.py` (fold split, `cv` layout entry), `tomocpt/defaultConfigs/train_config.py` (`cv_folds`, `cv_fold`), `tomocpt/training/helpers.py` (`_prepare_data_if_needed`), `tomocpt/predict/**`, `experiments/run_cv.sh`, `README.md` |
 | 5 | `05_AGENT_SSL.md` | Wedge-aware, scale-aware SSL v2 with dense embeddings | `tomocpt/networks/selfSupervisedModel.py`, `tomocpt/networks/ssl/**`, `tomocpt/dataManager/ssl_views.py`, `tomocpt/defaultConfigs/ssl_config.py`, `tomocpt/training/helpers.py` (self-supervised branches only), `benchmarks/ssl_*.py` |
 | 6 | `06_AGENT_FILAMENTS.md` | Microtubules: mask → centrelines, tube targets, tracing, output | `tomocpt/labels/**`, `tomocpt/dataManager/**`, `tomocpt/predict/**`, `tomocpt/defaultConfigs/{prepdata_config,infer_config}.py`, `scripts/download_portal_data.py`, `benchmarks/filaments.py`, `README.md` |
+| 7 | `07_AGENT_DISCRIMINATIVE.md` | Supervised dense contrastive loss with hard negatives, focal value term; particles and filaments (human decision, 30 Oct 2026; after Gate 6) | `tomocpt/training/discriminative.py`, `tomocpt/networks/pickingModel.py`, `tomocpt/networks/swinunetr.py` (`forward_features`), `tomocpt/training/multiclass_loss.py` (value term), `tomocpt/training/helpers.py` (`_create_model` SSL head transfer), `tomocpt/defaultConfigs/{discriminative_config,train_config,prepdata_config}.py` (own fields), `tomocpt/dataManager/**` and `tomocpt/labels/**` (negative masks), `benchmarks/discriminative.py`, `experiments/run_benchmarks.sh`, `README.md` |
 
 Every gate also writes `.claude/reports/gate_0N_report.json`.
 Tests live in `tests/gateN/` and are written by the Test Author

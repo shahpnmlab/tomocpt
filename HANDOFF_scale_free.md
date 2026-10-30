@@ -41,6 +41,10 @@ golden generators; leave it.
 - CZII diameters: public values `1:130,2:180,3:260,4:300,5:120,6:270` Å.
 
 ## 4. Open items
+- Order of work: Gate 6 (filaments, with spline fit + tilt/psi priors added to the spec), then Gate 7
+  (`07_AGENT_DISCRIMINATIVE.md`: contrastive + focal, particles and filaments). Gate 7 is specified, not built.
+- Cheap check pending: touching apo-ferritins are lost (79 % of misses touch vs 51 % of all);
+  rerun `experiments/diag_cv_localisation.py` with cross-class suppression off / smaller peak spacing.
 - Checkpoint-load config leak: fixed in Gate 3c (CLI snapshot).
 - k-fold CV on CZII: run `experiments/run_cv.sh` (not run yet).
 - Softmax class head: done in Gate 3d (`train.particles.class_head: softmax`); not yet run on CZII.
