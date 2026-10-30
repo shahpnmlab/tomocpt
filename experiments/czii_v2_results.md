@@ -167,3 +167,33 @@ Cross-class suppression (all tomograms):
   sensitivity limit separate from the false picks.
 - Levers: check and mask fiducials, more labelled tomograms, SSL pretraining (Gate 5), and a
   softmax class head (planned) to make classes mutually exclusive without tuning k.
+
+## k-fold CV on CZII (5 folds, 60 epochs, softmax head)
+
+- output: `/home/pranav/Desktop/pranav/software/tomocpt/benchmarks/out/czii_bench_20261029_2237/cv`; OOF tomograms: TS_5_4, TS_69_2, TS_6_4, TS_6_6, TS_73_6, TS_86_3, TS_99_9
+- F4 of pooled out-of-fold picks at the thresholds calibrated on them (slightly optimistic)
+
+| class | true particles | threshold | OOF F4 |
+|---|---|---|---|
+| beta-amylase | 83 | 0.40 | 0.357 |
+| beta-galactosidase | 103 | 0.40 | 0.486 |
+| thyroglobulin | 244 | 0.30 | 0.637 |
+| ribosome | 331 | 0.25 | 0.582 |
+| apo-ferritin | 375 | 0.35 | 0.756 |
+| virus-like-particle | 113 | 0.50 | 0.831 |
+
+Kaggle-weighted OOF F4: **0.631** (Kaggle 1st place: 0.788 on its hidden test set)
+
+
+## Localisation diagnostics: 5-fold CV, softmax, 60 epochs
+
+- `/home/pranav/Desktop/pranav/software/tomocpt/benchmarks/out/czii_bench_20261029_2237/cv`; OOF picks at the ensemble thresholds; distances in Å (native 10.012 Å/px)
+
+| class | n true | F4 @0.5R | F4 @1.0R | recall @0.5R | recall @1.0R | centring error median / p90 (Å) | radius (Å) | misses touching / all touching |
+|---|---|---|---|---|---|---|---|---|
+| beta-amylase | 83 | 0.357 | 0.412 | 0.47 | 0.54 | 18 / 35 | 65 | 0.00 / 0.00 |
+| beta-galactosidase | 103 | 0.486 | 0.495 | 0.55 | 0.56 | 20 / 36 | 90 | 0.07 / 0.06 |
+| thyroglobulin | 244 | 0.637 | 0.662 | 0.73 | 0.76 | 25 / 46 | 130 | 0.12 / 0.07 |
+| ribosome | 331 | 0.582 | 0.633 | 0.58 | 0.63 | 20 / 59 | 150 | 0.80 / 0.70 |
+| apo-ferritin | 375 | 0.756 | 0.766 | 0.78 | 0.79 | 12 / 20 | 60 | 0.79 / 0.51 |
+| virus-like-particle | 113 | 0.831 | 0.831 | 0.82 | 0.82 | 14 / 21 | 135 | 0.05 / 0.05 |
