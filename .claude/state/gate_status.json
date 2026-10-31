@@ -2,7 +2,7 @@
   "base_ref": "v2-gate-0-base",
   "base_commit": "ce6f7b0ce856f19556266e7ad3143bfb66cdb7e2",
   "base_note": "first commit of branch v2-dev (released main + fix/v1-patches + plan); set by the orchestrator",
-  "current_gate": "5b",
+  "current_gate": 6,
   "gpu_available": true,
   "gates": {
     "1": {
@@ -284,28 +284,18 @@
       ]
     },
     "5b": {
-      "status": "TESTS_FROZEN",
+      "status": "PARKED",
       "agent": "05b_AGENT_SSL_FIX",
-      "attempts": 0,
-      "test_hashes": {
-        "tests/gate5b/README.md": "2bb32f6fcd2c2b21c1ba452b5179ef3b6528b645daabf86e9590de567363356d",
-        "tests/gate5b/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-        "tests/gate5b/conftest.py": "9c17c0075e8a17e2d5c424028432a3015aab9359840a61a3fc3dbaddd9ee3882",
-        "tests/gate5b/g5b_helpers.py": "fa9f16d31a343e5c945f651233454f0c88d67bb4dcb4cef3099a98414d4f3629",
-        "tests/gate5b/test_g5b_config.py": "b76887fffc24cea14180e7b87b3feb5212598a5ea03c33ee2c0a7643c8a54be9",
-        "tests/gate5b/test_g5b_learning.py": "bbd64611f9ad9044e93c552d5a55ab502bbf8a0434ee0d522f35859c44f12325",
-        "tests/gate5b/test_g5b_losses.py": "7c05117115ac981938ca932fc0207f51f2648956643a18a10148d3157a815947",
-        "tests/gate5b/test_g5b_model.py": "38be7c1c9146df3c9030e51bf0ceb72f12aea0acef830fe63531f93a4a50f917",
-        "tests/gate5b/test_g5b_v1_lock.py": "9b926c7270478746c07ce76f40a8d1a90066609ee59b09a5a16f84dfa8ea082e",
-        "tests/gate5b/test_g5b_views.py": "628f71b6548969b181b8192d2bcbec1f37097578f68769077e61d5a5d850a357"
-      },
+      "attempts": 1,
+      "test_hashes": {},
       "path_exceptions": [],
       "notes": [
-        "Human ruling (31 Oct 2026): C2 white-noise decorrelation measured as r < 0.1 above 0.65 x Nyquist and r < 0.7 full band (literal full-band < 0.1 unreachable by design).",
-        "Human ruling (31 Oct 2026): G5-C11 corr(input,target) > 0.5 superseded by Gate 5b decorrelation; deselected via tests/gate5b/conftest.py, replaced by test_G5b_C1_superseded_G5_C11_polarity (r > 0.1).",
-        "Slow tier ~32 min accepted (TOMOCPT_G5B_STEPS / TOMOCPT_G5B_SEEDS knobs). Phantoms do not reproduce the CZII global collapse (TA Q6); the CZII rerun is the real check."
+        "User decision (31 Oct 2026): Gate 5b parked; SSL v2 stays off by default. Attempt 1 (tests + implementation) on local branch v2-feat/gate5b-wip (bd3df65); the frozen-tests commit 03048b4 was reverted on v2-dev.",
+        "Phantom slow tier failed (C6-C8): global contrastive at chance without the shared-noise shortcut; a trained dense loss loses species kNN (0.23-0.40) for every variant; only the detached dense head keeps 0.99.",
+        "Human rulings made during attempt 1 (in the wip tests): C2 white-noise decorrelation measured in the band above 0.65 x Nyquist; G5-C11 superseded; C6 re-scoped (option B).",
+        "Future to-do: re-evaluate SSL v2 on a bigger / experimental dataset (CZII, portal) rather than the small phantom set before redesigning. See HANDOFF_scale_free.md section 7."
       ],
-      "report_path": ".claude/reports/gate_05b_report.json"
+      "report_path": null
     }
   }
 }

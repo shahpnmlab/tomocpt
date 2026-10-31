@@ -32,12 +32,9 @@ generators; leave it. Nothing is running on the GPU (SSL benchmark stopped 31 Oc
   never touch `main`.
 
 ## 3. Next work, in order (user decision 31 Oct 2026)
-1. **Gate 5b** — `.claude/agents/05b_AGENT_SSL_FIX.md` (spec written, tests not yet). SSL v2
-   global embedding collapsed (all cosine sims 0.9999996, pooled `hidden[4]` constant); dense
-   task was detached (`dense_grad_scale = 0`) because views share the noise realisation. Fix:
-   independent per-view low-pass + noise, VICReg terms, negative queue, `recon_weight` 1,
-   full dense gradient, collapse monitoring. Then re-run `STEPS=ssl experiments/run_benchmarks.sh`.
-2. **Gate 6** — `.claude/agents/06_AGENT_FILAMENTS.md` (amended 30–31 Oct: spline fit with smoothing
+1. **Gate 5b — PARKED (user decision 31 Oct 2026).** See "Future to-do" below. SSL v2 stays
+   off by default (SSL v1 unaffected).
+2. **Gate 6 (next)** — `.claude/agents/06_AGENT_FILAMENTS.md` (amended 30–31 Oct: spline fit with smoothing
    and spacing in Å, tilt/psi as RELION helical priors with flip ratio 0.5, one output file per
    class, labels from STAR/IMOD coordinates via the same spline fit, optional tube masks from
    splines, Gaussian tube target identical to the particle profile across the centreline).
@@ -71,3 +68,20 @@ generators; leave it. Nothing is running on the GPU (SSL benchmark stopped 31 Oc
 ## 6. Benchmark entry points
 `experiments/run_benchmarks.sh` (STEPS=cv,ssl; CLASS_HEAD softmax; EPOCHS 60; SSL v1 30 / v2 90
 epochs; resumable with the same OUT), `experiments/run_cv.sh`, `experiments/eval_czii_v2.py`.
+
+## 7. Future to-do: SSL v2 (Gate 5b parked, 31 Oct 2026)
+Attempt 1 is on local branch `v2-feat/gate5b-wip` (`bd3df65`): frozen 5b tests (`tests/gate5b/`, with
+the human rulings on C2 and G5-C11), per-view noise decorrelation, VICReg/SIGReg (`collapse_reg`),
+negative queue, BatchNorm projector, predictive dense loss (`dense_loss=predictive`), collapse
+monitoring, Gate 5 checkpoint key remap. The tests commit was reverted on `v2-dev`.
+
+Phantom ablations (seed 1, 1000 steps, tiny model): once the views stop sharing noise, global NT-Xent
+stays at chance for every setting, and the global head hurts scale learning (MAE 0.13 without it vs
+0.23-0.30 with it). Any dense loss that trains the network (InfoNCE or predictive, with or without
+decorrelation, mixed or same scale) drops species kNN to 0.23-0.40. Only the detached dense head keeps
+0.99. `hidden[4]` collapses whenever kNN or scale pass. The cause of the kNN loss is unknown.
+
+**User's view:** the Gate 5/5b pass criteria are measured on a small synthetic phantom set that
+may not be representative. Redo the evaluation on a bigger, ideally experimental, dataset (e.g. CZII
+or portal tomograms: kNN/linear probe of dense features on annotated particles, plus the fine-tuning
+arms of `STEPS=ssl experiments/run_benchmarks.sh` with a fresh `OUT`) before redesigning SSL v2.
