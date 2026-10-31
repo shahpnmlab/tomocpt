@@ -47,10 +47,16 @@ report its numbers separately (its labels are less trustworthy).
   `<dataset_dir>/filament_masks/<class name>/<tomo>.mrc`, a binary tube mask (`uint8`, voxels within
   the class radius of the fitted spline, tomogram shape and voxel size), for inspection in a
   viewer and for Gate 7 (`prepData.negative_masks` takes the same format).
-- **Target.** The same radial profile as CLAUDE.md Section 1.3, with `r` the distance to the
-  nearest centreline segment and `R = d_vox / 2`, max-combined per channel. Chunks store
-  segments (`filaments/<chunk>.npy`, CLAUDE.md Section 5.2); `render_targets` draws them
-  together with points.
+- **Target (soft Gaussian tube, as for particles).** The particle profile of CLAUDE.md Section 1.3
+  applied across the filament: `0.5·exp(-r²/2σs²) + 0.5·exp(-r²/2σl²)` with `σs = 0.33·R/2`,
+  `σl = 0.66·R/2`, normalised to 1, zero for `r > R`, where `r` is the perpendicular distance to
+  the fitted centreline (nearest point on the polyline of dense spline samples) and
+  `R = d_vox / 2`. So every cross-section has a strong peak of 1 on the centreline and the same
+  gradual fall-off as a particle; the value is constant along the filament (no ripple at
+  segment joints) and the ends are rounded caps. Several filaments in one channel are
+  max-combined. Binary masks (`write_filament_masks`, portal masks) are never used as training
+  targets. Chunks store segments (`filaments/<chunk>.npy`, CLAUDE.md Section 5.2);
+  `render_targets` draws them together with points.
 - **Network.** No architecture change. Isotropic 3D convolutions and Swin attention, trained
   with flip augmentation, learn tubes in any orientation; elongated or oriented kernels only
   suit axis-aligned structures. A 64³ chunk sees a local stretch of filament; continuity comes
@@ -142,9 +148,12 @@ Optional[float] = None` (None = 0.5 × voxel size); `prepData.write_filament_mas
 - **G6-C2** `mask_to_centerlines` on a phantom tube mask (curved, 250 Å diameter) recovers the
   true centreline within 1 voxel (mean) and its length within 5 %; two crossing tubes give
   two polylines; a tube broken by a gap shorter than half its diameter gives one polyline.
-- **G6-C3** `render_tubes`: profile maximum on the centreline; target > 0 for
-  `r < R - 0.5`, == 0 for `r > R + 1`; segments stored per chunk render the same as a crop of
-  the tomogram-level render (atol 1e-6).
+- **G6-C3** `render_tubes`: on straight and curved (helical) tubes, the target as a function of
+  perpendicular distance equals the Section 1.3 particle profile `generate_gaussian_sphere`
+  at the same `R` (atol 0.02 for voxels with `r < R - 1`), with value 1 (± 0.02) on the
+  centreline; along the centreline the value varies by < 0.02 (no ripple at segment joints);
+  target == 0 for `r > R + 1`; segments stored per chunk render the same as a crop of the
+  tomogram-level render (atol 1e-6).
 - **G6-C4** `trace_filaments` on a rendered target recovers the centreline within 0.5 voxel
   and drops polylines shorter than `filament_min_length_ang`; `resample_polyline` spacing
   error < 1 %.
