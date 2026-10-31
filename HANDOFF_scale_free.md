@@ -41,7 +41,10 @@ generators; leave it. Nothing is running on the GPU (SSL benchmark stopped 31 Oc
    **Data downloaded** to `data/filaments/{10477,10513,10490}/` (tomograms + masks per object,
    `manifest.json`; 332 runs, 146 GB, all mask shapes match; DS-10513 labels not ground truth,
    held-out test only). **Status 31 Oct 2026: tests frozen (`8bed322`, `tests/gate6/`, 55 fast +
-   2 slow; rulings in `gate_status.json` gates.6.notes). Next: Step 2 implementation.** Note:
+   2 slow; rulings in `gate_status.json` gates.6.notes). Step 2 implemented 31 Oct (`18ef039`):
+   fast 55/55 (suite 695 passed); slow C8/C9 FAIL, same particle numbers as the TA reference
+   (joint particle F1 0.667 vs 1.00 particle-only; tubes pass). Status AWAITING_HUMAN; see
+   `.claude/reports/gate_06_report.json`. T6.5 driver `benchmarks/filaments.py` written, not run.** Note:
    DS-10490 microtubule masks are hollow walls (C2 tests both hollow and solid); the TA's scratch
    reference failed slow C8/C9 (joint particle F1 0.667 vs 0.958 particle-only) — check the real
    implementation for interference. Particle points of DS-10490 can be added with
