@@ -1,0 +1,71 @@
+{
+ "command": "CUDA_VISIBLE_DEVICES= PYTHONPATH=$PWD python tests/golden/make_goldens_gate6.py --expect-root $PWD",
+ "commit": "6830bc1bf01d9c7e76f9ed3ad53846c6810604fc",
+ "criterion": "G6-C1",
+ "info": {
+  "files": [
+   "train/TS_01__L0s0/points/points_0_0_0_0.npy",
+   "train/TS_01__L0s0/points/points_1_0_0_32.npy",
+   "train/TS_01__L0s0/points/points_2_0_32_0.npy",
+   "train/TS_01__L0s0/points/points_3_0_32_32.npy",
+   "train/TS_01__L0s0/volumes/volumes_0_0_0_0.nii.gz",
+   "train/TS_01__L0s0/volumes/volumes_1_0_0_32.nii.gz",
+   "train/TS_01__L0s0/volumes/volumes_2_0_32_0.nii.gz",
+   "train/TS_01__L0s0/volumes/volumes_3_0_32_32.nii.gz",
+   "val/TS_02__L0s0/points/points_0_0_0_0.npy",
+   "val/TS_02__L0s0/points/points_1_0_0_32.npy",
+   "val/TS_02__L0s0/points/points_2_0_32_0.npy",
+   "val/TS_02__L0s0/points/points_3_0_32_32.npy",
+   "val/TS_02__L0s0/volumes/volumes_0_0_0_0.nii.gz",
+   "val/TS_02__L0s0/volumes/volumes_1_0_0_32.nii.gz",
+   "val/TS_02__L0s0/volumes/volumes_2_0_32_0.nii.gz",
+   "val/TS_02__L0s0/volumes/volumes_3_0_32_32.nii.gz"
+  ],
+  "layout": {
+   "band": [
+    10.0,
+    32.0
+   ],
+   "chunk_size": 64,
+   "chunk_stride": 32,
+   "class_table": [
+    {
+     "diameter_ang": 120.0,
+     "kind": "particle",
+     "name": "small",
+     "number": 1
+    },
+    {
+     "diameter_ang": 200.0,
+     "kind": "particle",
+     "name": "big",
+     "number": 2
+    }
+   ],
+   "dir_names": "unique",
+   "label_border_policy": "skip",
+   "layout": 2,
+   "pipeline_version": 2,
+   "resample": "fourier",
+   "scales_per_level": 1,
+   "seed": 42,
+   "split": "rows",
+   "target_storage": "points",
+   "val_tomograms": [
+    {
+     "apix_native": 10.0,
+     "class_available": [
+      true,
+      true
+     ],
+     "coords_path": "<root>/training_data/dataset_1_class_all/coords/TS_02.csv",
+     "dataset_id": 0,
+     "tomogram_path": "<root>/data/tomograms/TS_02.mrc"
+    }
+   ]
+  }
+ },
+ "n_arrays": 102,
+ "reference": "v2-dev before Gate 6 (Gate 4/4b/5 behaviour), CPU, fp32, in-process",
+ "tomocpt_source_modified": false
+}
