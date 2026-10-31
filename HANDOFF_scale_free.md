@@ -40,7 +40,11 @@ generators; leave it. Nothing is running on the GPU (SSL benchmark stopped 31 Oc
    splines, Gaussian tube target identical to the particle profile across the centreline).
    **Data downloaded** to `data/filaments/{10477,10513,10490}/` (tomograms + masks per object,
    `manifest.json`; 332 runs, 146 GB, all mask shapes match; DS-10513 labels not ground truth,
-   held-out test only). Particle points of DS-10490 can be added with
+   held-out test only). **Status 31 Oct 2026: tests frozen (`8bed322`, `tests/gate6/`, 55 fast +
+   2 slow; rulings in `gate_status.json` gates.6.notes). Next: Step 2 implementation.** Note:
+   DS-10490 microtubule masks are hollow walls (C2 tests both hollow and solid); the TA's scratch
+   reference failed slow C8/C9 (joint particle F1 0.667 vs 0.958 particle-only) — check the real
+   implementation for interference. Particle points of DS-10490 can be added with
    `scripts/download_portal_data.py --coords-only`. Fetch script: `experiments/fetch_filament_data.py`.
 3. **Gate 7** — `.claude/agents/07_AGENT_DISCRIMINATIVE.md` (supervised dense contrastive with hard
    negatives incl. membrane masks, focal value term; particles and filaments). After Gate 6.
