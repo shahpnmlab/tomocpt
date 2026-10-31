@@ -360,7 +360,7 @@ time (gradient checkpointing). Pipeline v1 uses Section 1.5 unchanged.
 | `infer.calibration_beta`, `infer.calibration_min_particles` | float = `4.0`, int = `20` | 4 |
 | `train.ssl` | `SSLConfig` (`defaultConfigs/ssl_config.py`) | 5 |
 | `prepData.filament_masks` | Optional[str] = `None` (`"<class number>:<mask dir>"`) | 6 |
-| `infer.filament_spacing_ang`, `infer.filament_min_length_ang` | float = `40.0`, `200.0` | 6 |
+| `infer.filament_spacing_ang`, `infer.filament_min_length_ang`, `infer.filament_smoothing_ang` | float = `40.0`, `200.0`, `10.0` (Å) | 6 |
 | `train.discriminative` | `DiscriminativeConfig` (`defaultConfigs/discriminative_config.py`; contrastive and focal off) | 7 |
 | `prepData.negative_masks` | Optional[str] = `None` (`"<name>:<mask dir>"`) | 7 |
 
