@@ -8,7 +8,8 @@ segmentation masks. Keep every earlier behaviour unchanged when no filament clas
 
 Amended 31 Oct 2026 (human decision): spline fitting with smoothing and spacing in physical
 units, two of the three Euler angles (tilt, psi) per filament point as RELION helical priors,
-and one output file per class (the Gate 4 output rule). Gate 7 (discriminative training,
+one output file per class (the Gate 4 output rule), and `prepare_data` labels from filament
+coordinates through the same spline fit, with optional tube masks written for inspection. Gate 7 (discriminative training,
 filaments vs membranes) follows this gate.
 
 ## Data facts (checked against the CryoET Data Portal on 26 Oct 2026)
@@ -31,6 +32,21 @@ report its numbers separately (its labels are less trustworthy).
   `prepare_data` writes them to `<dataset_dir>/filaments/<tomo>.csv`
   (`filament_id, x, y, z, class_number, diameter_ang`, native voxels, ordered along each
   filament).
+- **Labels from coordinates (spline path).** `prepData.filament_coords =
+  "<class number>:<coords dir>,..."`: per tomogram (matched by name) a RELION STAR file whose
+  rows are grouped into filaments by `rlnHelicalTubeID` (ordered by
+  `rlnHelicalTrackLengthAngst` when present, else by nearest-neighbour chaining), or an IMOD
+  model whose open contours are filaments. This is also the format `predict` writes, so
+  predictions (curated or not) can be fed back as labels. Each filament, and each centreline
+  from `mask_to_centerlines`, passes through the same `fit_filament_spline` as inference
+  (`prepData.filament_smoothing_ang`, default 10 Å; sampled every
+  `prepData.filament_label_spacing_ang`, default 0.5 × the voxel size, in Å) before it is written
+  to the CSV, so training centrelines are smooth and identical in Å across voxel sizes.
+  A class may have masks or coordinates, not both (`ValueError`).
+- **Masks from splines.** `prepData.write_filament_masks: bool = False`: `prepare_data` also writes
+  `<dataset_dir>/filament_masks/<class name>/<tomo>.mrc`, a binary tube mask (`uint8`, voxels within
+  the class radius of the fitted spline, tomogram shape and voxel size), for inspection in a
+  viewer and for Gate 7 (`prepData.negative_masks` takes the same format).
 - **Target.** The same radial profile as CLAUDE.md Section 1.3, with `r` the distance to the
   nearest centreline segment and `R = d_vox / 2`, max-combined per channel. Chunks store
   segments (`filaments/<chunk>.npy`, CLAUDE.md Section 5.2); `render_targets` draws them
@@ -77,7 +93,9 @@ report its numbers separately (its labels are less trustworthy).
 ## Config (this gate adds)
 `prepData.filament_masks: Optional[str] = None`; `infer.filament_spacing_ang: float = 40.0`;
 `infer.filament_min_length_ang: float = 200.0`; `infer.filament_smoothing_ang: float = 10.0`
-(spline smoothing as an RMS deviation in Å).
+(spline smoothing as an RMS deviation in Å); `prepData.filament_coords: Optional[str] = None`;
+`prepData.filament_smoothing_ang: float = 10.0`; `prepData.filament_label_spacing_ang:
+Optional[float] = None` (None = 0.5 × voxel size); `prepData.write_filament_masks: bool = False`.
 
 ## Tasks
 - **T6.1** `labels/filaments.py`:
@@ -93,6 +111,9 @@ report its numbers separately (its labels are less trustworthy).
     tangents [K, 3], arc_length_ang [K])` (`x, y, z` native voxels; unit tangents with a
     consistent direction; arc length from the first point).
   - `tangents_to_relion_angles(tangents) -> (tilt_deg [K], psi_deg [K])`.
+  - `read_filament_coords(path, apix) -> list[np.ndarray]` (STAR or IMOD; polylines `x, y, z`
+    native voxels, one per filament, ordered along it).
+  - `centerlines_to_mask(polylines, shape_zyx, apix, diameter_ang) -> np.ndarray` (uint8).
 - **T6.2** `class_table_from_config` includes filament classes from `filament_masks`;
   `prepare_data` writes the filament CSVs; chunking writes segments for every segment that
   passes within `R` of the chunk.
@@ -112,7 +133,7 @@ report its numbers separately (its labels are less trustworthy).
   F1 at `filament_spacing_ang`, particle F-beta, time and memory.
 
 ## Public names
-`tomocpt.labels.filaments.{mask_to_centerlines, render_tubes, trace_filaments, resample_polyline, fit_filament_spline, tangents_to_relion_angles}`,
+`tomocpt.labels.filaments.{mask_to_centerlines, render_tubes, trace_filaments, resample_polyline, fit_filament_spline, tangents_to_relion_angles, read_filament_coords, centerlines_to_mask}`,
 `benchmarks.filaments.centerline_scores`.
 
 ## Pass criteria
@@ -145,6 +166,15 @@ report its numbers separately (its labels are less trustworthy).
   `src/euler.cpp`: for random unit directions `d`, the matrix from `(0, tilt, psi)` maps the
   reference filament axis (Z) to `±d` (atol 1e-6), and its transpose maps `±d` to Z; landmarks:
   a filament along Z has tilt 0 or 180°, any filament in the XY plane has tilt 90°.
+- **G6-C12** Labels from coordinates: a known curved centreline written as a RELION STAR (rows
+  shuffled, with `rlnHelicalTubeID`) and as an IMOD model gives, after `prepare_data`, a
+  centreline CSV within 0.5 voxel of the truth and tube targets equal to those from the true
+  centreline (atol 0.05); the `predict` filament output read back with `read_filament_coords`
+  gives the same polylines (round trip); a class with both masks and coordinates raises
+  `ValueError`.
+- **G6-C13** `centerlines_to_mask` / `write_filament_masks`: mask voxels are exactly those within
+  the class radius of the spline (± 1 voxel at the boundary), shape and voxel size equal the
+  tomogram's; with the default `False` nothing extra is written.
 - **G6-C8** (slow) Synthetic: tubes (250 Å and 70 Å) and spheres of two sizes in one model;
   held-out centreline F1 ≥ 0.8 for both tube classes and particle F1 ≥ 0.8.
 - **G6-C9** (slow) Interference: particle F1 of the joint model is at most 0.03 below the
