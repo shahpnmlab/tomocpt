@@ -102,7 +102,8 @@
     ]
    }
   },
-  "reason": "Tube criteria pass (mt 1.00, actin 0.91 >= 0.8). Particle F1 of the joint model 0.667 < 0.8 (C8) and 0.333 below particle-only (C9). Identical particle counts to the TA scratch reference (32/16/16): the slow tests use only render_tubes and trace_filaments from this gate; the training loop, loss and picking are the test's / Gate 3's. tp=32, fp=16, fn=16 is consistent with 16 of 48 spheres given the wrong sphere class (to confirm)."
+  "reason": "Tube criteria pass (mt 1.00, actin 0.91 >= 0.8). Particle F1 of the joint model 0.667 < 0.8 (C8) and 0.333 below particle-only (C9). Identical particle counts to the TA scratch reference (32/16/16): the slow tests use only render_tubes and trace_filaments from this gate; the training loop, loss and picking are the test's / Gate 3's. tp=32, fp=16, fn=16 is consistent with 16 of 48 spheres given the wrong sphere class (to confirm).",
+  "diagnosis": "31 Oct 2026 diagnosis (user-requested, seeds 0 and 1, scratch script reusing the frozen slow-test functions): C8/C9 particle loss is class confusion between the two sphere classes, not filament interference. Every miss is a 200 A sphere (16/16 both seeds) picked as the 120 A class; the 120 A channel reads 0.87/0.95 at 200 A centres vs 0.83/0.87 for the 200 A channel, so the cross-class rule keeps the wrong class. s120 tp/fp/fn 32/17/0 and 32/23/0. Misses lie a median 29/27 voxels from any tube, none within the tube radius. Tubes: mt 1.00/1.00, actin 0.93/0.97."
  },
  "benchmarks": {
   "T6.5": "driver written (benchmarks/filaments.py main); not run. Joint/particle arms need DS-10490 particle points (scripts/download_portal_data.py --coords-only), not downloaded yet."
