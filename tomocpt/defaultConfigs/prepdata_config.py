@@ -93,6 +93,40 @@ class PrepdataConfig:
         ),
     ] = None
 
+    filament_masks: Annotated[
+        Optional[str],
+        typer.Option(
+            help="Filament classes from segmentation masks: '<class number>:<mask dir>,...' (MRC masks "
+                 "matched to tomograms by name; diameter from class_diameters; pipeline v2)"
+        ),
+    ] = None
+
+    filament_coords: Annotated[
+        Optional[str],
+        typer.Option(
+            help="Filament classes from coordinates: '<class number>:<coords dir>,...' (per tomogram a "
+                 "RELION STAR with rlnHelicalTubeID or an IMOD model of open contours; spline-fitted)"
+        ),
+    ] = None
+
+    filament_smoothing_ang: Annotated[
+        float,
+        typer.Option(help="Spline smoothing of filament labels, as an RMS deviation in A"),
+    ] = 10.0
+
+    filament_label_spacing_ang: Annotated[
+        Optional[float],
+        typer.Option(help="Spacing in A of the filament label points along the spline (default 0.5 x voxel size)"),
+    ] = None
+
+    write_filament_masks: Annotated[
+        bool,
+        typer.Option(
+            help="Also write binary tube masks <dataset_dir>/filament_masks/<class name>/<tomo>.mrc "
+                 "(for inspection; never used as training targets)"
+        ),
+    ] = False
+
     USE_CUDA_FOR_DATA: bool = True
     ALPHA_FOR_DROPPING_EMPTY_CUBES: float = 1
 

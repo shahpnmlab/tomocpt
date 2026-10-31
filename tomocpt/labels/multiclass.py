@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import asdict, dataclass
-from typing import Dict, Iterable, List, Optional, Sequence
+from typing import Dict, Iterable, List, Optional, Sequence, Tuple
 
 PARTICLE = "particle"
 FILAMENT = "filament"
@@ -135,7 +135,8 @@ def class_table_from_config(prep_cfg) -> List[ClassSpec]:
         diameters = parse_class_diameters(text)
         names_text = _safe_get(prep_cfg, "class_names", None)
         names = parse_class_names(names_text) if names_text else {}
-        return build_class_table(diameters, names)
+        kinds = {n: FILAMENT for n in filament_sources(prep_cfg)}
+        return build_class_table(diameters, names, kinds)
 
     lengths_txt = str(_safe_get(prep_cfg, "particle_length_ang", ""))
     ids_txt = str(_safe_get(prep_cfg, "class_id", "all"))
@@ -160,6 +161,43 @@ def class_table_from_config(prep_cfg) -> List[ClassSpec]:
     for n, i, L in zip(numbers, ids, lengths):
         rows[n] = (i, L)
     return build_class_table({n: L for n, (i, L) in rows.items()}, {n: i for n, (i, L) in rows.items()})
+
+
+def parse_filament_sources(text, what: str) -> Dict[int, str]:
+    """``"5:/path/masks,6:/path/actin"`` -> ``{5: "/path/masks", 6: "/path/actin"}``.
+    Only the first colon separates the class number from the path."""
+    out: Dict[int, str] = {}
+    if text is None or not str(text).strip():
+        return out
+    for raw in str(text).split(","):
+        entry = raw.strip()
+        if not entry:
+            continue
+        key_txt, sep, val = entry.partition(":")
+        if not sep or not key_txt.strip() or not val.strip():
+            raise ValueError(f"Malformed {what} entry '{entry}': expected '<class number>:<directory>'")
+        try:
+            key = int(key_txt.strip())
+        except ValueError:
+            raise ValueError(f"Malformed {what} entry '{entry}': class number '{key_txt}' is not an integer")
+        if key in out:
+            raise ValueError(f"Duplicate class {key} in {what}")
+        out[key] = val.strip()
+    return out
+
+
+def filament_sources(prep_cfg) -> Dict[int, Tuple[str, str]]:
+    """Filament classes of a ``PrepdataConfig``: ``{class number: ("masks" | "coords", dir)}``.
+    A class listed in both ``filament_masks`` and ``filament_coords`` raises ValueError."""
+    masks = parse_filament_sources(_safe_get(prep_cfg, "filament_masks", None), "filament_masks")
+    coords = parse_filament_sources(_safe_get(prep_cfg, "filament_coords", None), "filament_coords")
+    both = sorted(set(masks) & set(coords))
+    if both:
+        raise ValueError(f"Filament class(es) {both} have both filament_masks and filament_coords; "
+                         "give one source per class")
+    out = {n: ("masks", d) for n, d in masks.items()}
+    out.update({n: ("coords", d) for n, d in coords.items()})
+    return out
 
 
 def parse_class_annotated(text, class_table: Sequence[ClassSpec]) -> Optional[List[int]]:

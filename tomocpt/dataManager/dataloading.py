@@ -211,6 +211,21 @@ class VolumeDatsetIO(Dataset):
             dense = tio.ScalarImage(tgt_path).data.float()
         return vol, points, dense, meta
 
+    @staticmethod
+    def _segments_path(tgt_path: str) -> Path:
+        """Filament segments (Gate 6) of a points file: ``<chunk>/filaments/<same name>.npy``."""
+        p = Path(tgt_path)
+        return p.parent.parent / "filaments" / p.name
+
+    def _load_segments(self, tgt_path: str) -> Optional[np.ndarray]:
+        if not str(tgt_path).endswith(".npy"):
+            return None
+        sp = self._segments_path(tgt_path)
+        if not sp.is_file():
+            return None
+        segs = np.load(sp).astype(np.float32).reshape(-1, 8)
+        return segs if len(segs) else None
+
     def _zoom(self, vol: torch.Tensor, points: Optional[np.ndarray], dense: Optional[torch.Tensor], s: float):
         """Zoom by ``s`` (trilinear) and crop a random cube: output voxel ``j`` samples input
         position ``(j + o) / s`` (voxel 0 at the origin, as the points). Points map to
@@ -218,6 +233,7 @@ class VolumeDatsetIO(Dataset):
         n = vol.shape[-1]
         max_off = (n - 1) * (s - 1.0)
         off = torch.rand(3) * max_off  # (z, y, x) offsets in zoomed voxels
+        self._last_zoom_offset = off.double().numpy()  # for the filament segments (Gate 6)
         j = torch.arange(n, dtype=torch.float64)
         axes = [((j + float(off[a])) / s) * (2.0 / (n - 1)) - 1.0 for a in range(3)]
         gz, gy, gx = torch.meshgrid(axes[0], axes[1], axes[2], indexing="ij")
@@ -239,6 +255,7 @@ class VolumeDatsetIO(Dataset):
 
     def _getitem_v2(self, index: int) -> dict:
         vol, points, dense, meta = self._load_v2(index)
+        segs = self._load_segments(self.filepath_tuples[index][1])
         n_classes = int(self.n_classes if self.n_classes is not None else len(meta.class_available))
         available = torch.tensor([bool(a) for a in meta.class_available], dtype=torch.bool)
         d_vox = torch.tensor(meta.class_d_vox, dtype=torch.float64)
@@ -248,6 +265,13 @@ class VolumeDatsetIO(Dataset):
             s = 1.0 + float(torch.rand(1)) * (self.zoom_aug_max - 1.0)
             if s > 1.0:
                 vol, points, dense = self._zoom(vol, points, dense, s)
+                if segs is not None:  # the same map as the points
+                    off = self._last_zoom_offset
+                    segs = segs.astype(np.float64)
+                    segs[:, 0:3] = segs[:, 0:3] * s - off[None, :]
+                    segs[:, 3:6] = segs[:, 3:6] * s - off[None, :]
+                    segs[:, 7] = segs[:, 7] * s
+                    segs = segs.astype(np.float32)
                 d_vox = d_vox * s
                 apix = apix / s
                 # Zoom only enlarges: a class pushed above the band becomes unavailable.
@@ -256,7 +280,11 @@ class VolumeDatsetIO(Dataset):
         if points is not None:
             from tomocpt.labels.helpers import render_targets
             size = tuple(vol.shape[-3:])
-            target = torch.from_numpy(render_targets(points, size, n_classes, border_policy="clip"))
+            target = render_targets(points, size, n_classes, border_policy="clip")
+            if segs is not None:
+                from tomocpt.labels.filaments import render_tubes
+                target = np.maximum(target, render_tubes(segs, size, n_classes))
+            target = torch.from_numpy(target)
         else:
             target = dense
 
@@ -309,6 +337,12 @@ class VolumeDatsetIO(Dataset):
                 pts = np.load(tgt_path).reshape(-1, 5)
                 inside = np.all((pts[:, :3] >= 0) & (pts[:, :3] < self.chunk_size), axis=1)
                 classes = {int(c) for c in pts[inside, 3]}
+                sp = self._segments_path(tgt_path)
+                if sp.is_file():
+                    segs = np.load(sp).reshape(-1, 8)
+                    ends = segs[:, :6].reshape(-1, 2, 3)
+                    hit = np.any(np.all((ends >= 0) & (ends < self.chunk_size), axis=2), axis=1)
+                    classes |= {int(round(float(c))) for c in segs[hit, 6]}
             else:
                 lab = tio.ScalarImage(tgt_path).data
                 classes = {c for c in range(lab.shape[0]) if float(lab[c].max()) > 0.5}

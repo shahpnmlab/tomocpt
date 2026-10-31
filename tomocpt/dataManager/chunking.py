@@ -502,6 +502,7 @@ def _merge_rows_v2(tomosDf: pd.DataFrame, class_table) -> pd.DataFrame:
             "tomogram_path": str(first["tomogram_path"]),
             "label_path": first.get("label_path", str(first["tomogram_path"])),
             "coords_paths": [str(p) for p in g["coords_path"]],
+            "filaments_paths": _filament_paths(g),
             "dataset_id": int(g["_dataset_id"].min()),
             "apix_native": float(apix),
             "class_available": [n in annotated for n in numbers],
@@ -510,6 +511,20 @@ def _merge_rows_v2(tomosDf: pd.DataFrame, class_table) -> pd.DataFrame:
         logging.info(f"Pipeline v2: {len(df)} tracking rows refer to {len(rows)} tomogram files; "
                      "rows of the same tomogram are chunked together.")
     return pd.DataFrame(rows)
+
+
+def _filament_paths(g: pd.DataFrame) -> List[str]:
+    """Filament CSVs (Gate 6) of the tracking rows of one tomogram (column ``filaments_path``)."""
+    if "filaments_path" not in g.columns:
+        return []
+    out = []
+    for p in g["filaments_path"]:
+        if isinstance(p, str) and p.strip() and p.strip().lower() != "nan" and str(p) not in out:
+            out.append(str(p))
+    return out
+
+
+V2_FILAMENTS_DIR_NAME = "filaments"
 
 
 def _save_points(arr: np.ndarray, path: str):
@@ -544,6 +559,15 @@ def process_single_tomo_task_v2(task: Dict[str, Any]) -> Dict[str, Any]:
         device = torch.device("cuda:0" if task["use_cuda"] and torch.cuda.is_available() else "cpu")
 
         coords = [_read_coords(p) for p in task["coords_paths"]]
+        fil_paths = list(task.get("filaments_paths") or [])
+        if fil_paths:
+            from tomocpt.labels.filaments import read_filament_csv
+            fil_dfs = [read_filament_csv(p) for p in fil_paths]
+            for j, fdf in enumerate(fil_dfs):  # filament ids unique across files
+                fdf["filament_id"] = fdf["filament_id"].astype(np.int64) + j * 10_000_000
+            fil_df = pd.concat(fil_dfs, ignore_index=True)
+        else:
+            fil_df = None
         coords_df = pd.concat(coords, ignore_index=True) if coords else pd.DataFrame(
             columns=["x", "y", "z", "class_number", "diameter_ang"])
         vol_np = load_mrc(tomo_path, normalize=True)  # robust normalisation at native size (v1)
@@ -589,15 +613,30 @@ def process_single_tomo_task_v2(task: Dict[str, Any]) -> Dict[str, Any]:
                 pts32 = pts.astype(np.float32)
                 cls_idx = pts32[:, 3].astype(np.int64)
                 radius = pts32[:, 4].astype(np.float64) / 2.0
+                if fil_df is not None and len(fil_df):
+                    from tomocpt.labels.filaments import filament_csv_to_segments, segments_near_box
+                    segs32 = filament_csv_to_segments(fil_df, apix_native, apix_work, table, coord_map=cmap,
+                                                      shift_zyx=pad_front).astype(np.float32)
+                else:
+                    segs32 = np.zeros((0, 8), np.float32)
+                seg_cls = np.round(segs32[:, 6]).astype(np.int64)
 
                 # Legacy empty-chunk drop probability, f1 = voxels covered by available classes.
                 n_vox = float(np.prod(shape))
-                f1 = float(min(n_vox, np.sum(4.0 / 3.0 * np.pi * radius[available[cls_idx]] ** 3)))
+                f1 = float(np.sum(4.0 / 3.0 * np.pi * radius[available[cls_idx]] ** 3))
+                if len(segs32):  # tube volume of available filament classes
+                    seg_len = np.linalg.norm(segs32[:, 3:6].astype(np.float64) - segs32[:, 0:3], axis=1)
+                    seg_r = segs32[:, 7].astype(np.float64) / 2.0
+                    f1 += float(np.sum((np.pi * seg_r ** 2 * seg_len)[available[seg_cls]]))
+                f1 = float(min(n_vox, f1))
                 f0 = n_vox - f1
                 drop_p = float(np.clip(1.0 - alpha * f1 / f0, 0.0, 1.0)) if f0 > 0 else 0.0
                 drop_rng = np.random.default_rng(_stable_seed(seed, name, li, k, "drop"))
 
                 dense = render_targets(pts32, shape, n_classes, "clip") if storage == "dense" else None
+                if dense is not None and len(segs32):
+                    from tomocpt.labels.filaments import render_tubes
+                    dense = np.maximum(dense, render_tubes(segs32, shape, n_classes))
 
                 out_dir = Path(task["outpath"]) / f"{name}__L{li}s{k}"
                 vol_dir = out_dir / constants.VOLUMES_DIR_NAME_PREFIX
@@ -614,6 +653,15 @@ def process_single_tomo_task_v2(task: Dict[str, Any]) -> Dict[str, Any]:
                         sel = np.all((local >= -radius[:, None]) & (local < chunk_size + radius[:, None]), axis=1)
                         chunk_pts = np.concatenate([local[sel], pts32[sel, 3:5]], axis=1).astype(np.float32)
                         empty = not bool(available[cls_idx[sel]].any())
+                        chunk_segs = None
+                        if len(segs32):
+                            ssel = segments_near_box(segs32, loc, chunk_size)
+                            if ssel.any():
+                                chunk_segs = segs32[ssel].copy()
+                                shift = np.asarray(loc, dtype=np.float32)
+                                chunk_segs[:, 0:3] -= shift
+                                chunk_segs[:, 3:6] -= shift
+                                empty = empty and not bool(available[seg_cls[ssel]].any())
                         if empty and drop_rng.random() < drop_p:
                             continue
                         if n_here == 0:
@@ -624,6 +672,10 @@ def process_single_tomo_task_v2(task: Dict[str, Any]) -> Dict[str, Any]:
                         futures.append(executor.submit(_save_chunk, patch["volume"].data.clone(), vol_path))
                         if storage == "points":
                             _save_points(chunk_pts, str(tgt_dir / f"{V2_POINTS_PREFIX}_{suffix}.npy"))
+                            if chunk_segs is not None:
+                                seg_dir = out_dir / V2_FILAMENTS_DIR_NAME
+                                makedir(seg_dir)
+                                _save_points(chunk_segs, str(seg_dir / f"{V2_POINTS_PREFIX}_{suffix}.npy"))
                         else:
                             crop = dense[:, loc[0]:loc[0] + chunk_size, loc[1]:loc[1] + chunk_size,
                                          loc[2]:loc[2] + chunk_size]
@@ -736,6 +788,7 @@ def _do_chunking_v2(tomosDf: pd.DataFrame, chunkedDataDir: str, n_cpus: int, req
         for idx, row in df.iterrows():
             all_tasks.append({
                 "tomogram_path": row["tomogram_path"], "coords_paths": list(row["coords_paths"]),
+                "filaments_paths": list(row.get("filaments_paths", None) or []),
                 "apix_native": float(row["apix_native"]), "dataset_id": int(row["dataset_id"]),
                 "class_available": [bool(a) for a in row["class_available"]],
                 "chunk_dir_name": str(chunk_dir_names.loc[idx]), "outpath": str(outpath),

@@ -27,6 +27,7 @@ from tomocpt.defaultConfigs.infer_config import InferConfig, OutputFormat
 from tomocpt.defaultConfigs.scale_config import ScaleConfig
 from tomocpt.logger import get_logger
 from tomocpt.predict import helpers as H
+from tomocpt.predict.filaments import trace_class_maps
 
 logger = get_logger()
 
@@ -300,9 +301,15 @@ def peaks_from_class_maps(maps: Dict[int, torch.Tensor], class_table: Sequence, 
                           ) -> Tuple[Dict[int, np.ndarray], Dict[Tuple[int, int], int]]:
     """Peaks per class (``[N, 4]`` rows ``z, y, x, score`` in native voxels), found with the
     class diameter and ``thresholds[row]``, then cross-class suppression if
-    ``infer.cross_class_nms``. Returns ``(peaks, removed_counts)`` keyed by class-table row."""
+    ``infer.cross_class_nms``. Returns ``(peaks, removed_counts)`` keyed by class-table row.
+    Filament rows (Gate 6) are skipped: they are traced (``predict.filaments``), and they do
+    not suppress particle peaks."""
+    from tomocpt.predict.filaments import is_filament
+
     peaks = {}
     for c, m in maps.items():
+        if is_filament(class_table[c]):
+            continue
         res = H._extract_peaks_from_mask(
             m.to(device).float(), tomo_name, apix, infer_config,
             length=float(class_table[c].diameter_ang), threshold=float(thresholds[c]),
@@ -321,13 +328,16 @@ def peaks_from_class_maps(maps: Dict[int, torch.Tensor], class_table: Sequence, 
 
 
 def _result(tomo_name: str, apix: float, peaks: Dict[int, np.ndarray],
-            counts: Dict[Tuple[int, int], int]) -> Dict[str, Any]:
-    return {
+            counts: Dict[Tuple[int, int], int], filaments: Optional[Dict[int, list]] = None) -> Dict[str, Any]:
+    out = {
         "name": tomo_name,
         "voxel_size": float(apix),
         "class_coords": {int(c): p.tolist() for c, p in peaks.items()},
         "suppressed": {(int(a), int(b)): int(n) for (a, b), n in counts.items()},
     }
+    if filaments:
+        out["class_filaments"] = {int(c): f for c, f in filaments.items()}
+    return out
 
 
 # --------------------------------------------------------------------------------------
@@ -384,7 +394,8 @@ def infer_tomos_v2(model, tomo_fnames: List[Path], gpu_id: Optional[int], worker
                 if infer_config.save_predicted_coords:
                     peaks, counts = peaks_from_class_maps(maps, table, apix, infer_config, thresholds,
                                                           tomo_fname.stem, device)
-                    results.append(_result(tomo_fname.stem, apix, peaks, counts))
+                    fils = trace_class_maps(maps, table, apix, infer_config, thresholds, tomo_fname.stem)
+                    results.append(_result(tomo_fname.stem, apix, peaks, counts, fils))
                 del maps
             finally:
                 gc.collect()
@@ -415,8 +426,38 @@ def peaks_from_saved_maps(tomo_fnames: List[Path], settings: CheckpointSettings,
         if not maps:
             continue
         peaks, counts = peaks_from_class_maps(maps, table, float(apix), infer_config, thresholds, stem, device)
-        results.append(_result(stem, float(apix), peaks, counts))
+        fils = trace_class_maps(maps, table, float(apix), infer_config, thresholds, stem)
+        results.append(_result(stem, float(apix), peaks, counts, fils))
     return results
+
+
+def _write_filament_outputs(results, class_table, infer_config, fmt, base, suffix, out_dir) -> None:
+    """Filament classes: one file per class (``<name>_<class name>.star``, IMOD
+    ``<tomogram stem>_<class name>.mod``) with ``rlnHelicalTubeID`` 1-based per tomogram."""
+    from tomocpt.predict import filaments as F
+
+    rows = sorted({c for res in results for c in res.get("class_filaments", {})})
+    for c in rows:
+        row = class_table[c]
+        entries = [(res["name"], res.get("class_filaments", {}).get(c, [])) for res in results]
+        if not any(f for _, f in entries):
+            logger.warning(f"No filaments were traced for class {row.name}, skipping its file.")
+            continue
+        if fmt == OutputFormat.imod:
+            for name, fils in entries:
+                if fils:
+                    F.write_filament_imod_model(out_dir, name, fils, f"{Path(name).stem}_{row.name}.mod")
+            continue
+        fname = f"{base.stem}_{row.name}{suffix}"
+        if fmt == OutputFormat.warp:
+            F.write_filament_warp_star_file(out_dir, entries, fname)
+        elif fmt in (OutputFormat.relion_31, OutputFormat.relion_50):
+            vs = [res["voxel_size"] for res in results if res.get("class_filaments", {}).get(c)]
+            F.write_filament_star_file(out_dir, entries, vs[0], fname,
+                                       version=3.1 if fmt == OutputFormat.relion_31 else 5.0,
+                                       class_number=int(row.number))
+        else:
+            raise ValueError(f"Unsupported output format: {fmt}")
 
 
 def write_class_outputs(results: List[Dict[str, Any]], class_table: Sequence, infer_config: InferConfig) -> None:
@@ -428,6 +469,7 @@ def write_class_outputs(results: List[Dict[str, Any]], class_table: Sequence, in
     fmt = OutputFormat(infer_config.predictions_coord_format)
     base = Path(infer_config.predictions_coord_filename)
     suffix = base.suffix or ".star"
+    _write_filament_outputs(results, class_table, infer_config, fmt, base, suffix, out_dir)
     rows_present = sorted({c for res in results for c in res["class_coords"]})
     for c in rows_present:
         row = class_table[c]

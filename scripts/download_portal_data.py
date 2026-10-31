@@ -171,6 +171,28 @@ def prepdata_snippet(
     return "\n".join(lines) + "\n"
 
 
+def filament_snippet(tomogram_dir: Path, all_objects_star: Optional[Path], point_classes: Dict[str, int],
+                     mask_classes: Dict[str, int], mask_dirs: Dict[str, Path], diameters: Dict[str, float]) -> str:
+    """Commented multi-class (pipeline v2) ``prepData`` block with ``filament_masks``."""
+    allc = {**point_classes, **mask_classes}
+    diam = ",".join(f"{n}:{diameters.get(o, '???')}" for o, n in sorted(allc.items(), key=lambda kv: kv[1]))
+    names = ",".join(f"{n}:{o}" for o, n in sorted(allc.items(), key=lambda kv: kv[1]))
+    fm = ",".join(f"{mask_classes[o]}:{mask_dirs[o]}" for o in sorted(mask_classes))
+    lines = [
+        "  # Filament classes from segmentation masks need pipeline v2 (train.data_pipeline_version=2):",
+        "  # multiclass: true",
+        f"  # raw_data_dir: {tomogram_dir}",
+    ]
+    if all_objects_star is not None:
+        lines.append(f"  # coordinate_files: {all_objects_star}")
+    lines += [
+        f"  # class_diameters: {diam}",
+        f"  # class_names: {names}",
+        f"  # filament_masks: {fm}",
+    ]
+    return "\n".join(lines) + "\n"
+
+
 def parse_diameters(text: Optional[str]) -> Dict[str, float]:
     """Parse ``name=diameter,name=diameter`` into a dict (names made safe)."""
     out: Dict[str, float] = {}
@@ -344,6 +366,45 @@ def _point_files(cdp, client, run_id: int, ground_truth_only: bool):
                 yield safe_name(ann.object_name), ann, f, spacing
 
 
+MASK_SHAPES = ("SegmentationMask",)
+
+
+def _mask_files(cdp, client, run_id: int, ground_truth_only: bool):
+    """Yield ``(object_name, annotation, annotation_file, file_spacing)`` for MRC segmentation masks."""
+    annotations = cdp.Annotation.find(client, [cdp.Annotation.run_id == run_id])
+    for ann in annotations:
+        if ground_truth_only and not ann.ground_truth_status:
+            continue
+        for shape in ann.annotation_shapes:
+            if shape.shape_type not in MASK_SHAPES:
+                continue
+            for f in shape.annotation_files:
+                if str(f.format).lower() != "mrc":
+                    continue
+                spacing = float(f.tomogram_voxel_spacing.voxel_spacing)
+                yield safe_name(ann.object_name), ann, f, spacing
+
+
+def fetch_mask(f, dest: Path, size_xyz: Sequence[int], voxel_spacing: float, file_spacing: float) -> None:
+    """Download a segmentation mask and check it against the tomogram: same shape (``ValueError``
+    otherwise, and the file is removed) and voxel spacing; the header gets the tomogram's voxel size."""
+    import mrcfile
+
+    if abs(file_spacing - voxel_spacing) > 1e-3 * max(voxel_spacing, 1.0):
+        raise ValueError(f"mask {f.https_path}: voxel spacing {file_spacing} A differs from the tomogram's "
+                         f"{voxel_spacing} A")
+    download_file(f.https_path, dest, expected_size=getattr(f, "file_size", None))
+    with mrcfile.open(str(dest), permissive=True, header_only=True) as m:
+        shape_zyx = (int(m.header.nz), int(m.header.ny), int(m.header.nx))
+    want = (int(size_xyz[2]), int(size_xyz[1]), int(size_xyz[0]))
+    if shape_zyx != want:
+        dest.unlink(missing_ok=True)
+        raise ValueError(f"mask {f.https_path}: shape (z, y, x) {shape_zyx} differs from the tomogram's {want}")
+    with mrcfile.open(str(dest), mode="r+", permissive=True) as m:
+        if abs(float(m.voxel_size.x) - voxel_spacing) > 1e-3:
+            m.voxel_size = voxel_spacing
+
+
 def _pick_one_annotation(entries: List[tuple], tomo_obj) -> Optional[tuple]:
     """Several annotations can exist for one object. Prefer same alignment, then
     ground truth, then curator-recommended, then the lowest id."""
@@ -393,6 +454,9 @@ def run(args: argparse.Namespace) -> int:
         "runs": [],
     }
     points: Dict[str, Dict[str, np.ndarray]] = {}  # object -> tomo -> xyz (tomogram voxels)
+    masks_wanted = {safe_name(o) for o in args.masks.split(",") if o.strip()} if args.masks else set()
+    mask_dir = out / "masks"
+    masks: Dict[str, Dict[str, Path]] = {}  # object -> tomo -> mask MRC
     pixel_size: Optional[float] = None
 
     for r in runs:
@@ -454,13 +518,37 @@ def run(args: argparse.Namespace) -> int:
                 "annotation_voxel_spacing": file_spacing, "ground_truth": bool(ann.ground_truth_status),
                 "method_type": ann.method_type, "points_outside": n_out,
             }
+        if masks_wanted:
+            by_mask: Dict[str, List[tuple]] = {}
+            for entry in _mask_files(cdp, client, r.id, args.ground_truth_only):
+                if entry[0] in masks_wanted:
+                    by_mask.setdefault(entry[0], []).append(entry)
+            run_record["masks"] = {}
+            for obj in sorted(masks_wanted):
+                if obj not in by_mask:
+                    log.warning("run %s: no segmentation mask for %s", r.name, obj)
+                    continue
+                obj_name, ann, f, file_spacing = _pick_one_annotation(by_mask[obj], t)
+                dest = mask_dir / obj_name / f"{name}.mrc"
+                try:
+                    fetch_mask(f, dest, size_xyz, chosen.voxel_spacing, file_spacing)
+                except ValueError as e:
+                    log.error("run %s, %s: %s", r.name, obj_name, e)
+                    return 1
+                masks.setdefault(obj_name, {})[name] = dest
+                run_record["masks"][obj_name] = {
+                    "path": str(dest), "annotation_id": int(ann.id), "annotation_file_id": int(f.id),
+                    "annotation_voxel_spacing": file_spacing, "ground_truth": bool(ann.ground_truth_status),
+                    "curator_recommended": bool(getattr(ann, "is_curator_recommended", False)),
+                    "method_type": ann.method_type,
+                }
         manifest["runs"].append(run_record)
         log.info("run %s: tomogram %s, %s", r.name, chosen.id,
                  ", ".join(f"{k}={v['n_points']}" for k, v in run_record["objects"].items()) or "no points")
 
     if args.list:
         return 0
-    if not points:
+    if not points and not masks:
         log.error("no point annotations were found for the selection")
         return 1
 
@@ -472,13 +560,21 @@ def run(args: argparse.Namespace) -> int:
         star_paths[obj] = coord_dir / f"{obj}.star"
         write_star(star_paths[obj], table, pixel_size)
         all_tables.append(particles_table(per_tomo, class_number=classes[obj]))
-    write_star(coord_dir / "all_objects.star", pd.concat(all_tables, ignore_index=True), pixel_size)
+    if all_tables:
+        write_star(coord_dir / "all_objects.star", pd.concat(all_tables, ignore_index=True), pixel_size)
+    mask_classes = {obj: len(classes) + i + 1 for i, obj in enumerate(sorted(masks))}
 
     manifest["pixel_size"] = pixel_size
     manifest["class_numbers"] = classes
     manifest["star_files"] = {k: str(v) for k, v in star_paths.items()}
+    if masks:
+        manifest["mask_class_numbers"] = mask_classes
+        manifest["mask_dirs"] = {obj: str(mask_dir / obj) for obj in sorted(masks)}
     (out / "manifest.json").write_text(json.dumps(manifest, indent=2, default=str))
-    snippet = prepdata_snippet(tomo_dir, star_paths, diameters, out / "training_data")
+    snippet = prepdata_snippet(tomo_dir, star_paths, diameters, out / "training_data") if star_paths else "prepData:\n"
+    if masks:
+        snippet += filament_snippet(tomo_dir, coord_dir / "all_objects.star" if all_tables else None, classes,
+                                    mask_classes, {obj: mask_dir / obj for obj in masks}, diameters)
     (out / "prepdata_snippet.yaml").write_text(snippet)
     print(snippet)
     log.info("done: %d runs, objects %s; manifest at %s", len(manifest["runs"]), sorted(points), out / "manifest.json")
@@ -499,6 +595,9 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--max-runs", type=int, default=None, help="Download at most this many runs.")
     p.add_argument("--diameters", default=None, help="name=diameter_A,... for the prepData snippet.")
     p.add_argument("--ground-truth-only", action="store_true", help="Use only annotations marked ground truth.")
+    p.add_argument("--masks", default=None,
+                   help="Comma-separated object names whose SegmentationMask annotations (MRC) to download, "
+                        "e.g. microtubule (filament classes; prepData.filament_masks).")
     p.add_argument("--coords-only", action="store_true", help="Download annotations but not tomograms.")
     p.add_argument("--fix-header", action="store_true", help="Write the portal voxel size into MRC headers that disagree.")
     p.add_argument("--allow-outside", action="store_true", help="Keep going when points fall outside the tomogram.")

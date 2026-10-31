@@ -188,15 +188,23 @@ def _split_csv(text) -> list:
 def _prepare_data_multiclass(config, border_policy: str, apix_override) -> None:
     """prepare_data with prepData.multiclass=True: every (raw_data_dir, coordinate_files)
     pair is one dataset that holds all species (STAR files with rlnClassNumber)."""
+    from tomocpt.labels.filaments import prepare_filament_labels
     from tomocpt.labels.helpers import prepare_picking_star_multiclass
-    from tomocpt.labels.multiclass import class_table_from_config
+    from tomocpt.labels.multiclass import class_table_from_config, filament_sources
 
     if config.coordinate_file_type != PrepareDataType.star:
         raise ConfigurationError("prepData.multiclass=True needs STAR coordinate files with rlnClassNumber")
+    # Raises ValueError for a filament class with both masks and coordinates (before any output).
+    has_filaments = bool(filament_sources(config))
     class_table = class_table_from_config(config)  # raises if class_diameters is missing or invalid
 
     raw_dirs = [Path(x) for x in _split_csv(config.raw_data_dir)]
-    coord_files = [Path(x) for x in _split_csv(config.coordinate_files)]
+    coord_txt = getattr(config, "coordinate_files", None)
+    no_coords = coord_txt is None or str(coord_txt).strip() in ("", "???", "None")
+    if no_coords and not has_filaments:
+        raise ConfigurationError("prepData.coordinate_files is required (or filament_masks / filament_coords)")
+    # Filament-only datasets: no particle STAR file.
+    coord_files = [None] * len(raw_dirs) if no_coords else [Path(x) for x in _split_csv(coord_txt)]
     if len(raw_dirs) != len(coord_files):
         raise ConfigurationError(
             f"raw_data_dir has {len(raw_dirs)} entries but coordinate_files has {len(coord_files)}")
@@ -210,16 +218,22 @@ def _prepare_data_multiclass(config, border_policy: str, apix_override) -> None:
         dataset_output_dir = Path(base_output_dir / f"dataset_{idx}_class_{label}").resolve()
         dataset_output_dir.mkdir(parents=True, exist_ok=True)
         # Errors are raised (not logged and skipped): a missing class diameter must stop here.
-        prepare_picking_star_multiclass(
-            input_file=coord_file,
-            tomo_path=raw_dir,
-            output_dir=dataset_output_dir,
-            class_table=class_table,
-            class_annotated=getattr(config, "class_annotated", None),
-            class_id_label=label,
-            border_policy=border_policy,
-            apix_override=apix_override,
-        )
+        tracking_csv = None
+        if coord_file is not None:
+            prepare_picking_star_multiclass(
+                input_file=coord_file,
+                tomo_path=raw_dir,
+                output_dir=dataset_output_dir,
+                class_table=class_table,
+                class_annotated=getattr(config, "class_annotated", None),
+                class_id_label=label,
+                border_policy=border_policy,
+                apix_override=apix_override,
+            )
+            tracking_csv = dataset_output_dir / "star_picking_tracking_multiclass.csv"
+        if has_filaments:
+            prepare_filament_labels(config, dataset_output_dir, raw_dir, class_table,
+                                    tracking_csv=tracking_csv, apix_override=apix_override)
         logging.info(f"Successfully processed dataset {idx}")
 
     logging.info("Completed processing all datasets")
