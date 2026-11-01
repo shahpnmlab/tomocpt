@@ -2,7 +2,7 @@
  "base_ref": "v2-gate-0-base",
  "base_commit": "ce6f7b0ce856f19556266e7ad3143bfb66cdb7e2",
  "base_note": "first commit of branch v2-dev (released main + fix/v1-patches + plan); set by the orchestrator",
- "current_gate": 7,
+ "current_gate": "7",
  "gpu_available": true,
  "gates": {
   "1": {
@@ -327,6 +327,33 @@
     "Future to-do: re-evaluate SSL v2 on a bigger / experimental dataset (CZII, portal) rather than the small phantom set before redesigning. See HANDOFF_scale_free.md section 7."
    ],
    "report_path": null
+  },
+  "7": {
+   "status": "IN_PROGRESS",
+   "agent": "07_AGENT_DISCRIMINATIVE",
+   "attempts": 1,
+   "test_hashes": {
+    "tests/gate7/README.md": "bc5ce996139c9ce44f2272d576a52ba30bddc1c580476dd88c17b1c16153effe",
+    "tests/gate7/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "tests/gate7/conftest.py": "60a48bef418b23c219cb8008ff750430bc44e10c14edb3f0a53850f7b1a42ce9",
+    "tests/gate7/g7_helpers.py": "b3c36b55658b6ac2e00f0cf96e4316826c6ade6d074a3ac7de5fa7e1bd9b88d3",
+    "tests/gate7/test_g7_c1_lock.py": "7c49e97a14a993464ec87681012e36563a66e352b82ce073eace675febad37b4",
+    "tests/gate7/test_g7_learning.py": "15515d493c3328ac0aa1bf459dda13d21258a5686e41276dbb1695874b2a293e",
+    "tests/gate7/test_g7_losses.py": "a342b42ad8c1a024b34271f7a8ac4acb19c20bd41f63fcc3c0b4fe02e00dcbde",
+    "tests/gate7/test_g7_model.py": "da06b0dac79ed9697777413c90bb1b9472b740938ae2ff603cea3e55c502c8c6",
+    "tests/gate7/test_g7_negative_masks.py": "5e91887ed6632a408cde53eb93d93b65e444b039b003e2e9f9509af5759c7d7c",
+    "tests/gate7/test_g7_sampling.py": "ce4ce8da0a708956204a386052a3bfcbfa11e6dac61e64f81b83c62e7121a508",
+    "tests/golden/gate7_common.py": "dac9203375d83386d9ccdd6b0bbee347892da34c5b4da87f65b133d36b315aa5",
+    "tests/golden/gate7_lock.json": "58a87cd2cbaaa306c01b6aab3f9a41f7528091dc6ebfa286a6154ac8f69e60b2",
+    "tests/golden/make_goldens_gate7.py": "ede6e5fa3a423321bc1f984bea9878f33659b57ce8afe0fd8a96e82317c346db"
+   },
+   "path_exceptions": [],
+   "notes": [
+    "Human decision (1 Nov 2026): anchors and focal positives are the target's peak voxels with value >= anchor_min_target, default 0.5 (spec 0.99 gives almost no anchors off-grid).",
+    "Human decision (1 Nov 2026): value_loss='focal' is reconciled with Huber: Section 1.5 weights and voxel mean, per-voxel penalty |y-p|^focal_alpha * BCE(p,y) (minimiser p=y) on particle channels, Huber on filament channels; focal_beta unused. The spec's CenterNet focal (instance-normalised) collapsed to a flat output in the slow tests. Huber stays the default (invariant 1).",
+    "Orchestrator rulings: call signatures (tests/gate7/g7_helpers.py); filament anchor tolerance 0.75 vox off-grid; hard-negative exclusion (1+e)R-1; negative masks reach the batch as negative_mask [B,1,64,64,64] bool; C10 peak-shape check (HANDOFF 2.2) plus C10 look-alike F1 check; softmax head in slow tests; C7 golden gradients compared by absolute sum (rtol 1e-5).",
+    "Slow-tier calibration: SNR 0.25, hollow wall 0.4, 400 steps (1500 steps: baseline look-alike F1 1.00, C9 void). C10 thr-0.3 metric is near 0 for both arms at 400 steps (weak); see tests/gate7/README.md."
+   ]
   }
  }
 }
