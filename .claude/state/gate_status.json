@@ -329,7 +329,7 @@
    "report_path": null
   },
   "7": {
-   "status": "IN_PROGRESS",
+   "status": "AWAITING_HUMAN",
    "agent": "07_AGENT_DISCRIMINATIVE",
    "attempts": 1,
    "test_hashes": {

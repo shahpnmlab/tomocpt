@@ -1,0 +1,113 @@
+{
+ "gate_id": 7,
+ "agent_name": "07_AGENT_DISCRIMINATIVE (implemented directly by the orchestrator)",
+ "status": "AWAITING_HUMAN",
+ "base_ref": "v2-gate-6-passed / v2-dev 4e34270; tests 0822e66, implementation 1f3f4f0",
+ "files_created": [
+  "tomocpt/training/discriminative.py",
+  "tomocpt/defaultConfigs/discriminative_config.py",
+  "tomocpt/labels/negative_masks.py"
+ ],
+ "files_modified": [
+  "tomocpt/networks/pickingModel.py",
+  "tomocpt/networks/swinunetr.py",
+  "tomocpt/training/multiclass_loss.py",
+  "tomocpt/training/helpers.py",
+  "tomocpt/defaultConfigs/train_config.py",
+  "tomocpt/defaultConfigs/prepdata_config.py",
+  "tomocpt/dataManager/chunking.py",
+  "tomocpt/dataManager/dataloading.py",
+  "tomocpt/labels/run.py"
+ ],
+ "exported_symbols": {
+  "tomocpt.training.discriminative": [
+   "sample_anchors",
+   "sample_hard_negatives",
+   "ContrastiveMemoryBank",
+   "supcon_loss",
+   "focal_heatmap_loss",
+   "soft_focal_penalty",
+   "focal_positives"
+  ],
+  "tomocpt.networks.swinunetr": [
+   "MySwinUNETR.forward_features",
+   "ScaleConditionedSwinUNETR.forward_features"
+  ],
+  "tomocpt.networks.pickingModel": [
+   "BasePickingModel.contrastive_head"
+  ]
+ },
+ "config_fields_added": [
+  "train.discriminative (DiscriminativeConfig)",
+  "prepData.negative_masks"
+ ],
+ "legacy_equivalence": {
+  "G7-C7 both off vs Gate 6 golden": "logits SHA and loss bit-identical; gradient abs-sum rtol 1e-5"
+ },
+ "metrics": {
+  "slow_400_steps_seed0_seed1": {
+   "off": {
+    "lookalike_f1": [
+     0.885,
+     0.857
+    ],
+    "actin_f1": [
+     0.742,
+     0.684
+    ],
+    "actin_on_sheet_fp": [
+     195,
+     1044
+    ]
+   },
+   "contrastive": {
+    "lookalike_f1": [
+     1.0,
+     1.0
+    ],
+    "actin_f1": [
+     0.669,
+     0.733
+    ],
+    "actin_on_sheet_fp": [
+     224,
+     616
+    ]
+   },
+   "focal_reconciled": {
+    "lookalike_f1": [
+     0.87,
+     0.917
+    ],
+    "actin_f1": [
+     0.796,
+     0.885
+    ],
+    "actin_on_sheet_fp": [
+     96,
+     390
+    ]
+   }
+  }
+ },
+ "pytest_fast": {
+  "passed": 758,
+  "skipped": 27,
+  "failed": 0
+ },
+ "pytest_slow": {
+  "gate7": "4 passed (414 s)"
+ },
+ "benchmarks": {
+  "czii_cv": "RUNNING (started 2026-11-01 23:51): arms focal, contrastive (w 0.1), both; softmax, k 0, 60 epochs, baseline fold chunks; outputs benchmarks/out/czii_g7_<arm>/cv_summary.md; launcher log benchmarks/out/czii_g7_cv.log; about 21.5 h per arm. Acceptance: >= 0.02 Kaggle-weighted OOF F4 over 0.741.",
+  "filament_membranes": "not run (Gate 6 data with membrane negative masks)"
+ },
+ "known_limitations": [
+  "The spec's CenterNet focal term collapsed; replaced by the reconciled term (human decision 1 Nov 2026). focal_heatmap_loss kept, unused.",
+  "C10 thr-0.3 no-NMS metric is near 0 for both arms at 400 steps (weak); the added look-alike F1 check carries C10.",
+  "C9 sheet criterion passes on the seed sum only (seed 0: 224 vs 195).",
+  "Contrastive arm lowers actin F1 on seed 0 (0.67 vs 0.74)."
+ ],
+ "notes_for_next_agent": "value_loss='focal' = Section 1.5 weights x |y-p|^focal_alpha BCE(p,y) on particle channels, Huber on filament channels. Huber stays the default (invariant 1); making focal the default is a human decision after the CZII CV.",
+ "attempt": 1
+}
