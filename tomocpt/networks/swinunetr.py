@@ -58,6 +58,23 @@ class MySwinUNETR(SwinUNETR):
         logits = self.out(out)
         return logits, hidden_states_out[4]
 
+    def forward_features(self, x_in, apix=None):
+        """``forward`` plus the ``decoder2`` output (``[B, fs, D/2, H/2, W/2]``, Gate 7 contrastive
+        features): ``(logits, hidden_states_out[4], decoder2)``. ``apix`` is ignored (unconditioned)."""
+        hidden_states_out = self.swinViT(x_in, self.normalize)
+        enc0 = self.encoder1(x_in)
+        enc1 = self.encoder2(hidden_states_out[0])
+        enc2 = self.encoder3(hidden_states_out[1])
+        enc3 = self.encoder4(hidden_states_out[2])
+        dec4 = self.encoder10(hidden_states_out[4])
+        dec3 = self.decoder5(dec4, hidden_states_out[3])
+        dec2 = self.decoder4(dec3, enc3)
+        dec1 = self.decoder3(dec2, enc2)
+        dec0 = self.decoder2(dec1, enc1)
+        out = self.decoder1(dec0, enc0)
+        logits = self.out(out)
+        return logits, hidden_states_out[4], dec0
+
 
 class ScaleConditionedSwinUNETR(MySwinUNETR):
     """MySwinUNETR with FiLM conditioning on the working voxel size in the decoder path.
@@ -98,6 +115,27 @@ class ScaleConditionedSwinUNETR(MySwinUNETR):
         out = film[5](self.decoder1(dec0, enc0), e)
         logits = self.out(out)
         return logits, hidden_states_out[4]
+
+    def forward_features(self, x_in, apix=None):
+        """``forward(x, apix)`` plus the FiLM-conditioned ``decoder2`` output:
+        ``(logits, hidden_states_out[4], decoder2)``."""
+        if apix is None:
+            return super().forward_features(x_in)
+        e = self.cond.scale_embed(apix)
+        film = self.cond.film
+        hidden_states_out = self.swinViT(x_in, self.normalize)
+        enc0 = self.encoder1(x_in)
+        enc1 = self.encoder2(hidden_states_out[0])
+        enc2 = self.encoder3(hidden_states_out[1])
+        enc3 = self.encoder4(hidden_states_out[2])
+        dec4 = film[0](self.encoder10(hidden_states_out[4]), e)
+        dec3 = film[1](self.decoder5(dec4, hidden_states_out[3]), e)
+        dec2 = film[2](self.decoder4(dec3, enc3), e)
+        dec1 = film[3](self.decoder3(dec2, enc2), e)
+        dec0 = film[4](self.decoder2(dec1, enc1), e)
+        out = film[5](self.decoder1(dec0, enc0), e)
+        logits = self.out(out)
+        return logits, hidden_states_out[4], dec0
 
 
 def load_legacy_state_dict(model, state_dict):

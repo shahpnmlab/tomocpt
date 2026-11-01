@@ -315,6 +315,22 @@ def _fine_tune_into_v2(checkpoint_path, lr, state_dict, constants_dict, checkpoi
     return model
 
 
+def _init_contrastive_head_from_ssl(model, state_dict) -> bool:
+    """Gate 7: copy an SSL v2 checkpoint's dense head (``dense_head.*``) into the picker's
+    contrastive head when ``train.discriminative.init_from_ssl`` and the shapes match."""
+    head = getattr(model, "contrastive_head", None)
+    if head is None or not bool(model._disc("init_from_ssl", True)):
+        return False
+    src = {k[len("dense_head."):]: v for k, v in state_dict.items() if k.startswith("dense_head.")}
+    own = head.state_dict()
+    if not src or set(src) != set(own) or any(tuple(src[k].shape) != tuple(own[k].shape) for k in own):
+        logging.info("Contrastive head starts fresh: the source checkpoint has no matching SSL dense head.")
+        return False
+    head.load_state_dict(src)
+    logging.info("Contrastive head initialised from the SSL v2 dense head.")
+    return True
+
+
 def _create_model(config: DictConfig):
     """Factory function to create the appropriate model based on the config."""
     lr = config.optimizer.lr
@@ -371,6 +387,8 @@ def _create_model(config: DictConfig):
         if checkpoint_path and use_v2_fine_tune:
             model = _fine_tune_into_v2(checkpoint_path, lr, state_dict, constants_dict, checkpoint_config)
             resume_from_ckpt = None
+            if checkpoint_config.train.mode != TrainingModes.picking:
+                _init_contrastive_head_from_ssl(model, state_dict)
         elif checkpoint_path:
             logging.info(f"Loading model from checkpoint: {checkpoint_path}")
             try:

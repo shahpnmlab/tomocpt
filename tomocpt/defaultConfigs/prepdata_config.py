@@ -127,6 +127,14 @@ class PrepdataConfig:
         ),
     ] = False
 
+    negative_masks: Annotated[
+        Optional[str],
+        typer.Option(
+            help="Masks of structures that are never a class (e.g. membranes): '<name>:<mask dir>,...' (MRC "
+                 "masks matched to tomograms by name; negatives for the contrastive loss; pipeline v2)"
+        ),
+    ] = None
+
     USE_CUDA_FOR_DATA: bool = True
     ALPHA_FOR_DROPPING_EMPTY_CUBES: float = 1
 

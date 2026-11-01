@@ -74,6 +74,20 @@ def _other_class_target(y_true: torch.Tensor, available: torch.Tensor) -> torch.
     return torch.where(idx[:, :1] == channel, top2[:, 1:2], top2[:, :1])
 
 
+def _value_weights(y_true: torch.Tensor, available: torch.Tensor, cross_class_neg_weight: float) -> torch.Tensor:
+    """Section 1.5 weights per sample and class (plus the Gate 3b cross-class term):
+    ``w_pos = N/(S+1)`` where ``y > 0``, else ``2 N/(N-S+1)`` (+ ``k w_pos o``)."""
+    B, C = y_true.shape[:2]
+    n_vox = y_true[0, 0].numel()
+    s = y_true.flatten(2).sum(2)  # [B, C], sum of soft labels
+    w_pos = (n_vox / (s + 1)).view(B, C, 1, 1, 1)
+    w_neg = (n_vox / (n_vox - s + 1)).view(B, C, 1, 1, 1)
+    neg = 2 * w_neg
+    if cross_class_neg_weight and C > 1:
+        neg = neg + cross_class_neg_weight * w_pos * _other_class_target(y_true, available)
+    return torch.where(y_true > 0, w_pos, neg)
+
+
 def multiclass_picking_loss(
     y_pred: torch.Tensor,
     y_true: torch.Tensor,
@@ -82,6 +96,9 @@ def multiclass_picking_loss(
     class_weights: Optional[Union[torch.Tensor, Sequence[float]]] = None,
     checkpoint: bool = True,
     cross_class_neg_weight: float = 0.0,
+    value_loss: str = "huber",
+    focal_channels: Optional[Sequence[bool]] = None,
+    focal_gamma: float = 2.0,
 ) -> torch.Tensor:
     """Pipeline-v2 picking loss.
 
@@ -95,6 +112,11 @@ def multiclass_picking_loss(
         cross_class_neg_weight: ``k`` of Gate 3b. A voxel outside class c but inside another
             available class d gets the negative weight ``2·w_neg + k·w_pos·o`` in channel c,
             where ``o`` is the largest soft target of the other available classes. 0 = off.
+        value_loss: ``"huber"`` (the weighted Huber term above) or ``"focal"`` (Gate 7, human
+            decision 1 Nov 2026): the same weights ``w`` and voxel mean, with the per-voxel
+            penalty ``discriminative.soft_focal_penalty`` (``|y - p|^focal_gamma * BCE(p, y)``,
+            minimiser ``p = y``) on the channels where ``focal_channels`` is True (default all)
+            and the Huber penalty on the others (filament channels). The Hessian term is the same.
 
     Returns the mean over available ``(b, c)`` pairs (0 if none is available). Every output
     channel is part of the graph, so DDP sees a gradient (possibly zero) for every parameter.
@@ -103,16 +125,22 @@ def multiclass_picking_loss(
     y_true = y_true.to(y_pred.dtype)
     available = class_available.to(device=y_pred.device, dtype=torch.bool).view(B, C)
 
-    # Section 1.5 weights, per sample and per class
-    n_vox = y_true[0, 0].numel()
-    s = y_true.flatten(2).sum(2)  # [B, C], sum of soft labels
-    w_pos = (n_vox / (s + 1)).view(B, C, 1, 1, 1)
-    w_neg = (n_vox / (n_vox - s + 1)).view(B, C, 1, 1, 1)
-    neg = 2 * w_neg
-    if cross_class_neg_weight and C > 1:
-        neg = neg + cross_class_neg_weight * w_pos * _other_class_target(y_true, available)
-    w = torch.where(y_true > 0, w_pos, neg)
-    value_term = (w * nn.functional.huber_loss(y_pred, y_true, reduction="none")).flatten(2).mean(2)
+    if value_loss == "huber":
+        w = _value_weights(y_true, available, cross_class_neg_weight)
+        value_term = (w * nn.functional.huber_loss(y_pred, y_true, reduction="none")).flatten(2).mean(2)
+    elif value_loss == "focal":
+        from tomocpt.training.discriminative import soft_focal_penalty
+
+        w = _value_weights(y_true, available, cross_class_neg_weight)
+        sel = [True] * C if focal_channels is None else [bool(v) for v in focal_channels]
+        if len(sel) != C:
+            raise ValueError(f"focal_channels has {len(sel)} entries for {C} channels")
+        sel_t = torch.tensor(sel, device=y_pred.device).view(1, C, 1, 1, 1)
+        penalty = torch.where(sel_t, soft_focal_penalty(y_pred, y_true, focal_gamma).to(y_pred.dtype),
+                              nn.functional.huber_loss(y_pred, y_true, reduction="none"))
+        value_term = (w * penalty).flatten(2).mean(2)
+    else:
+        raise ValueError(f"value_loss must be 'huber' or 'focal', got {value_loss!r}")
 
     scale = (class_d_vox.to(device=y_pred.device, dtype=y_pred.dtype).view(B, C) / HESSIAN_REFERENCE_D_VOX) ** 2
     use_checkpoint = checkpoint and torch.is_grad_enabled()

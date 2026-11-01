@@ -191,6 +191,7 @@ def _prepare_data_multiclass(config, border_policy: str, apix_override) -> None:
     from tomocpt.labels.filaments import prepare_filament_labels
     from tomocpt.labels.helpers import prepare_picking_star_multiclass
     from tomocpt.labels.multiclass import class_table_from_config, filament_sources
+    from tomocpt.labels.negative_masks import add_negative_mask_paths
 
     if config.coordinate_file_type != PrepareDataType.star:
         raise ConfigurationError("prepData.multiclass=True needs STAR coordinate files with rlnClassNumber")
@@ -232,8 +233,9 @@ def _prepare_data_multiclass(config, border_policy: str, apix_override) -> None:
             )
             tracking_csv = dataset_output_dir / "star_picking_tracking_multiclass.csv"
         if has_filaments:
-            prepare_filament_labels(config, dataset_output_dir, raw_dir, class_table,
-                                    tracking_csv=tracking_csv, apix_override=apix_override)
+            tracking_csv = prepare_filament_labels(config, dataset_output_dir, raw_dir, class_table,
+                                                   tracking_csv=tracking_csv, apix_override=apix_override)
+        add_negative_mask_paths(config, raw_dir, tracking_csv)  # Gate 7; no-op without negative_masks
         logging.info(f"Successfully processed dataset {idx}")
 
     logging.info("Completed processing all datasets")

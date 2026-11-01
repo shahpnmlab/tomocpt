@@ -10,6 +10,7 @@ from tomocpt.defaultConfigs.network_config import NetworkConfig
 from tomocpt.defaultConfigs.scale_config import ScaleConfig
 from tomocpt.defaultConfigs.particles_config import ParticlesConfig
 from tomocpt.defaultConfigs.ssl_config import SSLConfig
+from tomocpt.defaultConfigs.discriminative_config import DiscriminativeConfig
 
 
 class TrainingModes(str, Enum):
@@ -284,6 +285,10 @@ class TrainConfig:
     ssl: Annotated[
         SSLConfig, typer.Option(help="Self-supervised pretraining settings (mode=selfSupervised)")
     ] = field(default_factory=SSLConfig)
+    discriminative: Annotated[
+        DiscriminativeConfig,
+        typer.Option(help="Discriminative training of v2 pickers: contrastive loss, focal value term (Gate 7)"),
+    ] = field(default_factory=DiscriminativeConfig)
 
     # Distillation parameters
     use_distillation: Annotated[

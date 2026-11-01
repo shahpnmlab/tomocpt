@@ -65,6 +65,88 @@ class BasePickingModel(BaseModel):
         self.lr = lr
         if self.class_head() not in CLASS_HEADS:
             raise ValueError(f"train.particles.class_head must be one of {CLASS_HEADS}, got {self.class_head()!r}")
+        self.contrastive_head = None
+        self._build_discriminative()
+
+    # ------------------------------------------------------------------ Gate 7
+    def _disc(self, name, default):
+        """``train.discriminative.<name>`` of this model's (checkpoint) config, or ``default``."""
+        disc = safe_getattr(self.hparams.config.train, "discriminative", None)
+        return safe_getattr(disc, name, default) if disc is not None else default
+
+    def contrastive_weight(self) -> float:
+        return float(self._disc("contrastive_weight", 0.0) or 0.0)
+
+    def value_loss(self) -> str:
+        v = self._disc("value_loss", "huber")
+        return str(getattr(v, "value", v))
+
+    def _build_discriminative(self):
+        """Create the contrastive head and memory bank when ``contrastive_weight > 0`` (only then:
+        invariant 5). The head is a 1x1x1 projection of the ``decoder2`` output."""
+        if self.value_loss() not in ("huber", "focal"):
+            raise ValueError(f"train.discriminative.value_loss must be 'huber' or 'focal', got {self.value_loss()!r}")
+        if self.contrastive_weight() <= 0:
+            return
+        if not self.is_pipeline_v2():
+            raise ValueError("train.discriminative.contrastive_weight > 0 needs data pipeline v2")
+        from tomocpt.networks.ssl.heads import DenseProjectionHead
+        from tomocpt.training.discriminative import ContrastiveMemoryBank
+
+        fs = self.model.out.conv.conv.in_channels  # decoder2 output channels = feature_size (CLAUDE.md 1.4)
+        dim = int(self._disc("embed_dim", 64))
+        self.contrastive_head = DenseProjectionHead(fs, dim)
+        self.contrastive_bank = ContrastiveMemoryBank(len(self.class_table()), int(self._disc("bank_size", 1024)), dim)
+
+    def _is_filament(self):
+        from tomocpt.labels.multiclass import FILAMENT
+
+        return [str(getattr(r.kind, "value", r.kind)) == FILAMENT for r in self.class_table()]
+
+    def _forward_features(self, x, apix=None):
+        """``(logits, decoder2 features)``; logits as ``forward``."""
+        x = x[0] if isinstance(x, (tuple, list)) else x
+        if apix is None or not self.scale_conditioning():
+            out = self.model.forward_features(x)
+        else:
+            out = self.model.forward_features(x, apix=apix)
+        return out[0], out[2]
+
+    def contrastive_loss(self, features, y_pred, batch, update_bank: bool = True):
+        """Supervised dense contrastive loss (Gate 7, option a) on the ``decoder2`` features.
+
+        Anchors from the batch's dense target, hard negatives ranked by ``y_pred`` (detached), mask
+        negatives from ``batch["negative_mask"]``; SupCon against the batch and the memory bank,
+        in float32. The head is always in the graph (DDP)."""
+        from tomocpt.training.discriminative import sample_anchors, sample_hard_negatives, supcon_loss
+
+        target = batch["target_data"]
+        target = target.data if hasattr(target, "data") and not torch.is_tensor(target) else target
+        with torch.autocast(device_type=features.device.type, enabled=False):
+            emb_map = self.contrastive_head(features.float())  # [B, E, d, h, w]
+            a_idx, a_lab = sample_anchors(
+                target, batch["class_available"], batch["class_d_vox"], self._is_filament(),
+                min_target=float(self._disc("anchor_min_target", 0.5)),
+                max_per_class=int(self._disc("anchors_per_class", 32)))
+            n_idx, _, _ = sample_hard_negatives(
+                y_pred.detach(), target, batch["class_d_vox"], int(self._disc("hard_negatives", 64)),
+                min_score=float(self._disc("hard_negative_min_score", 0.3)),
+                max_score=float(self._disc("hard_negative_max_score", 0.9)),
+                exclusion_radius=float(self._disc("exclusion_radius", 1.0)),
+                negative_mask=batch.get("negative_mask"), n_mask=int(self._disc("mask_negatives", 64)))
+            idx = torch.cat([a_idx, n_idx]).to(emb_map.device)
+            labels = torch.cat([a_lab, torch.full((len(n_idx),), -1, dtype=torch.long)]).to(emb_map.device)
+            # target voxel -> feature voxel
+            scale = torch.tensor([s_f / s_t for s_f, s_t in zip(emb_map.shape[2:], target.shape[2:])],
+                                 device=emb_map.device)
+            fz = (idx[:, 1:].float() * scale).floor().long()
+            emb = emb_map[idx[:, 0], :, fz[:, 0], fz[:, 1], fz[:, 2]]  # [N, E]
+            bank_e, bank_l = self.contrastive_bank.get()
+            loss = supcon_loss(emb, labels, bank_e, bank_l, float(self._disc("temperature", 0.1)))
+            loss = loss + 0.0 * emb_map.sum()
+            if update_bank and len(emb):
+                self.contrastive_bank.push(nn.functional.normalize(emb.detach(), dim=1), labels)
+        return loss, int((labels >= 0).sum())
 
     def class_head(self) -> str:
         """``train.particles.class_head`` of this model's (checkpoint) config; ``sigmoid`` if absent."""
@@ -165,21 +247,36 @@ class BasePickingModel(BaseModel):
         """Pipeline-v2 loss (CLAUDE.md Section 5.4) for a v2 batch."""
         particles = safe_getattr(self.hparams.config.train, "particles", None)
         use_checkpoint = bool(safe_getattr(particles, "loss_checkpoint", True)) if particles is not None else True
+        kw = {}
+        if self.value_loss() == "focal":
+            # soft focal penalty on particle channels, Huber on filament channels (1 Nov 2026)
+            kw = dict(value_loss="focal", focal_channels=[not f for f in self._is_filament()],
+                      focal_gamma=float(self._disc("focal_alpha", 2.0)))
         return multiclass_picking_loss(
             y_pred, y, batch["class_available"], batch["class_d_vox"],
             class_weights=self._class_weights(), checkpoint=use_checkpoint,
             cross_class_neg_weight=float(safe_getattr(particles, "cross_class_neg_weight", 0.0))
             if particles is not None else 0.0,
+            **kw,
         )
 
     def training_step(self, batch, batch_idx):
         x, y = self.resolve_batch(batch)
-        logits = self(x, apix=self._batch_apix(batch))
+        contrastive = self.contrastive_head is not None and self._is_v2_batch(batch)
+        if contrastive:
+            logits, features = self._forward_features(x, apix=self._batch_apix(batch))
+        else:
+            logits = self(x, apix=self._batch_apix(batch))
         y_pred, y = self._probabilities(logits, y, batch)
         if self._is_v2_batch(batch):
             loss = self.multiclass_loss(y_pred, y, batch)
         else:
             loss = self.loss(y_pred, y)
+        if contrastive:
+            loss_c, n_anchors = self.contrastive_loss(features, y_pred, batch)
+            loss = loss + self.contrastive_weight() * loss_c
+            self.log("loss_contrastive", loss_c.detach(), on_step=False, on_epoch=True, sync_dist=True,
+                     batch_size=x.shape[0])
 
         self.log(
             "loss",

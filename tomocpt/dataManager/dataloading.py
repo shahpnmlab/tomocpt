@@ -167,6 +167,10 @@ class VolumeDatsetIO(Dataset):
         self.zoom_aug_max = float(zoom_aug_max)
         self.band_max = float(band_max)
         self.chunk_size = int(chunk_size)
+        # Gate 7: every sample carries ``negative_mask`` when any chunk directory has masks.
+        from tomocpt.dataManager.chunking import V2_NEGATIVE_MASKS_DIR_NAME
+        self.has_negative_masks = self.pipeline_version == 2 and any(
+            (Path(d) / V2_NEGATIVE_MASKS_DIR_NAME).is_dir() for d in self.metas)
 
     def __len__(self):
         return len(self.filepath_tuples)
@@ -226,6 +230,20 @@ class VolumeDatsetIO(Dataset):
         segs = np.load(sp).astype(np.float32).reshape(-1, 8)
         return segs if len(segs) else None
 
+    def _load_negative_mask(self, vol_path: str) -> torch.Tensor:
+        """Gate 7: the chunk's negative mask ``[1, n, n, n]`` (float 0/1; zeros when the chunk has none)."""
+        from tomocpt.dataManager.chunking import V2_NEGATIVE_MASK_PREFIX, V2_NEGATIVE_MASKS_DIR_NAME
+
+        vp = Path(vol_path)
+        stem = vp.name[: -len(constants.CUBES_EXTENSION)]
+        suffix = stem[len(constants.VOLUMES_DIR_NAME_PREFIX):]
+        mp = vp.parent.parent / V2_NEGATIVE_MASKS_DIR_NAME / f"{V2_NEGATIVE_MASK_PREFIX}{suffix}.npy"
+        n = self.chunk_size
+        if not mp.is_file():
+            return torch.zeros(1, n, n, n)
+        bits = np.unpackbits(np.load(mp))[: n ** 3].reshape(n, n, n)
+        return torch.from_numpy(bits.astype(np.float32))[None]
+
     def _zoom(self, vol: torch.Tensor, points: Optional[np.ndarray], dense: Optional[torch.Tensor], s: float):
         """Zoom by ``s`` (trilinear) and crop a random cube: output voxel ``j`` samples input
         position ``(j + o) / s`` (voxel 0 at the origin, as the points). Points map to
@@ -238,6 +256,8 @@ class VolumeDatsetIO(Dataset):
         axes = [((j + float(off[a])) / s) * (2.0 / (n - 1)) - 1.0 for a in range(3)]
         gz, gy, gx = torch.meshgrid(axes[0], axes[1], axes[2], indexing="ij")
         grid = torch.stack([gx, gy, gz], dim=-1).unsqueeze(0).float()  # grid_sample wants (x, y, z)
+
+        self._last_zoom_grid = grid  # for the negative mask (Gate 7)
 
         def _sample(t):
             return torch.nn.functional.grid_sample(t.unsqueeze(0), grid, mode="bilinear", padding_mode="border",
@@ -256,6 +276,7 @@ class VolumeDatsetIO(Dataset):
     def _getitem_v2(self, index: int) -> dict:
         vol, points, dense, meta = self._load_v2(index)
         segs = self._load_segments(self.filepath_tuples[index][1])
+        neg = self._load_negative_mask(self.filepath_tuples[index][0]) if self.has_negative_masks else None
         n_classes = int(self.n_classes if self.n_classes is not None else len(meta.class_available))
         available = torch.tensor([bool(a) for a in meta.class_available], dtype=torch.bool)
         d_vox = torch.tensor(meta.class_d_vox, dtype=torch.float64)
@@ -265,6 +286,9 @@ class VolumeDatsetIO(Dataset):
             s = 1.0 + float(torch.rand(1)) * (self.zoom_aug_max - 1.0)
             if s > 1.0:
                 vol, points, dense = self._zoom(vol, points, dense, s)
+                if neg is not None:
+                    neg = torch.nn.functional.grid_sample(neg.unsqueeze(0), self._last_zoom_grid, mode="nearest",
+                                                          padding_mode="zeros", align_corners=True)[0]
                 if segs is not None:  # the same map as the points
                     off = self._last_zoom_offset
                     segs = segs.astype(np.float64)
@@ -288,10 +312,13 @@ class VolumeDatsetIO(Dataset):
         else:
             target = dense
 
-        subject = tio.Subject(input_data=tio.ScalarImage(tensor=vol), target_data=tio.LabelMap(tensor=target))
+        images = dict(input_data=tio.ScalarImage(tensor=vol), target_data=tio.LabelMap(tensor=target))
+        if neg is not None:
+            images["negative_mask"] = tio.LabelMap(tensor=neg)
+        subject = tio.Subject(**images)
         if self.transform is not None:
             subject = self.transform(subject)
-        return {
+        item = {
             "input_data": subject["input_data"].data,
             "target_data": subject["target_data"].data,
             "class_available": available,
@@ -299,6 +326,9 @@ class VolumeDatsetIO(Dataset):
             "apix_work": torch.tensor([apix], dtype=torch.float32),
             "dataset_id": torch.tensor(int(meta.dataset_id), dtype=torch.int64),
         }
+        if neg is not None:
+            item["negative_mask"] = subject["negative_mask"].data > 0.5
+        return item
 
     @staticmethod
     def _get_filepaths_v2(data_dir: str, target_storage: str = "points") -> tuple:

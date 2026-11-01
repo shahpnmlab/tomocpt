@@ -503,6 +503,7 @@ def _merge_rows_v2(tomosDf: pd.DataFrame, class_table) -> pd.DataFrame:
             "label_path": first.get("label_path", str(first["tomogram_path"])),
             "coords_paths": [str(p) for p in g["coords_path"]],
             "filaments_paths": _filament_paths(g),
+            "negative_mask_paths": _negative_mask_paths(g),
             "dataset_id": int(g["_dataset_id"].min()),
             "apix_native": float(apix),
             "class_available": [n in annotated for n in numbers],
@@ -524,7 +525,39 @@ def _filament_paths(g: pd.DataFrame) -> List[str]:
     return out
 
 
+def _negative_mask_paths(g: pd.DataFrame) -> List[str]:
+    """Negative masks (Gate 7) of the tracking rows of one tomogram (column ``negative_mask_paths``)."""
+    from tomocpt.labels.negative_masks import NEGATIVE_MASK_PATHS_COLUMN, split_paths
+
+    if NEGATIVE_MASK_PATHS_COLUMN not in g.columns:
+        return []
+    out = []
+    for cell in g[NEGATIVE_MASK_PATHS_COLUMN]:
+        for p in split_paths(cell):
+            if p not in out:
+                out.append(p)
+    return out
+
+
 V2_FILAMENTS_DIR_NAME = "filaments"
+#: Gate 7: per chunk a packed bit mask (``np.packbits`` of the 64^3 bool crop), file
+#: ``negmask_<suffix>.npy`` (same suffix as the volume chunk).
+V2_NEGATIVE_MASKS_DIR_NAME = "negative_masks"
+V2_NEGATIVE_MASK_PREFIX = "negmask"
+
+
+def _load_negative_mask(paths, native_shape) -> Optional[np.ndarray]:
+    """Union (bool, native shape) of the negative masks of one tomogram, or None."""
+    import mrcfile
+
+    out = None
+    for p in paths:
+        with mrcfile.open(str(p), permissive=True) as m:
+            mask = np.asarray(m.data) > 0
+        if tuple(mask.shape) != tuple(native_shape):
+            raise ValueError(f"Negative mask {p} has shape {mask.shape}, tomogram {tuple(native_shape)}")
+        out = mask if out is None else (out | mask)
+    return out
 
 
 def _save_points(arr: np.ndarray, path: str):
@@ -572,6 +605,7 @@ def process_single_tomo_task_v2(task: Dict[str, Any]) -> Dict[str, Any]:
             columns=["x", "y", "z", "class_number", "diameter_ang"])
         vol_np = load_mrc(tomo_path, normalize=True)  # robust normalisation at native size (v1)
         native_shape = tuple(int(s) for s in vol_np.shape)
+        neg_native = _load_negative_mask(list(task.get("negative_mask_paths") or []), native_shape)
 
         levels = plan_levels(apix_native, table, band_min, band_max)
         n_written, dirs = 0, []
@@ -601,6 +635,13 @@ def process_single_tomo_task_v2(task: Dict[str, Any]) -> Dict[str, Any]:
                 cmap = coordinate_map(native_shape, ws, resample)
                 padded, padding = symmetrize_and_pad(vol_t.float(), chunk_size)
                 padded = padded.contiguous()
+                neg_padded = None
+                if neg_native is not None:  # same resample and padding as the volume (zeros outside)
+                    neg_t = torch.from_numpy(neg_native.astype(np.float32))
+                    if ws != native_shape:
+                        neg_t = resample_volume(neg_t.to(device), ws, resample).cpu()
+                    neg_padded = torch.nn.functional.pad(neg_t[None, None].float(), pad=padding, mode="constant",
+                                                         value=0.0)[0, 0].numpy() > 0.5
                 pad_front = np.array([padding[4], padding[2], padding[0]], dtype=np.float64)
                 shape = tuple(int(s) for s in padded.shape)
 
@@ -670,6 +711,13 @@ def process_single_tomo_task_v2(task: Dict[str, Any]) -> Dict[str, Any]:
                         suffix = f"{i}_{loc[0]}_{loc[1]}_{loc[2]}"
                         vol_path = str(vol_dir / f"{constants.VOLUMES_DIR_NAME_PREFIX}_{suffix}{constants.CUBES_EXTENSION}")
                         futures.append(executor.submit(_save_chunk, patch["volume"].data.clone(), vol_path))
+                        if neg_padded is not None:
+                            neg_dir = out_dir / V2_NEGATIVE_MASKS_DIR_NAME
+                            makedir(neg_dir)
+                            crop = neg_padded[loc[0]:loc[0] + chunk_size, loc[1]:loc[1] + chunk_size,
+                                              loc[2]:loc[2] + chunk_size]
+                            np.save(str(neg_dir / f"{V2_NEGATIVE_MASK_PREFIX}_{suffix}.npy"),
+                                    np.packbits(np.ascontiguousarray(crop).reshape(-1)))
                         if storage == "points":
                             _save_points(chunk_pts, str(tgt_dir / f"{V2_POINTS_PREFIX}_{suffix}.npy"))
                             if chunk_segs is not None:
@@ -789,6 +837,7 @@ def _do_chunking_v2(tomosDf: pd.DataFrame, chunkedDataDir: str, n_cpus: int, req
             all_tasks.append({
                 "tomogram_path": row["tomogram_path"], "coords_paths": list(row["coords_paths"]),
                 "filaments_paths": list(row.get("filaments_paths", None) or []),
+                "negative_mask_paths": list(row.get("negative_mask_paths", None) or []),
                 "apix_native": float(row["apix_native"]), "dataset_id": int(row["dataset_id"]),
                 "class_available": [bool(a) for a in row["class_available"]],
                 "chunk_dir_name": str(chunk_dir_names.loc[idx]), "outpath": str(outpath),
