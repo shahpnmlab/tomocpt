@@ -265,7 +265,8 @@ Useful `infer` options for v2:
 | `classes` | Comma-separated class names to pick (default: all). |
 | `class_thresholds` | `"ribosome:0.4,apo-ferritin:0.35"`; overrides the calibration. Unknown names are an error. |
 | `confidence_threshold` | Used for classes with neither of the above (and for every class of an uncalibrated checkpoint). |
-| `cross_class_nms` | Default on: peaks of different classes closer than half the smaller radius keep only the higher score. Removed counts per class pair are logged. |
+| `peak_spacing_fraction` | Minimum distance between two picks of one class, as a fraction of the class diameter (default 0.5 = one radius, so touching particles stay separate). An explicit `distance_threshold` (Å) overrides it. |
+| `cross_class_nms` | Default off. When on, peaks of different classes closer than half the smaller radius keep only the higher score, and removed counts per class pair are logged. Softmax-head models do not need it; turn it on for sigmoid-head models. |
 | `apix_override` | Voxel size in A when the MRC header is wrong or 0. |
 | `accumulate_dtype`, `accumulate_device` | `float16` and/or `cpu` reduce GPU memory for large tomograms with many classes (`auto` uses the GPU when the maps fit). |
 
@@ -307,6 +308,42 @@ tomocpt predict --config_file config.yaml --weights ensemble.json --tomogram_dir
 ```
 `experiments/run_cv.sh` runs all steps for CZII and reports the cross-validated F4. An explicit
 `infer.class_thresholds` still overrides the ensemble's thresholds.
+
+### Filaments (microtubules, actin)
+Filaments are extra classes of a pipeline-v2 model: one output channel each, after the particle
+classes. They are trained on a tube target around the centreline (the particle profile across the
+axis) and traced to polylines at inference.
+
+Declare each filament class in `class_diameters` / `class_names` like a particle, then give its
+labels in one of two ways:
+```yaml
+prepData:
+  multiclass: true
+  class_diameters: "1:130,2:300,10:250"
+  class_names: "1:beta-amylase,2:ribosome,10:microtubule"
+  # either segmentation masks (MRC, matched to tomograms by name; hollow or solid tubes) ...
+  filament_masks: "10:/data/masks/microtubule"
+  # ... or coordinates: per tomogram a RELION STAR (rlnHelicalTubeID) or an IMOD model of open contours
+  # filament_coords: "10:/data/coords/microtubule"
+  filament_smoothing_ang: 10.0        # spline smoothing of the labels (RMS deviation, A)
+  write_filament_masks: false         # also write tube masks for inspection (never used for training)
+```
+Masks are reduced to centrelines, and coordinates are fitted with the same smoothing spline.
+STAR files are read in voxels (`rlnCoordinateX/Y/Z`, scaled by `rlnImagePixelSize`, minus
+`rlnOrigin*` shifts). RELION 5 centred coordinates (`rlnCenteredCoordinate*Angst`) are not
+supported: export voxel coordinates.
+
+At inference each filament class writes one file per class in the chosen format. Points are spaced
+`infer.filament_spacing_ang` (40 A) apart along a smoothing spline (`infer.filament_smoothing_ang`,
+10 A), and filaments shorter than `infer.filament_min_length_ang` (200 A) are dropped. STAR outputs
+carry `rlnHelicalTubeID`, `rlnHelicalTrackLengthAngst` and the helical priors of the local axis
+(`rlnAngleTilt`/`rlnAnglePsi` and their priors, `rlnAngleRot = 0`, `rlnAnglePsiFlipRatio = 0.5`,
+because spin and polarity are unknown). IMOD outputs use one open contour per filament. Filament
+channels do not take part in cross-class suppression of particle picks.
+
+For multi-class models with particles and filaments, use `train.particles.class_head: softmax`.
+`benchmarks/filaments.py` trains on portal data (DS-10490, DS-10477; test DS-10513) and reports
+centreline precision, recall and F1 (length-weighted, tolerance 0.5 x diameter).
 
 ### Benchmarks
 
@@ -353,6 +390,10 @@ or alignment mismatch.
 # Changelog
 
 ## Unreleased (v2, multi-class picking)
+- v2 picking defaults (1 Nov 2026): `infer.peak_spacing_fraction = 0.5` (picks of one class at least one
+  radius apart; before, one full diameter, which merged touching particles) and `infer.cross_class_nms`
+  off. On the CZII 5-fold CV these settings raise the Kaggle-weighted out-of-fold F4 from 0.631 to
+  0.737 without retraining. Pipeline-v1 picking is unchanged.
 - Pipeline v2 (opt-in, `train.data_pipeline_version: 2`): band scale policy instead of the
   fixed-particle rescale, multi-class datasets (`prepData.multiclass`), one output channel per
   class, optional FiLM conditioning on the voxel size (`train.network.scale_conditioning`).

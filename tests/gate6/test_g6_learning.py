@@ -5,7 +5,9 @@ As ``tests/gate3/test_g3_learning.py``: training data are built in memory from
 64^3 crops with random axis flips, pipeline-v2 batch dicts (CLAUDE.md 5.1). Targets: particles
 with ``labels.helpers.render_targets``, tubes with ``labels.filaments.render_tubes`` from the
 phantom centrelines (segments shifted and flipped with the crop). Training goes through
-``BasePickingModel.training_step`` (bf16-mixed, gradient clip 1.0).
+``BasePickingModel.training_step`` (bf16-mixed, gradient clip 1.0) with the softmax class head
+(``train.particles.class_head = softmax``, k = 0; human ruling 1 Nov 2026, the sigmoid head confused
+the two sphere sizes).
 
 Classes: particles 1 "s120" (120 A) and 2 "s200" (200 A); filaments 3 "mt" (250 A, hollow
 phantom tube) and 4 "actin" (70 A, solid; 7 voxels, below the band, used at native size).
@@ -148,7 +150,8 @@ def train_picker(tmp, particles, filaments, tomos, steps, seed, lr=1e-3, batch_s
         def val_dataloader(self):
             return DataLoader(val, batch_size=batch_size, shuffle=False, num_workers=0)
 
-    cfg = H.v2_config_with_filaments(tmp, particles, filaments)
+    # softmax head (human ruling 1 Nov 2026, .claude/reports/gate_06_test_dispute.md)
+    cfg = H.v2_config_with_filaments(tmp, particles, filaments, class_head="softmax")
     cfg.train.optimizer.lr = lr
     with applied_main_config(cfg):
         torch.manual_seed(seed)

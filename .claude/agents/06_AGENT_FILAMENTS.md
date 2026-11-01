@@ -185,7 +185,8 @@ Optional[float] = None` (None = 0.5 × voxel size); `prepData.write_filament_mas
   the class radius of the spline (± 1 voxel at the boundary), shape and voxel size equal the
   tomogram's; with the default `False` nothing extra is written.
 - **G6-C8** (slow) Synthetic: tubes (250 Å and 70 Å) and spheres of two sizes in one model;
-  held-out centreline F1 ≥ 0.8 for both tube classes and particle F1 ≥ 0.8.
+  held-out centreline F1 ≥ 0.8 for both tube classes and particle F1 ≥ 0.8. Both C8/C9 models use
+  `class_head = softmax` (k = 0) (human ruling 1 Nov 2026, `gate_06_test_dispute.md`).
 - **G6-C9** (slow) Interference: particle F1 of the joint model is at most 0.03 below the
   Gate 3 particle-only model on the same data.
 

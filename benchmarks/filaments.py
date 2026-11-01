@@ -140,7 +140,8 @@ def _train_arm(work, stage_dir, fil_classes, part_classes, particles_star, setti
     prep = {
         "raw_data_dir": str(Path(stage_dir) / "tomograms"),
         "training_data_dir": str(work / "training_data"),
-        "coordinate_files": str(particles_star) if part_classes else None,
+        # the CLI requires the option; labels.run reads the literal "None" as "no particle points"
+        "coordinate_files": str(particles_star) if part_classes else "None",
         "coordinate_file_type": "star",
         "particle_length_ang": repr(max(float(d) for _, _, d in classes)),
         "class_id": "all",
@@ -191,7 +192,7 @@ def _evaluate(ckpt, tests, objects_dir_of, fil_names, particles_star, out_dir):
     from tomocpt.predict.multiclass import peaks_from_class_maps, predict_class_maps, resolve_thresholds
 
     device = _device()
-    cfg = _infer_config(Path(out_dir), cross_class_nms=True)
+    cfg = _infer_config(Path(out_dir))  # v2 defaults: spacing 0.5 x d, no cross-class suppression
     with isolated_main_config():
         _reset_gpu_peak()
         model = InferenceModel.load_from_checkpoint(str(ckpt), map_location=device, strict=True).eval()

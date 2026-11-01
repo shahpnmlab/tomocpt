@@ -796,8 +796,23 @@ def read_filament_coords(path, apix: float) -> List[np.ndarray]:
             scale = pix / float(apix)
     cols = ["rlnCoordinateX", "rlnCoordinateY", "rlnCoordinateZ"]
     missing = [c for c in cols if c not in df.columns]
+    if missing and "rlnCenteredCoordinateXAngst" in df.columns:
+        raise ValueError(f"{path}: RELION 5 centred coordinates (rlnCenteredCoordinate*Angst) need the "
+                         "tomogram size to convert; export rlnCoordinateX/Y/Z (voxels) instead")
     if missing:
         raise ValueError(f"{path}: STAR file lacks {missing}")
+    # subpixel shifts, as labels.star does for particles: rlnOrigin* (pixels, RELION 3.0) or
+    # rlnOrigin*Angst (RELION 3.1+, divided by the STAR pixel size); coordinate - origin
+    px_origin = [f"rlnOrigin{a}" for a in "XYZ"]
+    ang_origin = [f"rlnOrigin{a}Angst" for a in "XYZ"]
+    if all(c in df.columns for c in ang_origin) or all(c in df.columns for c in px_origin):
+        df = df.copy()
+        if all(c in df.columns for c in ang_origin):
+            star_pix = float(apix) * scale if apix else 1.0  # rlnImagePixelSize, or apix when absent
+            shifts = df[ang_origin].to_numpy(np.float64) / star_pix
+        else:
+            shifts = df[px_origin].to_numpy(np.float64)
+        df[cols] = df[cols].to_numpy(np.float64) - shifts
     keys = []
     for k in ("rlnMicrographName", "rlnTomoName"):
         if k in df.columns and df[k].nunique() > 1:

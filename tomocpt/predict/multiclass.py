@@ -310,9 +310,14 @@ def peaks_from_class_maps(maps: Dict[int, torch.Tensor], class_table: Sequence, 
     for c, m in maps.items():
         if is_filament(class_table[c]):
             continue
+        diameter = float(class_table[c].diameter_ang)
+        # v2 spacing: an explicit infer.distance_threshold wins, else a fraction of the class
+        # diameter (default 0.5 = one radius; a full diameter merges touching particles)
+        spacing = infer_config.distance_threshold or float(
+            safe_getattr(infer_config, "peak_spacing_fraction", 0.5)) * diameter
         res = H._extract_peaks_from_mask(
             m.to(device).float(), tomo_name, apix, infer_config,
-            length=float(class_table[c].diameter_ang), threshold=float(thresholds[c]),
+            length=diameter, distance_threshold=spacing, threshold=float(thresholds[c]),
         )
         peaks[c] = np.asarray(res["coords"], dtype=np.float64).reshape(-1, 4) if res else np.zeros((0, 4))
     counts: Dict[Tuple[int, int], int] = {}

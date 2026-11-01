@@ -19,7 +19,8 @@ class InferConfig:
     weights: Annotated[Optional[Path], typer.Option(help="Path to the trained model weights file (.ckpt). Required unless --skip_inference is used.")] = None
     masks_dir: Annotated[Optional[Path], typer.Option(help="Optional directory with masks for targeted picking. Mask filenames must match tomogram filenames.")] = None
     length: Annotated[Optional[float], typer.Option(help="Particle diameter in Angstroms. Required for pipeline-v1 checkpoints; not used for pipeline-v2 checkpoints (the class table gives the diameters).")] = None
-    distance_threshold: Annotated[Optional[float], typer.Option(help="Minimum distance between picked particles in Angstroms. Defaults to particle diameter if not set.")] = None
+    distance_threshold: Annotated[Optional[float], typer.Option(help="Minimum distance between picked particles in Angstroms. Defaults to the particle diameter (pipeline v1) or peak_spacing_fraction x the class diameter (pipeline v2).")] = None
+    peak_spacing_fraction: Annotated[float, typer.Option(help="Pipeline v2: minimum distance between two picks of one class, as a fraction of the class diameter (0.5 = one radius, so touching particles stay apart). Ignored when distance_threshold is set.")] = 0.5
     confidence_threshold: Annotated[float, typer.Option(help="Minimum confidence score for a voxel to be considered as a potential particle center.")] = 0.3
     predictions_coord_filename: Annotated[str, typer.Option(help="Filename for the output coordinate star file. (Not used for imod format).")] = "tomocpt_coords.star"
     predictions_coord_format: Annotated[OutputFormat, typer.Option(help="Format for the output coordinate file.")] = OutputFormat.relion_31
@@ -33,7 +34,7 @@ class InferConfig:
     cpus_per_worker: Annotated[int, typer.Option(help="Number of CPU threads to support each Dask worker (for I/O, etc.).")] = 2
     apix_override: Annotated[Optional[float], typer.Option(help="Voxel size in Angstroms to use instead of the MRC header value (pipeline v2).")] = None
     classes: Annotated[Optional[str], typer.Option(help="Comma-separated class names to pick (pipeline v2). Default: every class of the model.")] = None
-    cross_class_nms: Annotated[bool, typer.Option(help="Suppress peaks of different classes closer than half the smaller radius, keeping the higher score (pipeline v2).")] = True
+    cross_class_nms: Annotated[bool, typer.Option(help="Suppress peaks of different classes closer than half the smaller radius, keeping the higher score (pipeline v2). Off by default: softmax-head models already make the classes compete; turn it on for sigmoid-head models.")] = False
     accumulate_dtype: Annotated[str, typer.Option(help="dtype of the per-class map accumulators: float32 or float16 (pipeline v2).")] = "float32"
     accumulate_device: Annotated[str, typer.Option(help="Device of the per-class map accumulators: auto (GPU if the maps fit in free memory), cuda or cpu (pipeline v2).")] = "auto"
     class_thresholds: Annotated[Optional[str], typer.Option(help="Per-class confidence thresholds by class name, e.g. 'ribosome:0.4,proteasome:0.35'. Overrides the checkpoint calibration (pipeline v2).")] = None

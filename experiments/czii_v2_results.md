@@ -197,3 +197,80 @@ Kaggle-weighted OOF F4: **0.631** (Kaggle 1st place: 0.788 on its hidden test se
 | ribosome | 331 | 0.582 | 0.633 | 0.58 | 0.63 | 20 / 59 | 150 | 0.80 / 0.70 |
 | apo-ferritin | 375 | 0.756 | 0.766 | 0.78 | 0.79 | 12 / 20 | 60 | 0.79 / 0.51 |
 | virus-like-particle | 113 | 0.831 | 0.831 | 0.82 | 0.82 | 14 / 21 | 135 | 0.05 / 0.05 |
+
+## Localisation diagnostics: 5-fold CV, cross_class_nms=False, peak spacing 1.0 x diameter (OOF thresholds unchanged; TODO step 2, 1 Nov 2026)
+
+- `/home/pranav/Desktop/pranav/software/tomocpt/benchmarks/out/czii_bench_20261029_2237/cv`; OOF picks at the ensemble thresholds; distances in Å (native 10.012 Å/px)
+
+| class | n true | F4 @0.5R | F4 @1.0R | recall @0.5R | recall @1.0R | centring error median / p90 (Å) | radius (Å) | misses touching / all touching |
+|---|---|---|---|---|---|---|---|---|
+| beta-amylase | 83 | 0.371 | 0.434 | 0.49 | 0.58 | 18 / 36 | 65 | 0.00 / 0.00 |
+| beta-galactosidase | 103 | 0.605 | 0.629 | 0.74 | 0.77 | 22 / 39 | 90 | 0.08 / 0.06 |
+| thyroglobulin | 244 | 0.654 | 0.685 | 0.80 | 0.83 | 25 / 46 | 130 | 0.12 / 0.07 |
+| ribosome | 331 | 0.584 | 0.635 | 0.59 | 0.64 | 20 / 58 | 150 | 0.82 / 0.70 |
+| apo-ferritin | 375 | 0.757 | 0.767 | 0.78 | 0.79 | 12 / 20 | 60 | 0.80 / 0.51 |
+| virus-like-particle | 113 | 0.830 | 0.830 | 0.82 | 0.82 | 14 / 21 | 135 | 0.05 / 0.05 |
+
+## Localisation diagnostics: 5-fold CV, cross_class_nms=True, peak spacing 0.5 x diameter (OOF thresholds unchanged; TODO step 2, 1 Nov 2026)
+
+- `/home/pranav/Desktop/pranav/software/tomocpt/benchmarks/out/czii_bench_20261029_2237/cv`; OOF picks at the ensemble thresholds; distances in Å (native 10.012 Å/px)
+
+| class | n true | F4 @0.5R | F4 @1.0R | recall @0.5R | recall @1.0R | centring error median / p90 (Å) | radius (Å) | misses touching / all touching |
+|---|---|---|---|---|---|---|---|---|
+| beta-amylase | 83 | 0.354 | 0.409 | 0.47 | 0.54 | 18 / 35 | 65 | 0.00 / 0.00 |
+| beta-galactosidase | 103 | 0.451 | 0.459 | 0.51 | 0.52 | 19 / 34 | 90 | 0.08 / 0.06 |
+| thyroglobulin | 244 | 0.686 | 0.717 | 0.82 | 0.86 | 26 / 46 | 130 | 0.11 / 0.07 |
+| ribosome | 331 | 0.819 | 0.893 | 0.84 | 0.92 | 20 / 64 | 150 | 0.64 / 0.70 |
+| apo-ferritin | 375 | 0.862 | 0.883 | 0.90 | 0.92 | 12 / 21 | 60 | 0.74 / 0.51 |
+| virus-like-particle | 113 | 0.890 | 0.890 | 0.88 | 0.88 | 15 / 21 | 135 | 0.08 / 0.05 |
+
+## Localisation diagnostics: 5-fold CV, cross_class_nms=False, peak spacing 0.5 x diameter (OOF thresholds unchanged; TODO step 2, 1 Nov 2026)
+
+- `/home/pranav/Desktop/pranav/software/tomocpt/benchmarks/out/czii_bench_20261029_2237/cv`; OOF picks at the ensemble thresholds; distances in Å (native 10.012 Å/px)
+
+| class | n true | F4 @0.5R | F4 @1.0R | recall @0.5R | recall @1.0R | centring error median / p90 (Å) | radius (Å) | misses touching / all touching |
+|---|---|---|---|---|---|---|---|---|
+| beta-amylase | 83 | 0.368 | 0.431 | 0.49 | 0.58 | 18 / 36 | 65 | 0.00 / 0.00 |
+| beta-galactosidase | 103 | 0.595 | 0.619 | 0.74 | 0.77 | 22 / 39 | 90 | 0.08 / 0.06 |
+| thyroglobulin | 244 | 0.697 | 0.732 | 0.90 | 0.95 | 26 / 47 | 130 | 0.15 / 0.07 |
+| ribosome | 331 | 0.820 | 0.893 | 0.85 | 0.93 | 20 / 62 | 150 | 0.71 / 0.70 |
+| apo-ferritin | 375 | 0.866 | 0.886 | 0.90 | 0.92 | 12 / 20 | 60 | 0.76 / 0.51 |
+| virus-like-particle | 113 | 0.890 | 0.890 | 0.88 | 0.88 | 15 / 21 | 135 | 0.08 / 0.05 |
+
+## Summary of the cheap inference checks (TODO step 2, 1 Nov 2026)
+
+Same 5-fold CV models and OOF thresholds (not recalibrated); Kaggle weights (beta-amylase 0,
+apo-ferritin / ribosome / VLP 1, thyroglobulin / beta-galactosidase 2), F4 at 0.5 R:
+
+| setting | amy | gal | thy | ribo | ferr | vlp | **weighted F4** |
+|---|---|---|---|---|---|---|---|
+| baseline (cross-class suppression on, spacing 1.0 × d) | 0.357 | 0.486 | 0.637 | 0.582 | 0.756 | 0.831 | **0.631** |
+| suppression off, spacing 1.0 × d | 0.371 | 0.605 | 0.654 | 0.584 | 0.757 | 0.830 | **0.670** |
+| suppression on, spacing 0.5 × d | 0.354 | 0.451 | 0.686 | 0.819 | 0.862 | 0.890 | **0.692** |
+| suppression off, spacing 0.5 × d | 0.368 | 0.595 | 0.697 | 0.820 | 0.866 | 0.890 | **0.737** |
+
+- Peak spacing: v2 picks use `min_distance = diameter` (`distance_threshold or length`), so touching
+  particles (centres ~1 diameter apart) are merged. Half spacing recovers ribosome (+0.24) and
+  apo-ferritin (+0.11), the classes whose misses touch a neighbour (70-80 %).
+- Cross-class suppression costs beta-galactosidase 0.12-0.14 F4 (thyroglobulin/apo-ferritin peaks
+  remove true beta-gal picks); with the softmax head the classes already compete per voxel.
+- Caveats: best of four settings chosen on the same OOF data (mild selection bias); thresholds were
+  calibrated under the baseline setting, so recalibrating may add more. Kaggle 1st place: 0.788.
+
+## New v2 defaults, recalibrated (1 Nov 2026)
+
+Human decision: `infer.peak_spacing_fraction = 0.5`, `infer.cross_class_nms = False` are the v2 defaults.
+OOF thresholds recalibrated with them (`python -m tomocpt.predict.ensemble ... --out
+benchmarks/out/czii_bench_20261029_2237/cv/ensemble_v2defaults.json`, same 5 fold models):
+
+| class | threshold | OOF F4 |
+|---|---|---|
+| beta-amylase | 0.35 | 0.369 |
+| beta-galactosidase | 0.40 | 0.595 |
+| thyroglobulin | 0.35 | 0.707 |
+| ribosome | 0.25 | 0.820 |
+| apo-ferritin | 0.30 | 0.869 |
+| virus-like-particle | 0.35 | 0.891 |
+| **Kaggle-weighted** | | **0.741** (was 0.631) |
+
+This is the baseline for Gate 7's acceptance (≥ 0.02 OOF F4).

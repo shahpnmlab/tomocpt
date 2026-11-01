@@ -2,7 +2,7 @@
  "base_ref": "v2-gate-0-base",
  "base_commit": "ce6f7b0ce856f19556266e7ad3143bfb66cdb7e2",
  "base_note": "first commit of branch v2-dev (released main + fix/v1-patches + plan); set by the orchestrator",
- "current_gate": 6,
+ "current_gate": 7,
  "gpu_available": true,
  "gates": {
   "1": {
@@ -187,9 +187,9 @@
    "report_path": ".claude/reports/gate_05_report.json"
   },
   "6": {
-   "status": "AWAITING_HUMAN",
+   "status": "PASSED",
    "agent": "06_AGENT_FILAMENTS",
-   "attempts": 1,
+   "attempts": 2,
    "test_hashes": {
     "tests/gate6/README.md": "260e11eef8d360d83fb17612e9fe95c4bf8a10c804885f143b288244c2c72d5a",
     "tests/gate6/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
@@ -200,12 +200,12 @@
     "tests/gate6/test_g6_ddp.py": "65204601ad6947850930e2d9e5310a1ecb20d6375358c831c78921b0d6bbba5d",
     "tests/gate6/test_g6_geometry.py": "ebf23e943979826ccb511de1c105a1fda74ca79d448ab661fa0b4fd915d5b97b",
     "tests/gate6/test_g6_labels.py": "00d3b81d1835f415b08efe51c751b37718f9efe7da43234f7f93105332b61a23",
-    "tests/gate6/test_g6_learning.py": "19bc4898cafa3a6e77e759cfd38ce912f3afcd4fc7a4705b6f0d99a62040839c",
+    "tests/gate6/test_g6_learning.py": "1bfcc053820da88eb687e0b142bb14c9f3d73a1091bebf89511c91c32a17af2d",
     "tests/gate6/test_g6_outputs.py": "164c4a8aaf12d262930e3bd844bc347c6b84489ad2d3b090d9013dc4966e374c",
     "tests/gate6/test_g6_portal.py": "ddd66623db65f58027fccef75bf91aaa004f247f166865a00e011302ce71fa36",
     "tests/golden/gate6_c1.json": "61d7948a7433ae21221d07820b086bcf45696412b1a4cc6192f6e80c06e43d93",
     "tests/golden/gate6_c1.npz": "678a11960569290a730a639e668adb726d113d109f3697ab193f20e2e8d7246f",
-    "tests/golden/gate6_common.py": "95c62251ccd06f60b72a27af0487969e5f54a5e340e196eb429e22bce476e3f3",
+    "tests/golden/gate6_common.py": "985357e3d4cd2a5adb1885883e00896529a62e83e6bc0aa429ee86bf1cb533a4",
     "tests/golden/make_goldens_gate6.py": "d6943be0a9e14e5f77446570e611df50b77618cd9ed6a690d0343baaf971fad7"
    },
    "path_exceptions": [],
@@ -216,7 +216,13 @@
     "Human decision (31 Oct 2026): C8 particle threshold stays 0.8; slow tests pick particles at 0.5 with the Gate 4 cross-class rule. Human decision: freeze as is although the TA scratch reference failed C8 and C9 (joint particle F1 0.667 vs particle-only 0.958, tubes 1.00/0.94, seed 0, 2000 steps): judge the real implementation; interference is a finding for gate review.",
     "Frozen 31 Oct 2026: fast tier on HEAD 7 passed (C1 x4, two reference self-checks, C5 particle lock) / 48 failed (missing implementation), 35 s.",
     "31 Oct 2026, attempt 1 (implemented directly): fast tier 55/55 (suite 695 passed); slow C8/C9 FAIL with the same particle numbers as the TA reference (joint particle F1 0.667, tp/fp/fn 32/16/16; particle-only 1.00); tubes mt 1.00, actin 0.91. Awaiting human decision (interference finding).",
-    "31 Oct 2026 diagnosis (user-requested, seeds 0 and 1, scratch script reusing the frozen slow-test functions): C8/C9 particle loss is class confusion between the two sphere classes, not filament interference. Every miss is a 200 A sphere (16/16 both seeds) picked as the 120 A class; the 120 A channel reads 0.87/0.95 at 200 A centres vs 0.83/0.87 for the 200 A channel, so the cross-class rule keeps the wrong class. s120 tp/fp/fn 32/17/0 and 32/23/0. Misses lie a median 29/27 voxels from any tube, none within the tube radius. Tubes: mt 1.00/1.00, actin 0.93/0.97."
+    "31 Oct 2026 diagnosis (user-requested, seeds 0 and 1, scratch script reusing the frozen slow-test functions): C8/C9 particle loss is class confusion between the two sphere classes, not filament interference. Every miss is a 200 A sphere (16/16 both seeds) picked as the 120 A class; the 120 A channel reads 0.87/0.95 at 200 A centres vs 0.83/0.87 for the 200 A channel, so the cross-class rule keeps the wrong class. s120 tp/fp/fn 32/17/0 and 32/23/0. Misses lie a median 29/27 voxels from any tube, none within the tube radius. Tubes: mt 1.00/1.00, actin 0.93/0.97.",
+    "Human decision (31 Oct 2026): Gate 6 attempt 1 recorded as a FAILED attempt (slow C8/C9: sphere-size class confusion in the joint sigmoid model). Next attempt: size discrimination (softmax head / cross-class negatives in the slow setup); needs a test-dispute ruling because tests are frozen.",
+    "Human decisions (31 Oct 2026) on benchmark T6.5: joint arm only; drop DS-10490 point names membrane, protein-containing_complex, Actin. Diameter source still open: DS-10490 has ~125 species per run (checked sample_1), not only the CZII set.",
+    "Human ruling (1 Nov 2026), gate_06_test_dispute.md: slow C8/C9 train with class_head=softmax (k=0). Evidence: softmax k=0 particle F1 1.00 seeds 0 and 1 (k=0.25 same); sigmoid 0.667. test_g6_learning.py train_picker passes class_head='softmax'; spec G6-C8 amended; re-frozen (new hash). Attempt 2 also: read_filament_coords subtracts rlnOrigin*, rejects RELION 5 centred coords; README filaments section; benchmarks/filaments.py filaments-only arm writes coordinate_files 'None'.",
+    "Attempt 2 verification (1 Nov 2026): fast 695 passed/27 skipped, hashes intact; slow C8/C9 2 passed (joint particle F1 1.00 48/0/0, mt 1.00, actin 0.92; particle-only 1.00). T6.5 smoke run works end to end; full run awaits a size decision. Pass needs human acceptance.",
+    "Human decision (1 Nov 2026): v2 picking defaults infer.peak_spacing_fraction=0.5 (new field; min distance between picks of one class = 0.5 x class diameter unless distance_threshold is set) and infer.cross_class_nms=False (was True). CZII OOF F4 0.631 -> 0.737 at unchanged thresholds. v1 picking unchanged. tests/golden/gate6_common.py predict_arrays pins peak_spacing_fraction=1.0 (exactly the Gate 4 spacing) so G6-C1 still locks Gate 4 predictions; golden data unchanged; re-frozen (new hash).",
+    "Human decision (1 Nov 2026): Gate 6 accepted as PASSED. T6.5 real-data filament benchmark deferred (report-only, no pass criterion); smoke run shows the pipeline works end to end; full run moves to the DS-10490 final benchmark."
    ],
    "report_path": ".claude/reports/gate_06_report.json"
   },

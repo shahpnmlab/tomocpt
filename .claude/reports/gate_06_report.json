@@ -1,119 +1,122 @@
 {
- "gate_id": 6,
- "agent_name": "06_AGENT_FILAMENTS (implemented directly by the orchestrator)",
- "status": "READY_FOR_REVIEW",
- "base_ref": "v2-gate-4b-passed / v2-dev 2b30548",
- "files_created": [
-  "tomocpt/labels/filaments.py",
-  "tomocpt/predict/filaments.py",
-  "benchmarks/filaments.py"
- ],
- "files_modified": [
-  "tomocpt/labels/multiclass.py",
-  "tomocpt/labels/run.py",
-  "tomocpt/dataManager/chunking.py",
-  "tomocpt/dataManager/dataloading.py",
-  "tomocpt/predict/multiclass.py",
-  "tomocpt/defaultConfigs/prepdata_config.py",
-  "tomocpt/defaultConfigs/infer_config.py",
-  "scripts/download_portal_data.py"
- ],
- "exported_symbols": {
-  "tomocpt.labels.filaments": [
-   "mask_to_centerlines",
-   "render_tubes",
-   "trace_filaments",
-   "resample_polyline",
-   "fit_filament_spline",
-   "tangents_to_relion_angles",
-   "read_filament_coords",
-   "centerlines_to_mask",
-   "prepare_filament_labels"
+  "gate_id": 6,
+  "agent_name": "06_AGENT_FILAMENTS (implemented directly by the orchestrator)",
+  "status": "PASSED",
+  "base_ref": "v2-gate-4b-passed / v2-dev 2b30548",
+  "files_created": [
+    "tomocpt/labels/filaments.py",
+    "tomocpt/predict/filaments.py",
+    "benchmarks/filaments.py"
   ],
-  "tomocpt.labels.multiclass": [
-   "filament_sources",
-   "parse_filament_sources"
+  "files_modified": [
+    "tomocpt/labels/multiclass.py",
+    "tomocpt/labels/run.py",
+    "tomocpt/dataManager/chunking.py",
+    "tomocpt/dataManager/dataloading.py",
+    "tomocpt/predict/multiclass.py",
+    "tomocpt/defaultConfigs/prepdata_config.py",
+    "tomocpt/defaultConfigs/infer_config.py",
+    "scripts/download_portal_data.py",
+    "README.md (filaments section)",
+    "benchmarks/filaments.py (filaments-only arm: coordinate_files \"None\")",
+    "tomocpt/labels/filaments.py (read_filament_coords: rlnOrigin*, RELION 5 centred coords rejected)",
+    "tomocpt/defaultConfigs/infer_config.py (peak_spacing_fraction=0.5 new; cross_class_nms default False; human decision 1 Nov 2026)",
+    "tomocpt/predict/multiclass.py (v2 peak spacing from peak_spacing_fraction)",
+    "tests/golden/gate6_common.py (pins peak_spacing_fraction=1.0; re-frozen)"
   ],
-  "tomocpt.predict.filaments": [
-   "trace_class_maps",
-   "write_filament_star_file",
-   "write_filament_warp_star_file",
-   "write_filament_imod_model"
-  ],
-  "benchmarks.filaments": [
-   "centerline_scores",
-   "main"
-  ]
- },
- "config_fields_added": [
-  "prepData.filament_masks",
-  "prepData.filament_coords",
-  "prepData.filament_smoothing_ang",
-  "prepData.filament_label_spacing_ang",
-  "prepData.write_filament_masks",
-  "infer.filament_spacing_ang",
-  "infer.filament_min_length_ang",
-  "infer.filament_smoothing_ang"
- ],
- "legacy_equivalence": {
-  "G6-C1 (chunks, batches, model outputs, predictions vs gate6_c1 golden)": {
-   "result": "pass",
-   "tolerance": 1e-06
-  }
- },
- "metrics": {
-  "real_mask_check_DS10490_sample_1": {
-   "microtubule": "11 centrelines, 7.4 s; hollow wall at 80-125 A from the centreline, lumen empty; 0.3 % of mask voxels > 2R from any centreline",
-   "actin": "117 centrelines, 22.8 s; solid, centred; 1.9 % of mask voxels > 2R"
-  }
- },
- "pytest_fast": {
-  "command": "pytest tests -m 'not slow'",
-  "exit_code": 0,
-  "result": "695 passed, 27 skipped (6 min 57 s); tests/gate6: 55/55"
- },
- "pytest_slow": {
-  "command": "pytest tests/gate6 -m slow",
-  "exit_code": 1,
-  "ran": true,
-  "result": "2 failed (C8, C9), 9 min 44 s",
-  "G6_RESULT_seed0": {
-   "joint": {
-    "particle_f1": 0.667,
-    "particle_counts_tp_fp_fn": [
-     32,
-     16,
-     16
+  "exported_symbols": {
+    "tomocpt.labels.filaments": [
+      "mask_to_centerlines",
+      "render_tubes",
+      "trace_filaments",
+      "resample_polyline",
+      "fit_filament_spline",
+      "tangents_to_relion_angles",
+      "read_filament_coords",
+      "centerlines_to_mask",
+      "prepare_filament_labels"
     ],
-    "particle_f1_thr0.3_no_nms": 0.756,
-    "mt_f1": 1.0,
-    "actin_f1": 0.912,
-    "actin_P_R": [
-     0.937,
-     0.887
+    "tomocpt.labels.multiclass": [
+      "filament_sources",
+      "parse_filament_sources"
+    ],
+    "tomocpt.predict.filaments": [
+      "trace_class_maps",
+      "write_filament_star_file",
+      "write_filament_warp_star_file",
+      "write_filament_imod_model"
+    ],
+    "benchmarks.filaments": [
+      "centerline_scores",
+      "main"
     ]
-   },
-   "particles_only": {
-    "particle_f1": 1.0,
-    "particle_counts_tp_fp_fn": [
-     48,
-     0,
-     0
-    ]
-   }
   },
-  "reason": "Tube criteria pass (mt 1.00, actin 0.91 >= 0.8). Particle F1 of the joint model 0.667 < 0.8 (C8) and 0.333 below particle-only (C9). Identical particle counts to the TA scratch reference (32/16/16): the slow tests use only render_tubes and trace_filaments from this gate; the training loop, loss and picking are the test's / Gate 3's. tp=32, fp=16, fn=16 is consistent with 16 of 48 spheres given the wrong sphere class (to confirm).",
-  "diagnosis": "31 Oct 2026 diagnosis (user-requested, seeds 0 and 1, scratch script reusing the frozen slow-test functions): C8/C9 particle loss is class confusion between the two sphere classes, not filament interference. Every miss is a 200 A sphere (16/16 both seeds) picked as the 120 A class; the 120 A channel reads 0.87/0.95 at 200 A centres vs 0.83/0.87 for the 200 A channel, so the cross-class rule keeps the wrong class. s120 tp/fp/fn 32/17/0 and 32/23/0. Misses lie a median 29/27 voxels from any tube, none within the tube radius. Tubes: mt 1.00/1.00, actin 0.93/0.97."
- },
- "benchmarks": {
-  "T6.5": "driver written (benchmarks/filaments.py main); not run. Joint/particle arms need DS-10490 particle points (scripts/download_portal_data.py --coords-only), not downloaded yet."
- },
- "known_limitations": [
-  "C8/C9 fail (interference in the tiny joint setup; human decision needed).",
-  "README.md not updated for filaments yet.",
-  "read_filament_coords ignores rlnOriginX/Y/ZAngst and RELION 5 centred coordinates; uses rlnCoordinate* scaled by optics rlnImagePixelSize/apix.",
-  "Filament calibration: none (spec); filaments use class_thresholds or confidence_threshold.",
-  "mask_to_centerlines bins wide tubes (factor floor(R/6 voxels)) before skeletonising."
- ],
- "notes_for_next_agent": "Chunks store filaments/<points file name>.npy next to points/ (only when a segment passes within R of the chunk). Tracking CSV gets filaments_path; filament classes are added to class_annotated per tomogram with a source file. Filament-only datasets: prepData.coordinate_files may be empty with filament sources. Filament rows are skipped by peaks_from_class_maps (no cross-class suppression of particles) and traced by predict.filaments.trace_class_maps."
+  "config_fields_added": [
+    "prepData.filament_masks",
+    "prepData.filament_coords",
+    "prepData.filament_smoothing_ang",
+    "prepData.filament_label_spacing_ang",
+    "prepData.write_filament_masks",
+    "infer.filament_spacing_ang",
+    "infer.filament_min_length_ang",
+    "infer.filament_smoothing_ang",
+    "infer.peak_spacing_fraction"
+  ],
+  "legacy_equivalence": {
+    "G6-C1 (chunks, batches, model outputs, predictions vs gate6_c1 golden)": {
+      "result": "pass",
+      "tolerance": 1e-06
+    }
+  },
+  "metrics": {
+    "real_mask_check_DS10490_sample_1": {
+      "microtubule": "11 centrelines, 7.4 s; hollow wall at 80-125 A from the centreline, lumen empty; 0.3 % of mask voxels > 2R from any centreline",
+      "actin": "117 centrelines, 22.8 s; solid, centred; 1.9 % of mask voxels > 2R"
+    }
+  },
+  "pytest_fast": {
+    "command": "pytest tests -m 'not slow'",
+    "exit_code": 0,
+    "result": "695 passed, 27 skipped (7 min 4 s), 1 Nov 2026; frozen hashes all match"
+  },
+  "pytest_slow": {
+    "command": "pytest tests/gate6 -m slow",
+    "exit_code": 0,
+    "ran": true,
+    "result": "2 passed (18 min 29 s), 1 Nov 2026, after the human ruling (softmax head, gate_06_test_dispute.md)",
+    "G6_RESULT_seed0": {
+      "joint": {
+        "particle_f1": 1.0,
+        "particle_counts_tp_fp_fn": [
+          48,
+          0,
+          0
+        ],
+        "particle_f1_thr0.3_no_nms": 0.96,
+        "mt_f1": 1.0,
+        "actin_f1": 0.916
+      },
+      "particles_only": {
+        "particle_f1": 1.0,
+        "particle_counts_tp_fp_fn": [
+          48,
+          0,
+          0
+        ]
+      }
+    },
+    "attempt_1": "sigmoid head: 2 failed (joint particle F1 0.667, sphere-size class confusion)"
+  },
+  "benchmarks": {
+    "T6.5": "Driver smoke run (1 Nov 2026, tiny, 4 runs per dataset, 1 epoch, filaments arm) completes prepare -> chunk -> train -> calibrate -> predict -> trace (fixed: filaments-only arm needed coordinate_files \"None\"); stopped by its 50-min timeout during evaluation. Timings for 6 tomograms: prepare 8 min, chunk 5 min (9576 chunks), epoch 17 min (tiny), calibration 11 min (no particle classes: wasted), evaluation ~2.5 min per test tomogram. Full run not launched: size (runs, epochs, model) is a human decision. Particle arms: DS-10490 is reserved as the final benchmark (human decision 1 Nov 2026).",
+    "CZII_v2_defaults": "Same 5-fold models, OOF thresholds recalibrated with the new v2 defaults: Kaggle-weighted OOF F4 0.741 (was 0.631)."
+  },
+  "known_limitations": [
+    "T6.5 real-data filament benchmark not run (size decision pending).",
+    "Post-fit threshold calibration runs for filament-only models and finds no particles (~5 min per validation tomogram wasted; Gate 4 path).",
+    "RELION 5 centred coordinates are rejected with a clear error (tomogram size needed to convert).",
+    "T6.5 full real-data benchmark deferred by human decision (1 Nov 2026) to the DS-10490 final benchmark; only the tiny smoke run (end to end, no meaningful scores) was done."
+  ],
+  "notes_for_next_agent": "Chunks store filaments/<points file name>.npy next to points/ (only when a segment passes within R of the chunk). Tracking CSV gets filaments_path; filament classes are added to class_annotated per tomogram with a source file. Filament-only datasets: prepData.coordinate_files may be empty with filament sources. Filament rows are skipped by peaks_from_class_maps (no cross-class suppression of particles) and traced by predict.filaments.trace_class_maps.",
+  "attempt": 2
 }

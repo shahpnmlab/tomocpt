@@ -316,6 +316,9 @@ def predict_arrays(root: Path):
             pd, _ = G4.run_predict(root / f"run_{tag}", mp, dict(
                 weights=ckpt, tomogram_file=tomo, save_prediction_confidence_map=(tag == "net"),
                 cross_class_nms=(tag == "net"),
+                # Gate 4 spacing (one diameter), pinned since the v2 default became 0.5 x d
+                # (human decision 1 Nov 2026); 1.0 x d reproduces the golden exactly
+                peak_spacing_fraction=1.0,
                 predictions_coord_format="relion_31", predictions_coord_filename="picks.star"),
                 oracle=spec["oracle"])
         for _, name, _ in CLASSES:

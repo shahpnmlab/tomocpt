@@ -1,0 +1,133 @@
+class_number,class_name,portal_name,pdb,diameter_ang,d_vox_at_6.8A,asym_unit_max_extent_ang,d_rg_ang,pca_lengths_ang,instances_total,runs_present,flags
+1,2-Enoyl_thioester_reductase_Etr1p_Etr2p,2-Enoyl thioester reductase Etr1p/Etr2p,1N9G,173,25.4,173,131,178/121/70,16572,300,elongated
+2,20S_proteasome,20S proteasome,5FMG,185,27.2,185,151,195/124/124,89150,300,
+3,26S_proteasome,26S proteasome,4CR2,282,41.5,282,206,274/176/145,123,100,
+4,5-HT3_receptor,5-HT3 receptor,6HIS,161,23.7,161,114,165/77/77,7195,300,
+5,80S_ribosome_with_HCV-IRES,80S ribosome with HCV-IRES,4UJD,318,46.8,318,250,297/231/216,20345,300,
+6,ABCB4_in_complex_with_4B1-Fab_and_QA2-Fab,ABCB4 in complex with 4B1-Fab and QA2-Fab,7NIU,179,26.3,179,133,174/121/89,17894,300,
+7,APC-Cdc20-Hsl1_complex,APC-Cdc20-Hsl1 complex,5G04,228,33.5,228,190,234/192/127,341,197,
+8,ATPase_domain_of_Ssb1,ATPase domain of Ssb1,3GL1,72,10.6,97,57,66/61/41,194368,300,
+9,Acetohydroxyacid_synthase,Acetohydroxyacid synthase,6VZ8,219,32.2,219,182,216/216/77,1617,299,elongated
+10,Alpha4Beta2_nicotinic_receptor,Alpha4Beta2 nicotinic receptor,6CNJ,205,30.1,205,143,184/121/116,5188,300,
+11,Ams1_and_Nbr1_complex,Ams1 and Nbr1 complex,7DD9,174,25.6,174,133,171/122/97,6482,300,
+12,Anti-CD40L_Fab_variant,Anti-CD40L Fab variant,7SGM,164,24.1,164,127,151/148/58,8271,300,elongated
+13,Anti-influenza_Fab-neuraminidase_complex,Anti-influenza Fab-neuraminidase complex,6LXK,176,25.9,176,135,158/139/101,9486,300,
+14,BAM_complex,BAM complex,5LJO,132,19.4,132,115,141/113/84,9176,300,
+15,Bacteriophage_SPP1_head-to-tail_interface,Bacteriophage SPP1 head-to-tail interface,5A20,256,37.6,256,176,291/71/56,8540,300,elongated
+16,Bovine_ATP_synthase_stator,Bovine ATP synthase stator,6ZIU,235,34.6,235,196,321/84/73,5554,300,elongated
+17,Bundibugyo_virus_GP,Bundibugyo virus GP,7KFE,143,21.0,143,107,133/112/65,15370,300,
+18,C6_portal_vertex,C6 portal vertex,7ETM,190,27.9,190,149,166/140/140,2134,300,
+19,CBM_BT3015C,CBM BT3015C,7BLG,49,7.2,49,38,48/32/31,697731,300,
+20,CRL2Lrr1_complex,CRL2Lrr1 complex,7SHK,175,25.7,175,140,211/88/81,7847,300,elongated
+21,CSF-1_CSF-1R_complex,CSF-1:CSF-1R complex,4WRM,151,22.2,151,116,180/79/39,100411,300,elongated
+22,Calmodulin,Calmodulin,1EXR,71,10.4,71,56,87/36/26,969002,300,elongated
+23,Calmodulin_RS20_peptide_complex,Calmodulin RS20 peptide complex,1QTX,54,7.9,54,42,52/39/35,1121015,300,
+24,Cand1-Cul1-Roc1_complex,Cand1-Cul1-Roc1 complex,1U6G,161,23.7,161,119,166/95/73,27012,300,
+25,Cinnamoyl_esterase_Lj0536,Cinnamoyl esterase Lj0536,3QM1,81,11.9,64,62,85/50/43,675111,300,
+26,Class_A_GPCR,Class A GPCR,6LFM,149,21.9,149,113,159/96/63,3189,277,elongated
+27,ClpB,ClpB,1QVR,174,25.6,174,126,150/124/97,10560,300,
+28,Complement_complex,Complement complex,5O32,203,29.9,203,158,187/167/111,1765,299,
+29,Cyanophage_Pam1_portal-adaptor_complex,Cyanophage Pam1 portal-adaptor complex,7EEP,232,34.1,232,175,202/160/160,436,219,
+30,DOCK2-ELMO1-RAC1_complex,DOCK2-ELMO1-RAC1 complex,6TGC,336,49.4,336,242,383/136/102,722,266,elongated
+31,Diguanylate_cyclase_SiaD-SiaC_complex,Diguanylate cyclase SiaD-SiaC complex,7E6G,156,22.9,156,117,183/70/48,34999,300,elongated
+32,Dimeric_Photosystem_I,Dimeric Photosystem I,7O01,372,54.7,372,268,424/168/88,159,120,elongated
+33,Dipeptidase_3-Fab_complex,Dipeptidase 3-Fab complex,6VGR,170,25.0,170,118,172/79/77,12680,300,
+34,Endophilin_B1_helical_scaffold,Endophilin B1 helical scaffold,6UP6,358,52.6,358,327,370/350/246,2,2,rare(<50)
+35,EphB2_extracellular_domain,EphB2 extracellular domain,7S7K,153,22.5,153,135,222/64/34,97855,300,elongated
+36,Escherichia_coli_coupled_transcription-translation_complex,Escherichia coli coupled transcription-translation complex,6X9Q,382,56.2,382,277,394/205/183,1,1,rare(<50)
+37,FEN1-PCNA_complex,FEN1-PCNA complex,1UL1,171,25.1,171,124,155/127/77,9467,300,
+38,FabF,FabF,5SOA,82,12.1,82,65,82/59/52,28077,300,merged_chains_A-E(one_pentamer)
+39,Fatty_acid_synthase,Fatty acid synthase,2VZ9,206,30.3,206,161,207/171/77,3056,300,elongated
+40,Formate_dehydrogenase_-_heterodisulfide_reductase_-_formylmethanofuran_dehydrogenase_complex,Formate dehydrogenase - heterodisulfide reductase - formylmethanofuran dehydrogenase complex,7BKC,301,44.3,301,223,315/165/152,203,141,
+41,GATOR1-RAG,GATOR1-RAG,6CES,181,26.6,181,137,186/127/76,9842,300,
+42,GET3,GET3,3H84,95,14.0,95,74,95/75/44,199035,300,
+43,GTP_cyclohydrolase_I-GFRP_complex,GTP cyclohydrolase I-GFRP complex,6Z80,139,20.4,139,110,142/89/89,24895,300,
+44,GluD1_receptor,GluD1 receptor,6KSP,202,29.7,202,165,208/187/60,4455,300,elongated
+45,Glutathione_S-transferase,Glutathione S-transferase,12GS,66,9.7,66,54,64/51/44,458476,300,
+46,Glycoprotein_B-Neutralizing_Antibody_Complex,Glycoprotein B-Neutralizing Antibody Complex,6VN1,184,27.1,184,153,218/106/106,9385,300,
+47,GroEL,GroEL,1SS8,189,27.8,151,164,177/157/157,8623,300,
+48,HIV-1_cleaved_synaptic_complex_CSC_intasome,HIV-1 cleaved synaptic complex (CSC) intasome,6U8Q,191,28.1,191,143,184/147/78,8722,300,
+49,HPV58_33_52_chimeric_L1_pentamer,HPV58/33/52 chimeric L1 pentamer,6IGC,117,17.2,301,98,103/102/90,18,18,rare(<50)
+50,Histone_deacetylase_HDA1_complex,Histone deacetylase HDA1 complex,6Z6O,368,54.1,368,221,253/227/176,40,35,rare(<50)
+51,HslUV_protease-chaperone_complex,HslUV protease-chaperone complex,1G3I,217,31.9,217,163,228/118/118,1994,299,
+52,Hsp60-Hsp10_football_complex,Hsp60-Hsp10 football complex,6MRC,249,36.6,249,192,256/150/150,424,215,
+53,Hsp70_ATPase_domain,Hsp70 ATPase domain,1S3X,72,10.6,72,55,64/57/41,483580,300,
+54,Hsp90-Sba1_closed_chaperone_complex,Hsp90-Sba1 closed chaperone complex,2CG9,130,19.1,130,104,142/82/72,25209,300,
+55,Human_mitochondrial_ribosome_assembly_intermediate,Human mitochondrial ribosome assembly intermediate,5OOL,250,36.8,250,197,227/196/163,75,64,
+56,III2-IV2_respiratory_supercomplex,III2-IV2 respiratory supercomplex,7Q21,222,32.6,222,171,259/122/77,2660,300,elongated
+57,Influenza_hemagglutinin-Fab_complex,Influenza hemagglutinin-Fab complex,6WZT,172,25.3,172,142,146/140/140,7104,300,
+58,Kv4.2-DPP6S-KChIP1_complex,Kv4.2-DPP6S-KChIP1 complex,7E8H,229,33.7,229,197,262/185/120,659,261,
+59,LRRC8D_channel,LRRC8D channel,6M04,185,27.2,185,161,202/153/118,2808,300,
+60,Lysosomal_GLB1-PPCA_complex,Lysosomal GLB1-PPCA complex,7KDV,227,33.4,227,202,234/234/114,573,250,
+61,M1_protein_in_complex_with_human_fibrinogen,M1 protein in complex with human fibrinogen,2XNX,211,31.0,211,167,206/167/117,2780,300,
+62,Machupo_virus_polymerase,Machupo virus polymerase,6KLH,173,25.4,173,144,191/115/113,4926,300,
+63,Mannosidase_BT2199,Mannosidase BT2199,2WW2,132,19.4,132,107,124/123/62,34128,300,
+64,Mec1-Ddc2,Mec1-Ddc2,6Z3A,211,31.0,211,165,205/181/85,1847,299,
+65,Metabotropic_glutamate_receptor_5,Metabotropic glutamate receptor 5,6N52,183,26.9,183,151,231/110/56,25730,300,elongated
+66,MukBEF-MatP-DNA_monomer,MukBEF-MatP-DNA monomer,7NYZ,339,49.9,339,237,375/147/79,977,282,elongated
+67,Myosin-V,Myosin-V,2DFS,314,46.2,314,282,381/294/85,511,236,elongated
+68,Myosin-actin_rigor_complex,Myosin-actin rigor complex,6X5Z,245,36.0,245,163,237/129/82,3544,300,elongated
+69,NHEJ_short-range_synaptic_complex,NHEJ short-range synaptic complex,7LSY,247,36.3,247,198,252/168/161,566,245,
+70,NLRP9,NLRP9,7WBT,138,20.3,138,108,127/98/97,8670,300,
+71,NMDA_selective_glutamate_receptor_complex,NMDA selective glutamate receptor complex,4PE5,176,25.9,176,124,152/124/89,13898,300,pdb_assumed(GO-only label)
+72,Neurofibromin,Neurofibromin,7R04,321,47.2,321,217,332/138/108,821,273,elongated
+73,Norovirus_P_domain,Norovirus P domain,6JYO,76,11.2,120,63,70/65/51,72420,300,
+74,OprM-MexA_complex,OprM-MexA complex,6TA5,338,49.7,338,229,369/103/102,846,269,elongated
+75,PI4KIIIa_lipid_kinase_complex,PI4KIIIa lipid kinase complex,6BQ1,286,42.1,286,198,297/148/87,1208,292,elongated
+76,Paddle_chimera_voltage_gated_potassium_channel_Kv1.2-Kv2.1,Paddle chimera voltage gated potassium channel Kv1.2-Kv2.1,2R9R,168,24.7,296,142,200/101/101,5289,300,
+77,Peroxiredoxin_ApPrx,Peroxiredoxin (ApPrx),6KRK,144,21.2,144,131,156/156/51,21618,300,elongated
+78,Phenylalanyl-tRNA_synthetase,Phenylalanyl-tRNA synthetase,2RHS,182,26.8,182,125,177/104/72,19894,300,
+79,Phosphoketolase,Phosphoketolase,6LXV,197,29.0,197,157,181/181/91,2352,300,
+80,Photosystem_I-LHCI_super-complex,Photosystem I-LHCI super-complex,4XK8,171,25.1,258,131,164/135/80,583,250,
+81,PilF_ATPase,PilF ATPase,6F8L,182,26.8,182,150,177/144/126,3465,300,
+82,Poxvirus_transcription_pre-initiation_complex,Poxvirus transcription pre-initiation complex,7AMV,189,27.8,189,150,179/139/126,2468,300,
+83,Pseudouridine_kinase_PUKI,Pseudouridine kinase (PUKI),7VTG,100,14.7,162,75,114/45/44,49939,300,elongated
+84,RNA_Polymerase_I_pre-initiation_complex,RNA Polymerase I pre-initiation complex,6TPS,220,32.4,220,169,212/158/123,902,283,
+85,RNA_polymerase_II_elongation_complex_EC_EC,RNA polymerase II elongation complex (EC+EC),7MEI,273,40.1,273,210,306/148/128,261,161,
+86,RNA_polymerase_II_in_complex_with_human_RPAP2,RNA polymerase II in complex with human RPAP2,7B7U,155,22.8,155,126,152/131/84,11319,300,
+87,Reovirus_DLP_5-fold,Reovirus DLP (5-fold),6XF8,283,41.6,283,211,297/182/108,494,237,elongated
+88,Retromer-Vps5_SNX-BAR_complex,Retromer-Vps5 (SNX-BAR) complex,7BLR,197,29.0,197,159,217/151/74,2042,296,elongated
+89,Ribonuclease_P-tRNA_complex,Ribonuclease P-tRNA complex,6AHU,191,28.1,191,137,179/131/85,5613,300,
+90,RuBisCO,RuBisCO,1BXN,135,19.9,131,119,121/118/118,23748,300,
+91,S-layer_protein_SbsC,S-layer protein SbsC,4UIC,144,21.2,144,107,162/78/44,83459,300,elongated
+92,SARS-CoV-2_RTC,SARS-CoV-2 RTC,7EGQ,295,43.4,295,214,316/160/108,343,187,elongated
+93,SARS-CoV-2_Spike_Glycoprotein_with_one_ACE2,SARS-CoV-2 Spike Glycoprotein with one ACE2,7KJ2,231,34.0,231,160,239/102/95,5322,300,elongated
+94,SCF-RBR_CUL1-RBX1-ARIH1,SCF-RBR (CUL1-RBX1-ARIH1),7B5S,165,24.3,165,123,188/81/58,29076,300,elongated
+95,Secretory_immunoglobulin_A,Secretory immunoglobulin A,6LX3,169,24.9,169,117,158/98/80,7561,300,
+96,Spondweni_virus_prME_spike,Spondweni virus prME spike,6ZQJ,184,27.1,184,157,185/156/123,6926,300,
+97,T7_phage_gp15-gp16_core_complex,T7 phage gp15-gp16 core complex,6YT5,222,32.6,222,179,270/108/108,1916,299,
+98,TFIID-TFIIA,TFIID-TFIIA,7EGD,267,39.3,267,203,275/182/120,474,220,
+99,TFIID_in_canonical_conformation,TFIID in canonical conformation,7EGE,239,35.1,239,198,263/175/133,676,262,
+100,TLR3ecd_with_three_Fabs,TLR3ecd with three Fabs,3ULV,217,31.9,217,156,225/134/65,13244,300,elongated
+101,TRiC,TRiC,6KS8,229,33.7,229,189,193/190/185,77230,300,
+102,Target_of_Rapamycin_Complex_2,Target of Rapamycin Complex 2,6EMK,232,34.1,232,182,208/181/152,469,228,
+103,Thyroglobulin,Thyroglobulin,6SCJ,258,37.9,258,170,244/120/114,1584,294,
+104,TniQ-Cascade_complex,TniQ-Cascade complex,6PIF,192,28.2,192,158,207/153/96,3807,300,
+105,Transducin_and_Phosphodiesterase_6,Transducin and Phosphodiesterase 6,7JSN,165,24.3,165,125,163/108/92,12304,300,
+106,Type_IV_pilus_secretin_PilQ,Type IV pilus secretin PilQ,6W6M,196,28.8,196,173,201/158/158,879,276,
+107,UdgX-ssDNA_complex,UdgX-ssDNA complex,6IOD,58,8.5,87,45,50/46/38,150045,300,
+108,VEEV_TC-83_strain_VLP_in_complex_with_Fab_hVEEV-63,VEEV TC-83 strain VLP in complex with Fab hVEEV-63,7SFW,249,36.6,249,190,231/190/135,474,228,
+109,VP1A_and_VP1B,VP1A and VP1B,5H0S,186,27.4,186,131,169/139/58,13510,300,elongated
+110,Wzc_K540M,Wzc (K540M),7NHS,174,25.6,174,159,170/153/153,2247,300,
+111,XaxAB_pore_complex,XaxAB pore complex,6GY6,253,37.2,253,238,267/267/166,66,58,
+112,Yeast_acetyl-CoA_carboxylase,Yeast acetyl-CoA carboxylase,5CSA,221,32.5,221,138,203/106/69,3371,300,elongated
+113,Yeast_closed_complex_with_distorted_DNA,Yeast closed complex with distorted DNA,6GYM,288,42.4,288,211,290/164/152,139,102,
+114,Yeast_mitochondrial_ribosome,Yeast mitochondrial ribosome,5MRC,346,50.9,346,256,322/240/188,2,2,rare(<50)
+115,alpha-Actinin,alpha-Actinin,1SJJ,354,52.1,354,282,482/64/54,229,151,elongated
+116,alpha-actinin_CH1_bound_to_F-actin,alpha-actinin CH1 bound to F-actin,3LUE,320,47.1,320,215,349/104/80,1886,299,elongated
+117,alpha2-Macroglobulin,alpha2-Macroglobulin,6TAV,227,33.4,227,164,199/161/122,1364,297,
+118,alpha_betaprime-COP_subcomplex,alpha/betaprime-COP subcomplex,3MKQ,242,35.6,242,199,242/238/58,2774,299,elongated
+119,bacteriophage_T7_tail_complex,bacteriophage T7 tail complex,7EY7,219,32.2,219,183,213/166/166,253,158,
+120,chromatosome_containing_human_linker_histone_H1.0,chromatosome containing human linker histone H1.0,7K5X,190,27.9,190,124,163/108/87,12580,300,
+121,complex_of_Sse1p_and_Hsp70,complex of Sse1p and Hsp70,3D2F,116,17.1,216,82,104/72/63,22766,300,
+122,enteropathogenic_E._coli_O127_H6_flagellar_filament,enteropathogenic E. coli O127:H6 flagellar filament,7SN7,347,51.0,347,241,289/254/163,10,10,rare(<50)
+123,gamma-Tubulin_Ring_Complex_6-spoke,gamma-Tubulin Ring Complex (6-spoke),7QJ0,290,42.6,290,225,322/192/106,387,211,elongated
+124,heterotrimeric_G-protein_complex,heterotrimeric G-protein complex,1GOT,103,15.1,103,76,102/64/51,3215,280,pdb_assumed(GO-only label)
+125,human_intron_lariat_spliceosome,human intron lariat spliceosome,6ID1,295,43.4,295,217,254/214/176,21,20,rare(<50)
+126,killifish_CALHM1,killifish CALHM1,6LMT,120,17.6,120,108,111/111/102,29133,300,
+127,nuclear_pore_complex_inner_ring_protomer,nuclear pore complex inner ring protomer,7WOO,388,57.1,388,241,338/209/125,55,52,elongated
+128,p97_VCP,p97/VCP,3CF3,168,24.7,155,136,152/151/99,22919,300,
+129,peptide_with_high_affinity_for_B-Cell_lymphoma2,peptide with high affinity for B-Cell lymphoma2,7ELY,25,3.7,28,21,28/19/15,162173,300,
+130,prApe1,prApe1,5JH9,155,22.8,148,136,137/136/136,34363,300,
+131,type_3_IP3_receptor,type 3 IP3 receptor,7T3U,264,38.8,264,204,226/219/160,189,134,
+132,type_III_secretion_injectisome_needle_complex,type III secretion injectisome needle complex,6DUZ,251,36.9,251,226,272/272/71,473,242,elongated
