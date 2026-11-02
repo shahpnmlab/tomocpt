@@ -36,3 +36,8 @@ notes and the gate reports; this file is only the order of work.
 ## 6. DS-10490 "final boss" (only after 3–5)
 - Prep done: points `data/filaments/10490_points/coords/`, diameters
   `experiments/configs/ds10490_species.csv`, config `experiments/configs/ds10490_train.yaml`.
+
+## 7. Gate 8 — performance (only after 3–6 are validated; human decision 2 Nov 2026)
+- [ ] 7.1 Codebase scan + spec `.claude/agents/08_AGENT_PERFORMANCE.md` (handoff: `HANDOFF_gate8.md`).
+- [ ] 7.2 Implementation on `v2-feat/perf` (own worktree), training first; goldens regenerated per
+      change after equivalence tests against the old code.
