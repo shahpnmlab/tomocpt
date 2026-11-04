@@ -274,3 +274,37 @@ benchmarks/out/czii_bench_20261029_2237/cv/ensemble_v2defaults.json`, same 5 fol
 | **Kaggle-weighted** | | **0.741** (was 0.631) |
 
 This is the baseline for Gate 7's acceptance (≥ 0.02 OOF F4).
+
+## k-fold CV on CZII (5 folds, 60 epochs, softmax head)
+
+- output: `/home/pranav/software/tomocpt/benchmarks/out/czii_g7_focal`; OOF tomograms: TS_5_4, TS_69_2, TS_6_4, TS_6_6, TS_73_6, TS_86_3, TS_99_9
+- F4 of pooled out-of-fold picks at the thresholds calibrated on them (slightly optimistic)
+
+| class | true particles | threshold | OOF F4 |
+|---|---|---|---|
+| beta-amylase | 83 | 0.40 | 0.367 |
+| beta-galactosidase | 103 | 0.45 | 0.584 |
+| thyroglobulin | 244 | 0.35 | 0.662 |
+| ribosome | 331 | 0.35 | 0.818 |
+| apo-ferritin | 375 | 0.40 | 0.887 |
+| virus-like-particle | 113 | 0.40 | 0.913 |
+
+Kaggle-weighted OOF F4: **0.730** (Kaggle 1st place: 0.788 on its hidden test set)
+
+
+## k-fold CV on CZII (5 folds, 60 epochs, softmax head)
+
+- output: `/home/pranav/software/tomocpt/benchmarks/out/czii_g7_contrastive`; OOF tomograms: TS_5_4, TS_69_2, TS_6_4, TS_6_6, TS_73_6, TS_86_3, TS_99_9
+- F4 of pooled out-of-fold picks at the thresholds calibrated on them (slightly optimistic)
+
+| class | true particles | threshold | OOF F4 |
+|---|---|---|---|
+| beta-amylase | 83 | 0.30 | 0.392 |
+| beta-galactosidase | 103 | 0.35 | 0.603 |
+| thyroglobulin | 244 | 0.35 | 0.698 |
+| ribosome | 331 | 0.15 | 0.819 |
+| apo-ferritin | 375 | 0.30 | 0.863 |
+| virus-like-particle | 113 | 0.35 | 0.911 |
+
+Kaggle-weighted OOF F4: **0.742** (Kaggle 1st place: 0.788 on its hidden test set)
+

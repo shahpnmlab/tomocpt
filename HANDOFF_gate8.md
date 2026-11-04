@@ -17,8 +17,9 @@ is written.
 
 - **Gate 8 work starts only after all training and predict code has been validated**: Gate 7
   closed (CZII CV arms, filament benchmark with membranes), and the remaining validation items of
-  `TODO_v2.md` (SSL re-evaluation, ~130-class scaling smoke test, DS-10490) done or waived by the
-  human. Writing the spec may happen earlier; it changes no code.
+  `TODO_v2.md` (SSL re-evaluation, ~130-class scaling smoke test, DS-10490, schedule-free optimiser
+  `RAdamScheduleFree`, item 7) done or waived by the human. Profile the training step with the
+  optimiser that will be the default. Writing the spec may happen earlier; it changes no code.
 - **Never touch the working tree while a CV / benchmark run is in progress**: every fold starts a
   fresh `tomocpt train` from the repo, so a code change silently enters later folds. Gate 8
   implementation goes on `v2-feat/perf` in its own worktree.
@@ -83,7 +84,7 @@ is written.
   rendering — profile before porting anything.
 - Known waste: post-fit calibration runs even for filament-only models (≈ 5 min per validation
   tomogram); OOF picks per fold in the ensemble step (~8 min per CV).
-- CV as a routine: a built-in `tomocpt train` CV mode (today `experiments/run_cv.sh` loops folds,
+- CV as a routine (moved to TODO_v2.md item 3a, human decision 4 Nov 2026; Gate 8 only profiles it): a built-in `tomocpt train` CV mode (today `experiments/run_cv.sh` loops folds,
   `tomocpt.predict.ensemble` pools OOF picks). Becomes worthwhile once a fold is fast.
 
 ## 4. Steps for the receiving agent
