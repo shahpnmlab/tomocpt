@@ -18,7 +18,7 @@ is written.
 - **Gate 8 work starts only after all training and predict code has been validated**: Gate 7
   closed (CZII CV arms, filament benchmark with membranes), and the remaining validation items of
   `TODO_v2.md` (SSL re-evaluation, ~130-class scaling smoke test, DS-10490, schedule-free optimiser
-  `RAdamScheduleFree`, item 7) done or waived by the human. Profile the training step with the
+  `RAdamScheduleFree`, item 3b.3) done or waived by the human. Profile the training step with the
   optimiser that will be the default. Writing the spec may happen earlier; it changes no code.
 - **Never touch the working tree while a CV / benchmark run is in progress**: every fold starts a
   fresh `tomocpt train` from the repo, so a code change silently enters later folds. Gate 8
