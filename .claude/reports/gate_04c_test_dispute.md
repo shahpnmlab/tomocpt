@@ -1,6 +1,6 @@
 # Gate 4c test dispute: `tests/gate4b/test_g4b_ensemble.py::test_G4b_C5_one_member_equals_the_model[softmax]`
 
-**Status:** awaiting human ruling (4 Nov 2026). The frozen test is not edited.
+**Status:** RESOLVED 4 Nov 2026: human ruling "yes we dont want leaks"; option 1 applied (`_load` in `applied_main_config(None)`), test re-frozen.
 
 ## What fails
 Second half of the test, the scale-conditioned checkpoint (`cond_ckpt`, sigmoid head):

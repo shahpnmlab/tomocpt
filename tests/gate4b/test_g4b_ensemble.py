@@ -113,9 +113,14 @@ def test_G4b_C4_overlapping_validation_tomograms_raise(tmp_path, monkeypatch, co
 # ------------------------------------------------------------------------------------------
 
 def _load(path):
+    """Reference load in a clean global state: ``applied_main_config(None)`` restores
+    ``mainConfig`` afterwards, so a later load does not inherit this checkpoint's train settings
+    (CLAUDE.md 1.10; re-frozen at Gate 4c by human ruling, 4 Nov 2026)."""
     from tomocpt.networks.inference import InferenceModel
+    from utils.tiny import applied_main_config
 
-    return InferenceModel.load_from_checkpoint(str(path), map_location="cpu", strict=True).eval()
+    with applied_main_config(None):
+        return InferenceModel.load_from_checkpoint(str(path), map_location="cpu", strict=True).eval()
 
 
 def _ensemble(tmp_path, paths):

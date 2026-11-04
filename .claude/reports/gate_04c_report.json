@@ -1,7 +1,7 @@
 {
  "gate_id": "4c",
  "agent_name": "04c_AGENT_CV_ROUTINE (orchestrator acting as TA and implementer)",
- "status": "AWAITING_HUMAN",
+ "status": "PASSED",
  "base_ref": "ccae02b88fce1ff20f91d61ba5cb42dcf617fde4",
  "files_created": [
   "tomocpt/training/cv.py",
@@ -64,7 +64,7 @@
   "c8_cv_mode": "3 folds x 1 epoch, tiny model, 6 phantoms: pool chunked once, fold dirs are symlinks, ensemble reused all saved picks (0 re-predictions), rerun trained nothing and gave the same thresholds"
  },
  "pytest_fast": {
-  "tests -m 'not slow'": "793 passed, 1 failed, 27 skipped (fails: tests/gate4b/test_g4b_ensemble.py::test_G4b_C5_one_member_equals_the_model[softmax]; test dispute .claude/reports/gate_04c_test_dispute.md: its reference load inherits the softmax head through the CLAUDE.md 1.10 leak that Gate 4c fixes for ensembles)",
+  "tests -m 'not slow'": "794 passed, 27 skipped after the re-freeze (before: 1 failed, G4b-C5 softmax; dispute accepted by human 4 Nov 2026)",
   "tests/gate4c -m 'not slow'": "34 passed"
  },
  "pytest_slow": {

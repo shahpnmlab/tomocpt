@@ -72,8 +72,8 @@ are in the package, but the fold loop, the OOF ensemble build and the CV summary
       (CLAUDE.md 1.10; the Gate 3c snapshot covers CLI runs only). Built-in CV / ensembling loads many
       checkpoints per process, so fix (build the model from the checkpoint's own config) and test this
       in 3a.
-- [~] 3a.5 Tests (TA first), README section. Done (Gate 4c: spec `.claude/agents/04c_AGENT_CV_ROUTINE.md`,
-      `tests/gate4c/`, report `gate_04c_report.json`); open: test dispute `gate_04c_test_dispute.md`. Gate 8's "built-in CV mode" (HANDOFF_gate8 step 8d) moves here.
+- [x] 3a.5 Tests (TA first), README section. Done (Gate 4c: spec `.claude/agents/04c_AGENT_CV_ROUTINE.md`,
+      `tests/gate4c/`, report `gate_04c_report.json`); test dispute resolved (G4b-C5 re-frozen, no leaks). Gate 8's "built-in CV mode" (HANDOFF_gate8 step 8d) moves here.
 
 ## 3b. Train longer, exact coordinates (human decision 4 Nov 2026; after the Gate 7 `both` arm)
 Plan: take the best training flavour of the Gate 7 CZII CV (baseline / focal / contrastive / both, judged

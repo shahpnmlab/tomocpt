@@ -303,7 +303,7 @@
     "tests/gate4b/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
     "tests/gate4b/conftest.py": "7994565967a8d7ce1b199c1053b37bdbf4f27ab194ee85c2f1e28e4a331a50a9",
     "tests/gate4b/g4b_helpers.py": "c15b5a97b11bcd73d034d25668ffb783121d5b94ea14c7181bee2d585116dc03",
-    "tests/gate4b/test_g4b_ensemble.py": "e22ee4bbcf156c83dbe62f5913e2d672a4ece0d1da8252cdf9b21adfc6d9bf9a",
+    "tests/gate4b/test_g4b_ensemble.py": "a483634a729b400083b9a9bac8c79059122fcf3b7de0135cfd0533845b46804b",
     "tests/gate4b/test_g4b_folds.py": "2db9ee052c94e35c6ea96cc0a87a936f4c904cedb1a0db0b6947785ccd477eb1",
     "tests/gate4b/test_g4b_learning.py": "147e97cd4688412e2828b998338caebe3b4696941f0ce32fd37a1d4ebc9c8f8b"
    },
@@ -311,7 +311,8 @@
     "User decision 29 Oct 2026: k-fold training, out-of-fold calibration and fold ensemble.",
     "Orchestrator ruling: fold members load through InferenceModel.load_from_checkpoint; EnsembleModel(members) constructor; load_ensemble(path) returns an EnsembleModel.",
     "Gate 4b passed 29 Oct 2026, implemented directly by the orchestrator: fast 632 passed/27 skipped; slow C7 passed (mean F1 ensemble 0.136 vs folds 0.115/0.034/0.127; tiny 1-epoch models, so C7 checks plumbing, not accuracy).",
-    "build_ensemble reads chunks_dir from the raw checkpoint: a loaded model's train section can carry an earlier load's values outside a CLI command (Section 1.10, Gate 3c)."
+    "build_ensemble reads chunks_dir from the raw checkpoint: a loaded model's train section can carry an earlier load's values outside a CLI command (Section 1.10, Gate 3c).",
+    "Human ruling (4 Nov 2026): Gate 4c test dispute accepted ('we dont want leaks'). tests/gate4b/test_g4b_ensemble.py re-frozen: _load() reference loads run inside applied_main_config(None), so they do not inherit an earlier load's train settings. Assertions unchanged."
    ]
   },
   "5b": {
@@ -357,7 +358,7 @@
    ]
   },
   "4c": {
-   "status": "AWAITING_HUMAN",
+   "status": "PASSED",
    "agent": "04c_AGENT_CV_ROUTINE",
    "attempts": 1,
    "test_hashes": {
@@ -375,7 +376,8 @@
    "path_exceptions": [],
    "notes": [
     "Human decision (4 Nov 2026): TODO 3a, built-in CV + ensembling opt-in, first after Gate 7. Tests written and frozen by the orchestrator acting as TA (usage-frugal, no agent fan-out).",
-    "4 Nov 2026: implementation done; fast 34/34 gate4c, slow C8 passed; full fast suite 793 passed, 1 failed (G4b-C5 softmax one-member, test dispute gate_04c_test_dispute.md)."
+    "4 Nov 2026: implementation done; fast 34/34 gate4c, slow C8 passed; full fast suite 793 passed, 1 failed (G4b-C5 softmax one-member, test dispute gate_04c_test_dispute.md).",
+    "Human ruling (4 Nov 2026): Gate 4c test dispute accepted ('we dont want leaks'). tests/gate4b/test_g4b_ensemble.py re-frozen: _load() reference loads run inside applied_main_config(None), so they do not inherit an earlier load's train settings. Assertions unchanged."
    ]
   }
  }
