@@ -48,7 +48,14 @@ are in the package, but the fold loop, the OOF ensemble build and the CV summary
       narrow core. Question to answer: is the narrow central peak flattened by the soft focal value term
       and/or the softmax head? Compare baseline (Huber, softmax), focal, contrastive, both; and one
       sigmoid-head model as the reference without softmax competition.
-- [ ] 3a.4 Tests (TA first), README section. Gate 8's "built-in CV mode" (HANDOFF_gate8 step 8d) moves here.
+- [ ] 3a.4 Bug (found 4 Nov 2026): in one Python process, loading a contrastive checkpoint
+      (`train.discriminative.contrastive_weight > 0`) and then one without the head fails:
+      `InferenceModel.load_from_checkpoint(strict=True)` -> missing `contrastive_head.*`,
+      `contrastive_bank.*`. The earlier load's `train` settings leak via the global `mainConfig`
+      (CLAUDE.md 1.10; the Gate 3c snapshot covers CLI runs only). Built-in CV / ensembling loads many
+      checkpoints per process, so fix (build the model from the checkpoint's own config) and test this
+      in 3a.
+- [ ] 3a.5 Tests (TA first), README section. Gate 8's "built-in CV mode" (HANDOFF_gate8 step 8d) moves here.
 
 ## 3b. Train longer, exact coordinates (human decision 4 Nov 2026; after the Gate 7 `both` arm)
 Plan: take the best training flavour of the Gate 7 CZII CV (baseline / focal / contrastive / both, judged
