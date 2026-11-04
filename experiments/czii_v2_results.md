@@ -308,3 +308,20 @@ Kaggle-weighted OOF F4: **0.730** (Kaggle 1st place: 0.788 on its hidden test se
 
 Kaggle-weighted OOF F4: **0.742** (Kaggle 1st place: 0.788 on its hidden test set)
 
+
+## k-fold CV on CZII (5 folds, 60 epochs, softmax head)
+
+- output: `/home/pranav/software/tomocpt/benchmarks/out/czii_g7_both`; OOF tomograms: TS_5_4, TS_69_2, TS_6_4, TS_6_6, TS_73_6, TS_86_3, TS_99_9
+- F4 of pooled out-of-fold picks at the thresholds calibrated on them (slightly optimistic)
+
+| class | true particles | threshold | OOF F4 |
+|---|---|---|---|
+| beta-amylase | 83 | 0.35 | 0.300 |
+| beta-galactosidase | 103 | 0.40 | 0.566 |
+| thyroglobulin | 244 | 0.40 | 0.694 |
+| ribosome | 331 | 0.25 | 0.825 |
+| apo-ferritin | 375 | 0.35 | 0.891 |
+| virus-like-particle | 113 | 0.45 | 0.922 |
+
+Kaggle-weighted OOF F4: **0.737** (Kaggle 1st place: 0.788 on its hidden test set)
+
