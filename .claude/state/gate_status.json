@@ -2,7 +2,7 @@
  "base_ref": "v2-gate-0-base",
  "base_commit": "ce6f7b0ce856f19556266e7ad3143bfb66cdb7e2",
  "base_note": "first commit of branch v2-dev (released main + fix/v1-patches + plan); set by the orchestrator",
- "current_gate": "4c",
+ "current_gate": "4d",
  "gpu_available": true,
  "gates": {
   "1": {
@@ -378,6 +378,21 @@
     "Human decision (4 Nov 2026): TODO 3a, built-in CV + ensembling opt-in, first after Gate 7. Tests written and frozen by the orchestrator acting as TA (usage-frugal, no agent fan-out).",
     "4 Nov 2026: implementation done; fast 34/34 gate4c, slow C8 passed; full fast suite 793 passed, 1 failed (G4b-C5 softmax one-member, test dispute gate_04c_test_dispute.md).",
     "Human ruling (4 Nov 2026): Gate 4c test dispute accepted ('we dont want leaks'). tests/gate4b/test_g4b_ensemble.py re-frozen: _load() reference loads run inside applied_main_config(None), so they do not inherit an earlier load's train settings. Assertions unchanged."
+   ]
+  },
+  "4d": {
+   "status": "IN_PROGRESS",
+   "agent": "04d_AGENT_EXACT_COORDS",
+   "attempts": 1,
+   "test_hashes": {
+    "tests/gate4d/README.md": "f8d6403c8334d7af63c238f207f199dc746b233db41999c250f2ca4b1c77091b",
+    "tests/gate4d/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "tests/gate4d/conftest.py": "849484f2f0a4776563f650a1354af75e11489b387259c5ea9ba3183aa556bb9f",
+    "tests/gate4d/test_g4d_coords.py": "19702014147c86fce0c0d63b58688378eb8064857329c6262a0d9fcd6f6a1dea"
+   },
+   "path_exceptions": [],
+   "notes": [
+    "Human decision (4 Nov 2026): exact sub-voxel coordinates are the pipeline-v2 default, not opt-in ('because of the chunking and splatting strategy'). v1 label MRCs stay truncated (invariant 1). TODO 3b.1."
    ]
   }
  }
