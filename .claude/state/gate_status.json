@@ -2,7 +2,7 @@
  "base_ref": "v2-gate-0-base",
  "base_commit": "ce6f7b0ce856f19556266e7ad3143bfb66cdb7e2",
  "base_note": "first commit of branch v2-dev (released main + fix/v1-patches + plan); set by the orchestrator",
- "current_gate": "7",
+ "current_gate": "4c",
  "gpu_available": true,
  "gates": {
   "1": {
@@ -354,6 +354,27 @@
     "Orchestrator rulings: call signatures (tests/gate7/g7_helpers.py); filament anchor tolerance 0.75 vox off-grid; hard-negative exclusion (1+e)R-1; negative masks reach the batch as negative_mask [B,1,64,64,64] bool; C10 peak-shape check (HANDOFF 2.2) plus C10 look-alike F1 check; softmax head in slow tests; C7 golden gradients compared by absolute sum (rtol 1e-5).",
     "Slow-tier calibration: SNR 0.25, hollow wall 0.4, 400 steps (1500 steps: baseline look-alike F1 1.00, C9 void). C10 thr-0.3 metric is near 0 for both arms at 400 steps (weak); see tests/gate7/README.md.",
     "Human ruling (4 Nov 2026): Gate 7 FAILED AS TESTED (CZII CV: focal 0.730, contrastive 0.742, both 0.737 vs baseline 0.741; needs +0.02); re-judge after TODO 3b (all arms early-stopped at epoch ~25-28 with LR 4e-4, no SWA). Focal stays off by default (value_loss huber). 3b uses the 'both' flavour (focal + contrastive w 0.1) and retrains the baseline with the same recipe. No tag."
+   ]
+  },
+  "4c": {
+   "status": "IN_PROGRESS",
+   "agent": "04c_AGENT_CV_ROUTINE",
+   "attempts": 1,
+   "test_hashes": {
+    "tests/gate4c/README.md": "ab06879366374cbcb29494de02eeebda76b7848b863bd50174eb5e49b11bc0ed",
+    "tests/gate4c/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "tests/gate4c/conftest.py": "d1f5a2a4386d1126990d74bf22675275d26c2f045f9e698faf0f3e7e44b37a0d",
+    "tests/gate4c/g4c_helpers.py": "eafdc1bf3cc3900591e4251e246e5150eb07892193e8fcd5318b65e5ab671a9d",
+    "tests/gate4c/test_g4c_chunks.py": "e20aacdccb3d76e3b27c91b42b6c726b14296e10c8dd45980813c4554301495f",
+    "tests/gate4c/test_g4c_cv_mode.py": "87dc7d8d2bbc005c770a8be89d7a96c3f5cf4bc439d05bd9aee396466818dda5",
+    "tests/gate4c/test_g4c_isolation.py": "081238fd2beba3eb70f0c4dbd817e4d81d3de37bf29648d94e6b486c9af375cc",
+    "tests/gate4c/test_g4c_learning.py": "e27e7f96e08e6644edd3d1fbab3b5e2e45bd7ab1f318743e70ad76ce884e21a5",
+    "tests/gate4c/test_g4c_picks.py": "ddc1fcd29d6dce2b583643947c977870a231b41a48659aaf1c5947c158c15ad8",
+    "tests/gate4c/test_g4c_report.py": "d13a95a2cdc49dbcc24b01e03d1966b9e6623f07ae3319ecd74af92b3be27486"
+   },
+   "path_exceptions": [],
+   "notes": [
+    "Human decision (4 Nov 2026): TODO 3a, built-in CV + ensembling opt-in, first after Gate 7. Tests written and frozen by the orchestrator acting as TA (usage-frugal, no agent fan-out)."
    ]
   }
  }
