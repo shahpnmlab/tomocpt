@@ -85,9 +85,11 @@ LR recipe; expectation: clears +0.02 over 0.741 by training longer.
       (mean 3D offset 0.94 voxel). Keep floats on the v2 path (v1 unchanged, invariant 1); regenerate
       affected v2 goldens with a ruling; fresh chunks. Rescoring the Gate 7 OOF picks against exact
       coordinates: baseline 0.741, focal 0.727, contrastive 0.729 (apo-ferritin most affected).
-- [ ] 3b.2 Configurable early stopping: `train.early_stop_min_delta` (legacy 0.005, absolute) and
+- [ ] 3b.1a IMOD coordinate convention (human to test separately, 4 Nov 2026): are IMOD voxel centres at
+      integer or x.5 coordinates? Gate 4d uses IMOD and STAR coordinates as stored (no shift); STAR is the main input.
+- [x] 3b.2 (Gate 4e: `train.early_stop_min_delta`, `train.early_stop_patience`) Configurable early stopping: `train.early_stop_min_delta` (legacy 0.005, absolute) and
       patience; run with 1e-4 so the plateau LR halving and SWA (epoch 48 of 60) can act.
-- [ ] 3b.3 Schedule-free optimiser as the alternative arm (moved here from item 7, human decision 4 Nov
+- [x] 3b.3 (Gate 4e: `train.schedule_free`, extra `tomocpt[schedulefree]`, schedulefree 1.4.1 approved 4 Nov) Schedule-free optimiser as the alternative arm (moved here from item 7, human decision 4 Nov
       2026). Evidence: in all finished CZII CV folds the LR never left 4e-4 and SWA never started; early
       stopping fired at epochs 24-29 with the best epoch at or near the last in most folds
       (`EarlyStopping(min_delta=0.005)` is absolute, 30-50 % of the final `val_loss_smooth`;

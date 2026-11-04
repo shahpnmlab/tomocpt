@@ -398,7 +398,7 @@
    ]
   },
   "4e": {
-   "status": "IN_PROGRESS",
+   "status": "PASSED",
    "agent": "04e_AGENT_TRAINING_SCHEDULE",
    "attempts": 1,
    "test_hashes": {

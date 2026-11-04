@@ -1,0 +1,41 @@
+{
+ "gate_id": "4e",
+ "agent_name": "04e_AGENT_TRAINING_SCHEDULE (orchestrator as TA and implementer)",
+ "status": "PASSED",
+ "base_ref": "0dce756dec36c5732db5026541faf0e2cabc5505",
+ "files_created": [
+  "tests/gate4e/*",
+  ".claude/agents/04e_AGENT_TRAINING_SCHEDULE.md"
+ ],
+ "files_modified": [
+  "tomocpt/defaultConfigs/train_config.py",
+  "tomocpt/training/helpers.py (_setup_callbacks)",
+  "tomocpt/networks/baseModel.py (configure_optimizers, optimiser mode hooks)",
+  "pyproject.toml (extra schedulefree)",
+  "README.md"
+ ],
+ "exported_symbols": {},
+ "config_fields_added": [
+  "train.early_stop_min_delta: float = 0.005",
+  "train.early_stop_patience: int = 10",
+  "train.schedule_free: bool = False"
+ ],
+ "legacy_equivalence": {
+  "defaults": "same callbacks in the same order (EarlyStopping 0.005/10, SWA), RAdam + ReduceLROnPlateau (G4e-C1); full fast suite green"
+ },
+ "metrics": {},
+ "pytest_fast": {
+  "tests -m 'not slow'": "811 passed, 27 skipped"
+ },
+ "pytest_slow": {
+  "note": "no slow tests; the CZII fold-0 pilot (TODO 3b.4) is the real-scale check (bf16, GPU)"
+ },
+ "benchmarks": {},
+ "known_limitations": [
+  "schedule_free with DDP / bf16 not yet run at scale (CPU fp32 tests only); first check is the TODO 3b.4 fold-0 pilot.",
+  "Schedule-free drops SWA; EMA / plateau-triggered SWA (TODO 3b.3a) are separate.",
+  "RAdamScheduleFree defaults kept (warmup-free, r=0, weight_lr_power=2)."
+ ],
+ "notes_for_next_agent": "Environment: schedulefree 1.4.1 installed in the tomocpt conda env from the PyPI wheel (no deps).",
+ "attempt": 1
+}
