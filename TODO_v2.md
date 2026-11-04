@@ -48,6 +48,12 @@ are in the package, but the fold loop, the OOF ensemble build and the CV summary
       narrow core. Question to answer: is the narrow central peak flattened by the soft focal value term
       and/or the softmax head? Compare baseline (Huber, softmax), focal, contrastive, both; and one
       sigmoid-head model as the reference without softmax competition.
+      First look (4 Nov 2026, TS_69_2, `benchmarks/out/peak_shapes_TS_69_2/`): every model (softmax
+      Huber / focal / contrastive, sigmoid Huber) reproduces only the wide Gaussian: peak height 0.3-0.9
+      (target 1.0), FWHM 0.63-0.83 R in xy (target 0.53 R; wide component alone 0.78 R), z wider; the
+      tails match. Not softmax- or focal-specific (focal peaks slightly higher, contrastive lower). Likely
+      the MSE-type optimum under localisation noise (truncated labels, annotation noise, wedge) blurring a
+      1-2.5 voxel core; to test with 3b.1 (exact coordinates) and core-weighted or single-Gaussian targets.
 - [ ] 3a.4 Bug (found 4 Nov 2026): in one Python process, loading a contrastive checkpoint
       (`train.discriminative.contrastive_weight > 0`) and then one without the head fails:
       `InferenceModel.load_from_checkpoint(strict=True)` -> missing `contrastive_head.*`,
