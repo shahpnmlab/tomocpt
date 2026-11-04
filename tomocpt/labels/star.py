@@ -82,7 +82,7 @@ class Star:
         return subset_data, processed_class_id
 
     def get_shifted_scaled_coordinates(
-        self, particle_data: pd.DataFrame, tomogram_pixel_size: Union[pd.Series, float]
+        self, particle_data: pd.DataFrame, tomogram_pixel_size: Union[pd.Series, float], exact: bool = False
     ) -> Dict[str, np.ndarray]:
         """
         Process coordinates with shifts and scaling.
@@ -133,13 +133,16 @@ class Star:
         subset_data[xyz_headings] = scaled_coords
 
         # Cast the groupby result to explicitly ensure str keys
+        # exact=True (pipeline-v2 coordinate CSVs, Gate 4d): float64, no truncation.
+        # Default: legacy truncation to whole voxels (v1 labels).
         return {
-            str(name): group[xyz_headings].astype(int).values
+            str(name): (group[xyz_headings].astype(np.float64).values if exact
+                        else group[xyz_headings].astype(int).values)
             for name, group in subset_data.groupby(self.tomo_label)
         }
 
     def get_shifted_scaled_coordinates_with_classes(
-        self, particle_data: pd.DataFrame, tomogram_pixel_size: Union[pd.Series, float]
+        self, particle_data: pd.DataFrame, tomogram_pixel_size: Union[pd.Series, float], exact: bool = False
     ) -> Tuple[Dict[str, np.ndarray], Dict[str, np.ndarray]]:
         """Like :meth:`get_shifted_scaled_coordinates` (same shifts, scaling and integer
         truncation), plus the ``rlnClassNumber`` of every point.
@@ -149,7 +152,7 @@ class Star:
         """
         if "rlnClassNumber" not in particle_data.columns:
             raise ValueError("rlnClassNumber column not found in the particle data")
-        coords = self.get_shifted_scaled_coordinates(particle_data, tomogram_pixel_size)
+        coords = self.get_shifted_scaled_coordinates(particle_data, tomogram_pixel_size, exact=exact)
         classes = {
             str(name): group["rlnClassNumber"].astype(int).values
             for name, group in particle_data.groupby(self.tomo_label)

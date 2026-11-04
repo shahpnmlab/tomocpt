@@ -24,7 +24,7 @@ class Mod:
 
         logger.info(f"Found {len(self.model_files)} .mod files in {self.imod_model_path}")
 
-    def get_coordinates(self) -> Dict[str, np.ndarray]:
+    def get_coordinates(self, exact: bool = False) -> Dict[str, np.ndarray]:
         """
         Read all mod files and return coordinates for each volume.
 
@@ -50,7 +50,8 @@ class Mod:
 
                 # Use the stem of the filename (without extension) as the key
                 vol_name = str(mod_file.stem)
-                vol_coord_pairs[vol_name] = coords.astype(int)
+                # exact=True: float64 model coordinates (pipeline-v2 CSVs, Gate 4d); default legacy truncation
+                vol_coord_pairs[vol_name] = coords.astype(np.float64) if exact else coords.astype(int)
 
                 logger.info(f"Processed {mod_file.name}: found {len(coords)} coordinates")
 

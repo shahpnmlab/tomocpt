@@ -301,7 +301,7 @@ COORDS_COLUMNS = ["x", "y", "z", "class_number", "diameter_ang"]
 
 def write_coords_csv(path: Union[str, Path], points_xyz, class_numbers, diameters_ang) -> Path:
     """``<dataset_dir>/coords/<tomo>.csv`` with columns ``x, y, z, class_number,
-    diameter_ang`` (native voxels, the values used to draw the v1 labels)."""
+    diameter_ang`` (native voxels; exact sub-voxel coordinates since Gate 4d)."""
     pts = np.asarray(points_xyz, dtype=float).reshape(-1, 3)
     n = len(pts)
     cls = np.broadcast_to(np.asarray(class_numbers, dtype=int), (n,)) if n else np.zeros((0,), int)
@@ -313,6 +313,12 @@ def write_coords_csv(path: Union[str, Path], points_xyz, class_numbers, diameter
     path.parent.mkdir(parents=True, exist_ok=True)
     df.to_csv(path, index=False)
     return path
+
+
+def _legacy_int(pairs: Dict[str, np.ndarray]) -> Dict[str, np.ndarray]:
+    """The legacy whole-voxel truncation (``astype(int)``) of exact coordinates: what the
+    readers returned before Gate 4d, used for v1 label MRCs and tracking CSVs."""
+    return {k: np.asarray(v).astype(int) for k, v in pairs.items()}
 
 
 def _tomo_file_for(tomo_path: Path, tomo_name: str) -> Optional[Path]:
@@ -354,11 +360,12 @@ def prepare_picking_imod(input_file: Path ,
     # Initialize Mod class
     mod = Mod(input_file)
 
-    vol_coord_pairs = mod.get_coordinates()
-    matched_data = match_data_to_tomograms(vol_coord_pairs, tomo_path)
+    exact_pairs = match_data_to_tomograms(mod.get_coordinates(exact=True), tomo_path)
+    # v1 labels and tracking: the legacy whole-voxel truncation
+    matched_data = _legacy_int(exact_pairs)
 
-    # Coordinate CSVs for pipeline v2 (class number 1, the dataset diameter)
-    extra = _v2_tracking_columns(matched_data, tomo_path, output_dir, 1, particle_diameter_angst,
+    # Coordinate CSVs for pipeline v2 (class number 1, the dataset diameter): exact coordinates
+    extra = _v2_tracking_columns(exact_pairs, tomo_path, output_dir, 1, particle_diameter_angst,
                                  apix_override, "1")
 
     # Create tracking DataFrame
@@ -406,12 +413,15 @@ def prepare_picking_star(input_file: Path,
     tomogram_voxel_size = get_tomogram_pixel_size(tomo_path)
     if apix_override is not None:
         tomogram_voxel_size = float(apix_override)
-    vol_coord_pairs = star.get_shifted_scaled_coordinates(matched_data, tomogram_pixel_size=tomogram_voxel_size)
+    exact_pairs = star.get_shifted_scaled_coordinates(matched_data, tomogram_pixel_size=tomogram_voxel_size,
+                                                      exact=True)
+    vol_coord_pairs = _legacy_int(exact_pairs)  # v1 labels and tracking
 
-    # Coordinate CSVs for pipeline v2: class number from class_id ("all" -> 1), dataset diameter
+    # Coordinate CSVs for pipeline v2: class number from class_id ("all" -> 1), dataset diameter;
+    # exact coordinates (Gate 4d)
     from tomocpt.labels.multiclass import single_class_number
     number = single_class_number(class_id)
-    extra = _v2_tracking_columns(vol_coord_pairs, tomo_path, output_dir, number, particle_diameter_angst,
+    extra = _v2_tracking_columns(exact_pairs, tomo_path, output_dir, number, particle_diameter_angst,
                                  apix_override, str(number))
 
     # Create tracking DataFrame
@@ -476,11 +486,12 @@ def prepare_picking_star_multiclass(input_file: Path,
     tomogram_voxel_size = get_tomogram_pixel_size(tomo_path)
     if apix_override is not None:
         tomogram_voxel_size = float(apix_override)
-    vol_coord_pairs, class_pairs = star.get_shifted_scaled_coordinates_with_classes(
-        matched_data, tomogram_pixel_size=tomogram_voxel_size)
+    exact_pairs, class_pairs = star.get_shifted_scaled_coordinates_with_classes(
+        matched_data, tomogram_pixel_size=tomogram_voxel_size, exact=True)
+    vol_coord_pairs = _legacy_int(exact_pairs)  # v1 labels and tracking
     diam_pairs = {k: np.array([diam[int(c)] for c in v], dtype=float) for k, v in class_pairs.items()}
 
-    extra = _v2_tracking_columns(vol_coord_pairs, tomo_path, output_dir, class_pairs, diam_pairs,
+    extra = _v2_tracking_columns(exact_pairs, tomo_path, output_dir, class_pairs, diam_pairs,
                                  apix_override, annotated_txt)
     max_diameter = max(diam[c] for c in present) if present else max(diam.values())
     tracking_df = create_tracking_dataframe(vol_coord_pairs, tomo_path, output_dir, max_diameter, class_id_label,
