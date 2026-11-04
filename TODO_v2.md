@@ -83,6 +83,14 @@ LR recipe; expectation: clears +0.02 over 0.741 by training longer.
       Lightning's `StochasticWeightAveraging` applies the averaged weights when early stopping fires before
       `max_epochs`, and which weights the best checkpoint holds; (b) that SwinUNETR has no BatchNorm (no
       `update_bn` needed). Legacy SWA callback stays the default (invariant 1).
+- [ ] 3b.3b Sharper peaks (human decision 4 Nov 2026; after 3b.1, which may already help): the narrow
+      core of the target is not learned (3a.3). (a) Centroid-weighted Huber: multiply the Section 1.5
+      value weight by `1 + core_weight * y^p` (or by the narrow component's share of y), so the few core
+      voxels count; new field e.g. `train.particles.core_weight` = 0.0 (off, invariant 1). (b) Target
+      option: one Gaussian (e.g. sigma 0.2-0.25 R) instead of the two-Gaussian sum, new field e.g.
+      `train.particles.target_profile` = `dual` (legacy) | `single`; changes rendered targets, so v2 only
+      and fresh chunks not needed (targets are drawn from points at load time). Measure with the 3a.3
+      peak-shape diagnostic (height, FWHM vs target) and OOF F4; check the Hessian term's weight too.
 - [ ] 3b.4 Pilot on fold 0 (both recipes), then full CZII CV of the winner. A fair Gate 7 verdict needs the
       baseline (Huber, no contrastive) retrained with the same recipe as well.
 
