@@ -80,7 +80,7 @@ def test_G4e_C3_schedule_free_optimizer_no_scheduler_no_swa(tmp_path):
     assert isinstance(opt, schedulefree.RAdamScheduleFree)
     assert not (isinstance(conf, dict) and conf.get("lr_scheduler") is not None)
     assert not _of(cbs, StochasticWeightAveraging)
-    assert {float(g["lr"]) for g in opt.param_groups} == {pytest.approx(1e-3)}
+    assert [float(g["lr"]) for g in opt.param_groups] == pytest.approx([1e-3] * len(opt.param_groups))
     n = sum(p.numel() for g in opt.param_groups for p in g["params"])
     assert n == sum(p.numel() for p in model.parameters() if p.requires_grad)
 
@@ -126,12 +126,18 @@ def test_G4e_C4_fit_switches_modes_and_saves_averaged_weights(tmp_path):
             if trainer.optimizers:
                 seen["val"].update(self._mode(trainer))
 
-    items = [G3.v2_item(300 + i, [15.0, 30.0], apix=10.0) for i in range(4)]
+    # RAdam (and RAdamScheduleFree) makes no update while its rectification term is undefined
+    # (about the first 5 steps), so fit 3 epochs x 4 batches = 12 steps
+    items = [G3.v2_item(300 + i, [15.0, 30.0], apix=10.0) for i in range(8)]
     with applied_main_config(_cfg(tmp_path, schedule_free=True)):
         model = _model()
         ck = ModelCheckpoint(dirpath=tmp_path / "ck", monitor="val_loss", filename="weights", save_top_k=1)
-        trainer = G3.cpu_trainer(tmp_path / "tb", callbacks=[ck, _Spy()], max_epochs=2, limit_train_batches=2,
-                                 limit_val_batches=1, enable_checkpointing=True)
+        from pytorch_lightning.loggers import TensorBoardLogger
+
+        trainer = pl.Trainer(accelerator="cpu", devices=1, logger=TensorBoardLogger(str(tmp_path / "tb")),
+                             callbacks=[ck, _Spy()], max_epochs=3, limit_train_batches=4, limit_val_batches=1,
+                             enable_progress_bar=False, enable_model_summary=False, num_sanity_val_steps=0,
+                             precision="32")
         trainer.fit(model, datamodule=G3.datamodule(items))
         assert seen["train"] == {True} and seen["val"] == {False}
         opt = trainer.optimizers[0]
@@ -145,8 +151,12 @@ def test_G4e_C4_fit_switches_modes_and_saves_averaged_weights(tmp_path):
         # checkpoints are written after validation (eval mode): the final one equals eval weights
         trainer.save_checkpoint(tmp_path / "final.ckpt")
         final = torch.load(tmp_path / "final.ckpt", map_location="cpu", weights_only=False)["state_dict"]
+        # (switching train -> eval is not bit-exact in floating point, hence the tolerance)
         for k in eval_w:
-            assert torch.equal(final[k], eval_w[k]), k
+            if eval_w[k].is_floating_point():
+                torch.testing.assert_close(final[k], eval_w[k], rtol=0, atol=1e-6, msg=k)
+            else:
+                assert torch.equal(final[k], eval_w[k]), k
     with applied_main_config(None):
         m = InferenceModel.load_from_checkpoint(str(ck.best_model_path), map_location="cpu", strict=True)
     assert m is not None

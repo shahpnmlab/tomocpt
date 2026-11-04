@@ -437,20 +437,29 @@ def _create_model(config: DictConfig):
 def _setup_callbacks(
     config: DictConfig, model: pl.LightningModule, checkpointer: ModelCheckpoint
 ):
-    """Creates and returns a list of PyTorch Lightning callbacks."""
-    return [
+    """Creates and returns a list of PyTorch Lightning callbacks.
+
+    Early stopping uses ``train.early_stop_min_delta`` / ``early_stop_patience`` (legacy 0.005 /
+    10). With ``train.schedule_free`` there is no SWA: the optimiser averages the weights itself
+    and SWA would also reset the learning rate (Gate 4e)."""
+    callbacks = [
         TQDMProgressBar(refresh_rate=10),
         EarlyStopping(
-            monitor="val_loss_smooth", patience=10, min_delta=0.005, verbose=True
+            monitor="val_loss_smooth",
+            patience=int(safe_getattr(config, "early_stop_patience", 10)),
+            min_delta=float(safe_getattr(config, "early_stop_min_delta", 0.005)),
+            verbose=True,
         ),
         checkpointer,
         LearningRateMonitor(logging_interval="epoch"),
-        StochasticWeightAveraging(
+    ]
+    if not bool(safe_getattr(config, "schedule_free", False)):
+        callbacks.append(StochasticWeightAveraging(
             annealing_epochs=config.COSINE_LR_SCHEDULE_N_EPOCHS,
             swa_lrs=0.1 * model.lr,
-        ),
-        LRVerificationCallback(),
-    ]
+        ))
+    callbacks.append(LRVerificationCallback())
+    return callbacks
 
 
 def _setup_trainer(config: DictConfig, callbacks: list, logger: TensorBoardLogger):

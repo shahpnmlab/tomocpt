@@ -49,6 +49,10 @@ dependencies = [
 dev = [
     "pytest>=7.0",
 ]
+# Schedule-free RAdam (train.schedule_free; human-approved 4 Nov 2026)
+schedulefree = [
+    "schedulefree==1.4.1",
+]
 # Only needed for scripts/download_portal_data.py
 portal = [
     "cryoet-data-portal>=4,<5",

@@ -50,7 +50,7 @@ hooks), `pyproject.toml` (extra), `README.md`, `.claude/reports/gate_04e_report.
 - **G4e-C2** `early_stop_min_delta` / `early_stop_patience` reach the EarlyStopping callback.
 - **G4e-C3** `schedule_free=True`: `RAdamScheduleFree`, no scheduler, no SWA callback; from-scratch
   one group at `optimizer.lr`; fine-tuning keeps the per-group LR multipliers.
-- **G4e-C4** Mode switching: a tiny CPU fit of 2 epochs with `schedule_free=True` runs; during
+- **G4e-C4** Mode switching: a tiny CPU fit (3 epochs x 4 batches; RAdam makes no update in its first ~5 steps) with `schedule_free=True` runs; during
   training steps the optimiser is in train mode and during validation in eval mode; the saved
   checkpoint's weights equal the model's weights in eval mode at the end of fit and differ from
   the train-mode weights; the checkpoint loads with `InferenceModel.load_from_checkpoint(strict=True)`.

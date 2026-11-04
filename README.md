@@ -425,6 +425,9 @@ or alignment mismatch.
   weighting for sigmoid heads (`train.particles.cross_class_neg_weight`).
 - k-fold training (`train.cv_folds`, `train.cv_fold`), out-of-fold calibration and fold
   ensembles (`python -m tomocpt.predict.ensemble`, `infer.weights` = ensemble file).
+- Training schedule: `train.early_stop_min_delta` / `train.early_stop_patience` (legacy 0.005 / 10);
+  `train.schedule_free` uses schedule-free RAdam (`pip install "tomocpt[schedulefree]"`): no LR
+  scheduler and no SWA, validation and checkpoints use the optimiser's averaged weights.
 - Exact sub-voxel particle coordinates in the pipeline-v2 coordinate CSVs (`prepare_data`;
   previously truncated to whole voxels). v1 label MRCs are unchanged. Rerun `prepare_data` and
   rechunk data prepared earlier to use them.

@@ -282,6 +282,18 @@ class TrainConfig:
     cv_fold: Annotated[
         int, typer.Option(help="k-fold training: the fold used for validation, in [0, cv_folds)")
     ] = 0
+    early_stop_min_delta: Annotated[
+        float, typer.Option(help="Early stopping on val_loss_smooth: minimum absolute improvement that counts "
+                                 "(legacy 0.005)")
+    ] = 0.005
+    early_stop_patience: Annotated[
+        int, typer.Option(help="Early stopping: epochs without improvement before training stops")
+    ] = 10
+    schedule_free: Annotated[
+        bool, typer.Option(help="Schedule-free RAdam (schedulefree.RAdamScheduleFree, pip install "
+                                "'tomocpt[schedulefree]'): no LR scheduler, no SWA; validation and "
+                                "checkpoints use the optimiser's averaged weights")
+    ] = False
     cv_all_folds: Annotated[
         bool, typer.Option(help="k-fold CV in one command (pipeline v2): train every fold of cv_folds, each in its own "
                                 "process, from one shared chunk pool; then build the fold ensemble with out-of-fold "

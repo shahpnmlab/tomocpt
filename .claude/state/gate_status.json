@@ -405,11 +405,12 @@
     "tests/gate4e/README.md": "f7ed1934c368806efcc712c72c8e598be131733ee90f56f711e1c6c3b3d74c3a",
     "tests/gate4e/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
     "tests/gate4e/conftest.py": "062cb0fba4f30f42c62e4967fd98b54a644c730e7c3eb46789527f1e0132cb7c",
-    "tests/gate4e/test_g4e_schedule.py": "4782e328206be8876c857f5fd66570e4d4d4e9d31a9c66c4f53c2601124bd805"
+    "tests/gate4e/test_g4e_schedule.py": "8b0d4a53d1fdb182d7e22da4d037da0957656a940f79e2a36df20539eaa5651c"
    },
    "path_exceptions": [],
    "notes": [
-    "Human decision (4 Nov 2026): TODO 3b.2 + 3b.3; schedulefree==1.4.1 approved ('carry on with 3b.2 and 3b.3' after the request), added as optional extra. IMOD half-voxel convention to be tested separately by the human; STAR is the main input."
+    "Human decision (4 Nov 2026): TODO 3b.2 + 3b.3; schedulefree==1.4.1 approved ('carry on with 3b.2 and 3b.3' after the request), added as optional extra. IMOD half-voxel convention to be tested separately by the human; STAR is the main input.",
+    "4 Nov 2026, TA re-freeze before any passing run (test-code bugs only): approx inside a set; duplicate enable_checkpointing in the Gate 3 trainer helper; C4 fit lengthened to 12 steps (RAdam makes no update in its first ~5 steps); final-checkpoint comparison with atol 1e-6 (train->eval switch not bit-exact). Assertions unchanged otherwise."
    ]
   }
  }

@@ -201,7 +201,9 @@ class BaseModel(pl.LightningModule):
 
             # Direct instantiation without using hydra
             opt_config = train_config.optimizer
-            if opt_config._target_ == "torch.optim.RAdam":
+            if self._schedule_free():
+                opt = self._schedule_free_optimizer(param_groups)
+            elif opt_config._target_ == "torch.optim.RAdam":
                 opt = torch.optim.RAdam(
                     param_groups,
                     lr=self.lr,
@@ -212,6 +214,8 @@ class BaseModel(pl.LightningModule):
                 # For other optimizers, construct manually if needed
                 opt_class = hydra.utils.get_class(opt_config._target_)
                 opt = opt_class(param_groups)
+        elif self._schedule_free():
+            opt = self._schedule_free_optimizer([{"params": list(parameters)}])
         else:
             # Standard parameter initialization
             opt = hydra.utils.instantiate(train_config.optimizer, params=parameters)
@@ -219,6 +223,9 @@ class BaseModel(pl.LightningModule):
         conf = {
             'optimizer': opt,
         }
+        if self._schedule_free():
+            # Schedule-free: no LR schedule (Gate 4e)
+            return conf
 
         conf.update({
             'lr_scheduler': torch.optim.lr_scheduler.ReduceLROnPlateau(
@@ -230,6 +237,58 @@ class BaseModel(pl.LightningModule):
             'monitor': 'val_loss_smooth'
         })
         return conf
+
+
+    # ------------------------------------------------------------------------------------
+    # Schedule-free RAdam (Gate 4e, train.schedule_free)
+    # ------------------------------------------------------------------------------------
+
+    def _schedule_free(self) -> bool:
+        from tomocpt.configManager.configManager import safe_getattr
+
+        return bool(safe_getattr(self.hparams.config.train, "schedule_free", False))
+
+    def _schedule_free_optimizer(self, param_groups):
+        opt_config = self.hparams.config.train.optimizer
+        if opt_config._target_ != "torch.optim.RAdam":
+            raise ValueError(f"train.schedule_free uses RAdamScheduleFree; optimizer._target_ must be "
+                             f"torch.optim.RAdam, got {opt_config._target_}")
+        try:
+            import schedulefree
+        except ImportError as e:
+            raise ImportError("train.schedule_free needs the package schedulefree: "
+                              "pip install 'tomocpt[schedulefree]' (schedulefree==1.4.1)") from e
+        return schedulefree.RAdamScheduleFree(param_groups, lr=self.lr, betas=tuple(opt_config.betas),
+                                              weight_decay=opt_config.weight_decay)
+
+    def _schedule_free_optimizers(self) -> list:
+        """The trainer's schedule-free optimisers (they keep ``train_mode`` in their groups)."""
+        trainer = getattr(self, "_trainer", None)
+        if trainer is None or not self._schedule_free():
+            return []
+        return [o for o in trainer.optimizers
+                if hasattr(o, "train") and hasattr(o, "eval") and o.param_groups and "train_mode" in o.param_groups[0]]
+
+    def _set_optimizer_mode(self, train: bool) -> None:
+        for o in self._schedule_free_optimizers():
+            o.train() if train else o.eval()
+
+    def on_train_epoch_start(self):
+        # gradients are taken at the interpolated point y
+        self._set_optimizer_mode(True)
+
+    def on_validation_epoch_start(self):
+        # validation, val_loss_smooth, early stopping and checkpoints use the average x
+        self._set_optimizer_mode(False)
+
+    def on_test_epoch_start(self):
+        self._set_optimizer_mode(False)
+
+    def on_predict_epoch_start(self):
+        self._set_optimizer_mode(False)
+
+    def on_fit_end(self):
+        self._set_optimizer_mode(False)
 
 
 def verify_different_lrs(model):
