@@ -64,7 +64,7 @@
   "c8_cv_mode": "3 folds x 1 epoch, tiny model, 6 phantoms: pool chunked once, fold dirs are symlinks, ensemble reused all saved picks (0 re-predictions), rerun trained nothing and gave the same thresholds"
  },
  "pytest_fast": {
-  "tests -m 'not slow'": "794 passed, 27 skipped after the re-freeze (before: 1 failed, G4b-C5 softmax; dispute accepted by human 4 Nov 2026)",
+  "tests -m 'not slow'": "793 passed, 1 failed, 27 skipped before the re-freeze (G4b-C5 softmax); after the re-freeze (test-only change) tests/gate4b + tests/gate4c: 55 passed",
   "tests/gate4c -m 'not slow'": "34 passed"
  },
  "pytest_slow": {
