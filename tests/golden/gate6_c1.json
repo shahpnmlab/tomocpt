@@ -67,5 +67,12 @@
  },
  "n_arrays": 102,
  "reference": "v2-dev before Gate 6 (Gate 4/4b/5 behaviour), CPU, fp32, in-process",
+ "regenerated": {
+  "by": "Gate 4d (exact sub-voxel v2 coordinates, human decision 4 Nov 2026)",
+  "changed": "16 of 102 arrays: pts:* (8 chunk point files, now sub-voxel) and batch:train/val (targets rendered from them); vol:*, forward:*, pred:* and the file lists unchanged",
+  "commit": "cf2b911a0758967aa845b67be6641eff84b9edea",
+  "date": "2026-11-04",
+  "how": "gate6_common.all_arrays(tmp) with the current code, CPU, PYTHONPATH=$PWD (make_goldens_gate6.py refuses post-Gate-6 code)"
+ },
  "tomocpt_source_modified": false
 }

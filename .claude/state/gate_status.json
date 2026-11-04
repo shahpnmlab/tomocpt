@@ -203,8 +203,8 @@
     "tests/gate6/test_g6_learning.py": "1bfcc053820da88eb687e0b142bb14c9f3d73a1091bebf89511c91c32a17af2d",
     "tests/gate6/test_g6_outputs.py": "164c4a8aaf12d262930e3bd844bc347c6b84489ad2d3b090d9013dc4966e374c",
     "tests/gate6/test_g6_portal.py": "ddd66623db65f58027fccef75bf91aaa004f247f166865a00e011302ce71fa36",
-    "tests/golden/gate6_c1.json": "61d7948a7433ae21221d07820b086bcf45696412b1a4cc6192f6e80c06e43d93",
-    "tests/golden/gate6_c1.npz": "678a11960569290a730a639e668adb726d113d109f3697ab193f20e2e8d7246f",
+    "tests/golden/gate6_c1.json": "3030ddf60275e7460d6e48130e9b372bfed3ff442e31d9745f5069ec7d088d22",
+    "tests/golden/gate6_c1.npz": "458f79217501f34e53a5580528c779aa46aed9ffcae77d480bf45321e83f8ca4",
     "tests/golden/gate6_common.py": "985357e3d4cd2a5adb1885883e00896529a62e83e6bc0aa429ee86bf1cb533a4",
     "tests/golden/make_goldens_gate6.py": "d6943be0a9e14e5f77446570e611df50b77618cd9ed6a690d0343baaf971fad7"
    },
@@ -222,7 +222,8 @@
     "Human ruling (1 Nov 2026), gate_06_test_dispute.md: slow C8/C9 train with class_head=softmax (k=0). Evidence: softmax k=0 particle F1 1.00 seeds 0 and 1 (k=0.25 same); sigmoid 0.667. test_g6_learning.py train_picker passes class_head='softmax'; spec G6-C8 amended; re-frozen (new hash). Attempt 2 also: read_filament_coords subtracts rlnOrigin*, rejects RELION 5 centred coords; README filaments section; benchmarks/filaments.py filaments-only arm writes coordinate_files 'None'.",
     "Attempt 2 verification (1 Nov 2026): fast 695 passed/27 skipped, hashes intact; slow C8/C9 2 passed (joint particle F1 1.00 48/0/0, mt 1.00, actin 0.92; particle-only 1.00). T6.5 smoke run works end to end; full run awaits a size decision. Pass needs human acceptance.",
     "Human decision (1 Nov 2026): v2 picking defaults infer.peak_spacing_fraction=0.5 (new field; min distance between picks of one class = 0.5 x class diameter unless distance_threshold is set) and infer.cross_class_nms=False (was True). CZII OOF F4 0.631 -> 0.737 at unchanged thresholds. v1 picking unchanged. tests/golden/gate6_common.py predict_arrays pins peak_spacing_fraction=1.0 (exactly the Gate 4 spacing) so G6-C1 still locks Gate 4 predictions; golden data unchanged; re-frozen (new hash).",
-    "Human decision (1 Nov 2026): Gate 6 accepted as PASSED. T6.5 real-data filament benchmark deferred (report-only, no pass criterion); smoke run shows the pipeline works end to end; full run moves to the DS-10490 final benchmark."
+    "Human decision (1 Nov 2026): Gate 6 accepted as PASSED. T6.5 real-data filament benchmark deferred (report-only, no pass criterion); smoke run shows the pipeline works end to end; full run moves to the DS-10490 final benchmark.",
+    "Human decision (4 Nov 2026) 'exact coordinates are the v2 default': tests/golden/gate6_c1.{npz,json} regenerated at Gate 4d; only pts:* and batch:* arrays changed (16/102), vol/forward/pred identical."
    ],
    "report_path": ".claude/reports/gate_06_report.json"
   },
@@ -381,7 +382,7 @@
    ]
   },
   "4d": {
-   "status": "IN_PROGRESS",
+   "status": "PASSED",
    "agent": "04d_AGENT_EXACT_COORDS",
    "attempts": 1,
    "test_hashes": {
@@ -392,7 +393,8 @@
    },
    "path_exceptions": [],
    "notes": [
-    "Human decision (4 Nov 2026): exact sub-voxel coordinates are the pipeline-v2 default, not opt-in ('because of the chunking and splatting strategy'). v1 label MRCs stay truncated (invariant 1). TODO 3b.1."
+    "Human decision (4 Nov 2026): exact sub-voxel coordinates are the pipeline-v2 default, not opt-in ('because of the chunking and splatting strategy'). v1 label MRCs stay truncated (invariant 1). TODO 3b.1.",
+    "Human decision (4 Nov 2026) 'exact coordinates are the v2 default': tests/golden/gate6_c1.{npz,json} regenerated at Gate 4d; only pts:* and batch:* arrays changed (16/102), vol/forward/pred identical."
    ]
   }
  }

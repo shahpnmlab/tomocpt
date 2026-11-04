@@ -79,7 +79,8 @@ are in the package, but the fold loop, the OOF ensemble build and the CV summary
 Plan: take the best training flavour of the Gate 7 CZII CV (baseline / focal / contrastive / both, judged
 on OOF F4 against the exact STAR coordinates), add the sub-voxel fix, and train with a modern stopping /
 LR recipe; expectation: clears +0.02 over 0.741 by training longer.
-- [ ] 3b.1 Sub-voxel coordinates: `labels/star.py:137` and `labels/mod.py:53` truncate to int
+- [x] 3b.1 (Gate 4d, 4 Nov 2026: exact coordinates are the v2 default by human decision, no opt-in;
+      gate6_c1 golden regenerated, only chunk points / batches changed; CZII data must be re-prepared) Sub-voxel coordinates: `labels/star.py:137` and `labels/mod.py:53` truncate to int
       (`astype(int)`, legacy): v2 coords CSV / points / targets are biased by -0.5 voxel per axis
       (mean 3D offset 0.94 voxel). Keep floats on the v2 path (v1 unchanged, invariant 1); regenerate
       affected v2 goldens with a ruling; fresh chunks. Rescoring the Gate 7 OOF picks against exact

@@ -425,6 +425,9 @@ or alignment mismatch.
   weighting for sigmoid heads (`train.particles.cross_class_neg_weight`).
 - k-fold training (`train.cv_folds`, `train.cv_fold`), out-of-fold calibration and fold
   ensembles (`python -m tomocpt.predict.ensemble`, `infer.weights` = ensemble file).
+- Exact sub-voxel particle coordinates in the pipeline-v2 coordinate CSVs (`prepare_data`;
+  previously truncated to whole voxels). v1 label MRCs are unchanged. Rerun `prepare_data` and
+  rechunk data prepared earlier to use them.
 - k-fold CV in one command (`train.cv_all_folds`): shared chunk pool, one process per fold,
   saved validation / OOF picks, CV report with localisation and peak profiles.
 

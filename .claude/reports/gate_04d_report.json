@@ -1,0 +1,45 @@
+{
+ "gate_id": "4d",
+ "agent_name": "04d_AGENT_EXACT_COORDS (orchestrator as TA and implementer)",
+ "status": "PASSED",
+ "base_ref": "cf2b911a0758967aa845b67be6641eff84b9edea",
+ "files_created": [
+  "tests/gate4d/*",
+  ".claude/agents/04d_AGENT_EXACT_COORDS.md"
+ ],
+ "files_modified": [
+  "tomocpt/labels/star.py",
+  "tomocpt/labels/mod.py",
+  "tomocpt/labels/helpers.py",
+  "README.md",
+  "tests/golden/gate6_c1.{npz,json} (regenerated)"
+ ],
+ "exported_symbols": {
+  "tomocpt.labels.star.Star": [
+   "get_shifted_scaled_coordinates(exact=False)",
+   "get_shifted_scaled_coordinates_with_classes(exact=False)"
+  ],
+  "tomocpt.labels.mod.Mod": [
+   "get_coordinates(exact=False)"
+  ]
+ },
+ "config_fields_added": [],
+ "legacy_equivalence": {
+  "v1": "label MRCs and tracking CSVs written from astype(int) of the same floats the readers truncated before (G4d-C3 compares them with create_particle_masks on the truncated coordinates)",
+  "v2": "coordinate CSVs now exact (human decision: default, no opt-in); v2 chunk points and rendered targets change accordingly"
+ },
+ "metrics": {},
+ "pytest_fast": {
+  "tests -m 'not slow'": "799 passed, 2 failed (G6-C1 chunk/batch locks, expected: golden from truncated coordinates) before regeneration; after regenerating gate6_c1: tests/gate6/test_g6_c1_lock.py + tests/gate4d 11 passed"
+ },
+ "pytest_slow": {
+  "note": "no slow tests added; slow suites not rerun (the change affects prepare_data coordinate CSVs only)"
+ },
+ "benchmarks": {},
+ "known_limitations": [
+  "Coordinate CSVs written before Gate 4d stay truncated; rerun prepare_data and rechunk (CZII data/czii/training_data_v2 must be regenerated for TODO 3b).",
+  "IMOD and STAR coordinates are used as stored (no half-voxel convention shift)."
+ ],
+ "notes_for_next_agent": "TODO 3b.4: regenerate CZII training data (prepare_data) before the new CV runs; the CV report's localisation then measures against exact truths.",
+ "attempt": 1
+}
