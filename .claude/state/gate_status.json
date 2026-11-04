@@ -2,7 +2,7 @@
  "base_ref": "v2-gate-0-base",
  "base_commit": "ce6f7b0ce856f19556266e7ad3143bfb66cdb7e2",
  "base_note": "first commit of branch v2-dev (released main + fix/v1-patches + plan); set by the orchestrator",
- "current_gate": "4d",
+ "current_gate": "4e",
  "gpu_available": true,
  "gates": {
   "1": {
@@ -395,6 +395,21 @@
    "notes": [
     "Human decision (4 Nov 2026): exact sub-voxel coordinates are the pipeline-v2 default, not opt-in ('because of the chunking and splatting strategy'). v1 label MRCs stay truncated (invariant 1). TODO 3b.1.",
     "Human decision (4 Nov 2026) 'exact coordinates are the v2 default': tests/golden/gate6_c1.{npz,json} regenerated at Gate 4d; only pts:* and batch:* arrays changed (16/102), vol/forward/pred identical."
+   ]
+  },
+  "4e": {
+   "status": "IN_PROGRESS",
+   "agent": "04e_AGENT_TRAINING_SCHEDULE",
+   "attempts": 1,
+   "test_hashes": {
+    "tests/gate4e/README.md": "f7ed1934c368806efcc712c72c8e598be131733ee90f56f711e1c6c3b3d74c3a",
+    "tests/gate4e/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "tests/gate4e/conftest.py": "062cb0fba4f30f42c62e4967fd98b54a644c730e7c3eb46789527f1e0132cb7c",
+    "tests/gate4e/test_g4e_schedule.py": "4782e328206be8876c857f5fd66570e4d4d4e9d31a9c66c4f53c2601124bd805"
+   },
+   "path_exceptions": [],
+   "notes": [
+    "Human decision (4 Nov 2026): TODO 3b.2 + 3b.3; schedulefree==1.4.1 approved ('carry on with 3b.2 and 3b.3' after the request), added as optional extra. IMOD half-voxel convention to be tested separately by the human; STAR is the main input."
    ]
   }
  }
