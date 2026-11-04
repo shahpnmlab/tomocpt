@@ -41,7 +41,14 @@ are in the package, but the fold loop, the OOF ensemble build and the CV summary
       optional). Default off: `tomocpt train` unchanged (invariant 1). `run_cv.sh` becomes a thin wrapper.
 - [ ] 3a.2 Save the pooled OOF picks (and truths) with the ensemble so diagnostics (per-fold F4, FP
       breakdown, galleries; `benchmarks/out/czii_g7_focal/oof_analysis/`) need no re-prediction.
-- [ ] 3a.3 Tests (TA first), README section. Gate 8's "built-in CV mode" (HANDOFF_gate8 step 8d) moves here.
+- [ ] 3a.3 Peak-shape diagnostic in the CV / validation output (human request 4 Nov 2026): per class and
+      arm, the mean predicted probability around true centres as a radial profile and as line profiles
+      along x, y, z (z shows the missing wedge), overlaid on the target profile
+      (0.5 narrow sigma 0.165 R + 0.5 wide sigma 0.33 R, cut at R); plus peak heights and FWHM of the
+      narrow core. Question to answer: is the narrow central peak flattened by the soft focal value term
+      and/or the softmax head? Compare baseline (Huber, softmax), focal, contrastive, both; and one
+      sigmoid-head model as the reference without softmax competition.
+- [ ] 3a.4 Tests (TA first), README section. Gate 8's "built-in CV mode" (HANDOFF_gate8 step 8d) moves here.
 
 ## 3b. Train longer, exact coordinates (human decision 4 Nov 2026; after the Gate 7 `both` arm)
 Plan: take the best training flavour of the Gate 7 CZII CV (baseline / focal / contrastive / both, judged
