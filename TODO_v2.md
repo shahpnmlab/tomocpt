@@ -29,11 +29,11 @@ notes and the gate reports; this file is only the order of work.
 - [~] 3.2 Implementation, slow tests (done), CZII CV comparison: focal 0.730 vs 0.741 (fails +0.02;
       thyroglobulin background FPs 937 -> 1282, recall equal; `benchmarks/out/czii_g7_focal/oof_analysis/`),
       contrastive 0.742 (`benchmarks/out/czii_g7_contrastive/oof_analysis/`: thyroglobulin FPs 937 -> 840,
-      recall 210 -> 203); focal+contrastive (`both`) arm running. All arms stopped early (see 3b.2).
-- [ ] 3.2b Close Gate 7: `both` result; OOF analysis of `both`; rescore all four arms against the exact
-      STAR coordinates; final `gate_07_report.json`; human ruling on Gate 7 (pass / fail / re-judge after
+      recall 210 -> 203); focal+contrastive (`both`) 0.737 (`benchmarks/out/czii_g7_both/oof_analysis/`: thyroglobulin FPs 822, recall 201; apo-ferritin and VLP up, beta-galactosidase and beta-amylase down). Exact-coordinate rescoring: baseline 0.741, focal 0.727, contrastive 0.729, both 0.737. All arms stopped early (see 3b.2).
+- [~] 3.2b Close Gate 7: `both` result; OOF analysis of `both`; rescore all four arms against the exact
+      STAR coordinates; final `gate_07_report.json` (all done 4 Nov); open: human ruling on Gate 7 (pass / fail / re-judge after
       3b) and on the focal default; tag if accepted. Pick the training flavour for 3b.
-- [ ] 3.2c Housekeeping after `both`: delete the baseline CV fold chunks
+- [x] 3.2c Housekeeping after `both`: delete the baseline CV fold chunks
       (`benchmarks/out/czii_bench_20261029_2237/cv/fold*/chunks`, 5 x 8.1 GB; the Gate 7 arms link to
       them) and remove the worktree `../tomocpt-g6` (keep `../tomocpt-base`, the legacy reference).
 - [ ] 3.3 After Gate 7 closes: update the invariants in `CLAUDE.md` (human decision 3 Nov 2026), e.g.
