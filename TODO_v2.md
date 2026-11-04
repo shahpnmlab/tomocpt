@@ -30,7 +30,8 @@ notes and the gate reports; this file is only the order of work.
       thyroglobulin background FPs 937 -> 1282, recall equal; `benchmarks/out/czii_g7_focal/oof_analysis/`),
       contrastive 0.742 (`benchmarks/out/czii_g7_contrastive/oof_analysis/`: thyroglobulin FPs 937 -> 840,
       recall 210 -> 203); focal+contrastive (`both`) 0.737 (`benchmarks/out/czii_g7_both/oof_analysis/`: thyroglobulin FPs 822, recall 201; apo-ferritin and VLP up, beta-galactosidase and beta-amylase down). Exact-coordinate rescoring: baseline 0.741, focal 0.727, contrastive 0.729, both 0.737. All arms stopped early (see 3b.2).
-- [~] 3.2b Close Gate 7: `both` result; OOF analysis of `both`; rescore all four arms against the exact
+- [x] 3.2b Close Gate 7 (human ruling 4 Nov 2026: failed as tested, re-judge after 3b; focal stays off by
+      default; 3b uses the `both` flavour, baseline retrained with the same recipe): `both` result; OOF analysis of `both`; rescore all four arms against the exact
       STAR coordinates; final `gate_07_report.json` (all done 4 Nov); open: human ruling on Gate 7 (pass / fail / re-judge after
       3b) and on the focal default; tag if accepted. Pick the training flavour for 3b.
 - [x] 3.2c Housekeeping after `both`: delete the baseline CV fold chunks

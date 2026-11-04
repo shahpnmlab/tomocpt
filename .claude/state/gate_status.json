@@ -329,7 +329,7 @@
    "report_path": null
   },
   "7": {
-   "status": "AWAITING_HUMAN",
+   "status": "FAILED_AS_TESTED_REJUDGE_AFTER_3B",
    "agent": "07_AGENT_DISCRIMINATIVE",
    "attempts": 1,
    "test_hashes": {
@@ -352,7 +352,8 @@
     "Human decision (1 Nov 2026): anchors and focal positives are the target's peak voxels with value >= anchor_min_target, default 0.5 (spec 0.99 gives almost no anchors off-grid).",
     "Human decision (1 Nov 2026): value_loss='focal' is reconciled with Huber: Section 1.5 weights and voxel mean, per-voxel penalty |y-p|^focal_alpha * BCE(p,y) (minimiser p=y) on particle channels, Huber on filament channels; focal_beta unused. The spec's CenterNet focal (instance-normalised) collapsed to a flat output in the slow tests. Huber stays the default (invariant 1).",
     "Orchestrator rulings: call signatures (tests/gate7/g7_helpers.py); filament anchor tolerance 0.75 vox off-grid; hard-negative exclusion (1+e)R-1; negative masks reach the batch as negative_mask [B,1,64,64,64] bool; C10 peak-shape check (HANDOFF 2.2) plus C10 look-alike F1 check; softmax head in slow tests; C7 golden gradients compared by absolute sum (rtol 1e-5).",
-    "Slow-tier calibration: SNR 0.25, hollow wall 0.4, 400 steps (1500 steps: baseline look-alike F1 1.00, C9 void). C10 thr-0.3 metric is near 0 for both arms at 400 steps (weak); see tests/gate7/README.md."
+    "Slow-tier calibration: SNR 0.25, hollow wall 0.4, 400 steps (1500 steps: baseline look-alike F1 1.00, C9 void). C10 thr-0.3 metric is near 0 for both arms at 400 steps (weak); see tests/gate7/README.md.",
+    "Human ruling (4 Nov 2026): Gate 7 FAILED AS TESTED (CZII CV: focal 0.730, contrastive 0.742, both 0.737 vs baseline 0.741; needs +0.02); re-judge after TODO 3b (all arms early-stopped at epoch ~25-28 with LR 4e-4, no SWA). Focal stays off by default (value_loss huber). 3b uses the 'both' flavour (focal + contrastive w 0.1) and retrains the baseline with the same recipe. No tag."
    ]
   }
  }

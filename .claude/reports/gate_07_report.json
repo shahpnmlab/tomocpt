@@ -1,7 +1,7 @@
 {
  "gate_id": 7,
  "agent_name": "07_AGENT_DISCRIMINATIVE (implemented directly by the orchestrator)",
- "status": "AWAITING_HUMAN",
+ "status": "FAILED_AS_TESTED_REJUDGE_AFTER_3B",
  "base_ref": "v2-gate-6-passed / v2-dev 4e34270; tests 0822e66, implementation 1f3f4f0",
  "files_created": [
   "tomocpt/training/discriminative.py",
@@ -108,6 +108,6 @@
   "C9 sheet criterion passes on the seed sum only (seed 0: 224 vs 195).",
   "Contrastive arm lowers actin F1 on seed 0 (0.67 vs 0.74)."
  ],
- "notes_for_next_agent": "value_loss='focal' = Section 1.5 weights x |y-p|^focal_alpha BCE(p,y) on particle channels, Huber on filament channels. Huber stays the default (invariant 1); making focal the default is a human decision after the CZII CV.",
+ "notes_for_next_agent": "value_loss='focal' = Section 1.5 weights x |y-p|^focal_alpha BCE(p,y) on particle channels, Huber on filament channels. Huber stays the default (invariant 1); making focal the default is a human decision after the CZII CV.\nHuman ruling (4 Nov 2026): Gate 7 FAILED AS TESTED (CZII CV: focal 0.730, contrastive 0.742, both 0.737 vs baseline 0.741; needs +0.02); re-judge after TODO 3b (all arms early-stopped at epoch ~25-28 with LR 4e-4, no SWA). Focal stays off by default (value_loss huber). 3b uses the 'both' flavour (focal + contrastive w 0.1) and retrains the baseline with the same recipe. No tag.",
  "attempt": 1
 }
