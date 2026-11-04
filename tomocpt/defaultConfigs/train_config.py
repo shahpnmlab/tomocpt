@@ -282,6 +282,15 @@ class TrainConfig:
     cv_fold: Annotated[
         int, typer.Option(help="k-fold training: the fold used for validation, in [0, cv_folds)")
     ] = 0
+    cv_all_folds: Annotated[
+        bool, typer.Option(help="k-fold CV in one command (pipeline v2): train every fold of cv_folds, each in its own "
+                                "process, from one shared chunk pool; then build the fold ensemble with out-of-fold "
+                                "calibration and write the CV report to <model_dir>/<experiment_name>")
+    ] = False
+    cv_class_weights: Annotated[
+        Optional[str], typer.Option(help="CV report only: class weights of the mean F-beta, e.g. "
+                                         "'beta-amylase:0,thyroglobulin:2' (classes not named weigh 1)")
+    ] = None
     ssl: Annotated[
         SSLConfig, typer.Option(help="Self-supervised pretraining settings (mode=selfSupervised)")
     ] = field(default_factory=SSLConfig)

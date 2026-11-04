@@ -44,13 +44,13 @@ notes and the gate reports; this file is only the order of work.
 Today: `train.cv_folds` / `train.cv_fold`, `tomocpt.predict.ensemble` and `infer.weights = <ensemble JSON>`
 are in the package, but the fold loop, the OOF ensemble build and the CV summary live in
 `experiments/run_cv.sh`.
-- [ ] 3a.1 Opt-in CV mode in `tomocpt train` (e.g. a flag that trains every fold of `train.cv_folds` in
+- [x] 3a.1 Opt-in CV mode in `tomocpt train` (e.g. a flag that trains every fold of `train.cv_folds` in
       turn, reuses / shares chunks where the split allows, resumes skipped / finished folds), then builds
       the ensemble with OOF calibration and writes the CV summary (per-class OOF F4, Kaggle-style weights
       optional). Default off: `tomocpt train` unchanged (invariant 1). `run_cv.sh` becomes a thin wrapper.
-- [ ] 3a.2 Save the pooled OOF picks (and truths) with the ensemble so diagnostics (per-fold F4, FP
+- [x] 3a.2 Save the pooled OOF picks (and truths) with the ensemble so diagnostics (per-fold F4, FP
       breakdown, galleries; `benchmarks/out/czii_g7_focal/oof_analysis/`) need no re-prediction.
-- [ ] 3a.3 Peak-shape diagnostic in the CV / validation output (human request 4 Nov 2026): per class and
+- [x] 3a.3 Peak-shape diagnostic in the CV / validation output (human request 4 Nov 2026): per class and
       arm, the mean predicted probability around true centres as a radial profile and as line profiles
       along x, y, z (z shows the missing wedge), overlaid on the target profile
       (0.5 narrow sigma 0.165 R + 0.5 wide sigma 0.33 R, cut at R); plus peak heights and FWHM of the
@@ -65,14 +65,15 @@ are in the package, but the fold loop, the OOF ensemble build and the CV summary
       1-2.5 voxel core; to test with 3b.1 (exact coordinates) and 3b.3b (centroid weight, offset head).
       Also add a localisation metric to the CV summary: per class, mean / median distance of matched picks
       to the exact true centres (today only F4 is reported, which hides localisation at 0.5 R).
-- [ ] 3a.4 Bug (found 4 Nov 2026): in one Python process, loading a contrastive checkpoint
+- [x] 3a.4 Bug (found 4 Nov 2026): in one Python process, loading a contrastive checkpoint
       (`train.discriminative.contrastive_weight > 0`) and then one without the head fails:
       `InferenceModel.load_from_checkpoint(strict=True)` -> missing `contrastive_head.*`,
       `contrastive_bank.*`. The earlier load's `train` settings leak via the global `mainConfig`
       (CLAUDE.md 1.10; the Gate 3c snapshot covers CLI runs only). Built-in CV / ensembling loads many
       checkpoints per process, so fix (build the model from the checkpoint's own config) and test this
       in 3a.
-- [ ] 3a.5 Tests (TA first), README section. Gate 8's "built-in CV mode" (HANDOFF_gate8 step 8d) moves here.
+- [~] 3a.5 Tests (TA first), README section. Done (Gate 4c: spec `.claude/agents/04c_AGENT_CV_ROUTINE.md`,
+      `tests/gate4c/`, report `gate_04c_report.json`); open: test dispute `gate_04c_test_dispute.md`. Gate 8's "built-in CV mode" (HANDOFF_gate8 step 8d) moves here.
 
 ## 3b. Train longer, exact coordinates (human decision 4 Nov 2026; after the Gate 7 `both` arm)
 Plan: take the best training flavour of the Gate 7 CZII CV (baseline / focal / contrastive / both, judged

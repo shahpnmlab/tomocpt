@@ -28,6 +28,13 @@ def train(config: DictConfig = None):
     """
     Trains a deep learning model for particle picking or self-supervised learning.
     """
+    # k-fold CV in one command (Gate 4c): every fold in its own process, then the ensemble
+    if getattr(config, "cv_all_folds", False):
+        from tomocpt.training.cv import run_cv
+
+        run_cv(config)
+        return
+
     # Validate that resume_from and fine_tune_from are not used at the same time
     if config.resume_from and config.fine_tune_from:
         raise ValueError("Cannot use --resume-from and --fine-tune-from at the same time.")

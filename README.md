@@ -297,17 +297,30 @@ conditioned model works: the new FiLM layers start at zero.
 - `train.particles.cross_class_neg_weight` (default 0) makes sigmoid models penalise firing on
   another class's particles. With `softmax` it is not needed.
 
-### k-fold training and fold ensembles
-Train one model per fold of tomograms, calibrate the per-class thresholds on the pooled
-out-of-fold predictions, and predict with the average of the fold models:
+### k-fold cross-validation and fold ensembles
+One command trains one model per fold of tomograms, calibrates the per-class thresholds on the
+pooled out-of-fold (OOF) predictions, builds the fold ensemble and writes a CV report:
 ```bash
-# fold k of K (one chunks_dir and model_dir per fold)
-tomocpt train --config_file fold_k.yaml        # with train.cv_folds: K, train.cv_fold: k
-python -m tomocpt.predict.ensemble fold*/model/**/*.ckpt --out ensemble.json --config_file config.yaml
-tomocpt predict --config_file config.yaml --weights ensemble.json --tomogram_dir tomos/ --predictions_dir out/
+tomocpt train --config_file config.yaml --cv_folds 5 --cv_all_folds \
+    --cv_class_weights "beta-amylase:0,beta-galactosidase:2,thyroglobulin:2"   # weights optional
+tomocpt predict --config_file config.yaml --weights <model_dir>/<experiment_name>/ensemble.json \
+    --tomogram_dir tomos/ --predictions_dir out/
 ```
-`experiments/run_cv.sh` runs all steps for CZII and reports the cross-validated F4. An explicit
-`infer.class_thresholds` still overrides the ensemble's thresholds.
+- Every tomogram is chunked once into `<chunks_dir>/pool`; `<chunks_dir>/fold{k}` links to it.
+- Each fold trains in its own process (`<model_dir>/<experiment_name>/folds/fold{k}/`, log in
+  `train.log`). Running the same command again skips finished folds and restarts unfinished ones.
+- The post-fit calibration of each fold saves its validation picks
+  (`checkpoints/weights.val_picks.npz`); the ensemble reuses them instead of predicting again and
+  stores the pooled OOF picks in `oof_picks.npz` (`tomocpt.predict.ensemble.read_oof_picks`).
+- `cv_summary.md` / `cv_summary.json`: per class the OOF F-beta at the calibrated threshold (also
+  per fold), precision, recall, TP / FP / FN, the distance of matched picks to the true centres,
+  the mean profile of the predicted map around true particles (peak height, FWHM) against the
+  training target, and the (weighted) mean F-beta. `peak_profiles.png` plots the profiles.
+
+A single fold (`train.cv_folds: K`, `train.cv_fold: k`, one `chunks_dir` per fold) and
+`python -m tomocpt.predict.ensemble <fold checkpoints> --out ensemble.json` still work on their
+own. `experiments/run_cv.sh` wraps the CV command for CZII. An explicit `infer.class_thresholds`
+still overrides the ensemble's thresholds.
 
 ### Filaments (microtubules, actin)
 Filaments are extra classes of a pipeline-v2 model: one output channel each, after the particle
@@ -412,6 +425,8 @@ or alignment mismatch.
   weighting for sigmoid heads (`train.particles.cross_class_neg_weight`).
 - k-fold training (`train.cv_folds`, `train.cv_fold`), out-of-fold calibration and fold
   ensembles (`python -m tomocpt.predict.ensemble`, `infer.weights` = ensemble file).
+- k-fold CV in one command (`train.cv_all_folds`): shared chunk pool, one process per fold,
+  saved validation / OOF picks, CV report with localisation and peak profiles.
 
 ## 0.7.1
 - Self-supervised training (`train.mode = selfSupervised`) works again. It had been broken

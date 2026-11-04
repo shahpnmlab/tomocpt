@@ -10,6 +10,7 @@ Usage::
     python -m tomocpt.predict.ensemble fold0.ckpt fold1.ckpt ... --out ensemble.json [--config_file config.yaml]
 """
 import argparse
+import contextlib
 import copy
 import dataclasses
 import json
@@ -17,6 +18,7 @@ import os
 from pathlib import Path
 from typing import List, Optional, Sequence
 
+import numpy as np
 import torch
 import yaml
 from torch import nn
@@ -87,19 +89,49 @@ class EnsembleModel(nn.Module):
         return total / len(self.members)
 
 
-def _load_member(ckpt, device):
+@contextlib.contextmanager
+def isolated_checkpoint_load():
+    """Checkpoint loads inside this block keep their own settings (Gate 4c, TODO 3a.4).
+
+    ``BaseModel.__init__`` applies every ``train`` value that differs from the defaults in the CLI
+    snapshot (or, without one, in the live ``mainConfig``) to the checkpoint config, and writes
+    the result into ``mainConfig.train``; a second load then inherits the first one's settings
+    (CLAUDE.md 1.10). Here the snapshot is a copy of the defaults (no changes to apply), and the
+    previous snapshot and the content of ``mainConfig.train`` are restored afterwards."""
+    from tomocpt.configManager.configManager import _restore_cli_snapshot, get_cli_snapshot, set_cli_snapshot
+    from tomocpt.mainConfig import _mainConfigNoChanges, mainConfig
+
+    previous = get_cli_snapshot()
+    saved_train = copy.deepcopy(vars(mainConfig.train))
+    set_cli_snapshot(_mainConfigNoChanges)
+    try:
+        yield
+    finally:
+        _restore_cli_snapshot(previous)
+        state = vars(mainConfig.train)
+        state.clear()
+        state.update(saved_train)
+
+
+def load_member_isolated(ckpt, device):
+    """A pipeline-v2 checkpoint loaded for inference with its own settings, whatever was loaded
+    before in this process (see :func:`isolated_checkpoint_load`)."""
     from tomocpt.networks.inference import InferenceModel
 
-    model = InferenceModel.load_from_checkpoint(str(ckpt), map_location=device, strict=True).eval()
+    with isolated_checkpoint_load():
+        model = InferenceModel.load_from_checkpoint(str(ckpt), map_location=device, strict=True).eval()
     if not model.is_pipeline_v2():
         raise ValueError(f"{ckpt} is not a pipeline-v2 checkpoint; ensembles need pipeline v2")
     return model
 
 
+_load_member = load_member_isolated
+
+
 def load_ensemble(path, device=torch.device("cpu")) -> EnsembleModel:
     """The ``EnsembleModel`` of an ensemble file, members loaded on ``device``."""
     record = read_ensemble(path)
-    members = [_load_member(c, device) for c in record["checkpoints"]]
+    members = [load_member_isolated(c, device) for c in record["checkpoints"]]
     return EnsembleModel(members, calibration=record.get("calibration")).eval()
 
 
@@ -121,7 +153,8 @@ def _val_tomograms(ckpt) -> List[dict]:
 def build_ensemble(checkpoints: Sequence, out_path, infer_cfg: Optional[InferConfig] = None) -> dict:
     """Calibrates fold checkpoints on their pooled out-of-fold picks and writes the ensemble
     file. Returns the record."""
-    from tomocpt.predict.calibration import CALIBRATION_VERSION, calibrate_thresholds, collect_validation_picks
+    from tomocpt.predict import calibration as C
+    from tomocpt.predict.calibration import CALIBRATION_VERSION, calibrate_thresholds
 
     cfg = copy.deepcopy(infer_cfg) if infer_cfg is not None else InferConfig()
     cfg.use_cuda = bool(cfg.use_cuda) and torch.cuda.is_available()
@@ -132,13 +165,16 @@ def build_ensemble(checkpoints: Sequence, out_path, infer_cfg: Optional[InferCon
     device = torch.device("cuda" if cfg.use_cuda else "cpu")
 
     checkpoints = [str(Path(c).resolve()) for c in checkpoints]
+    fingerprint = C.picks_fingerprint(cfg)
     picks, truths, radii, grid, seen, signature = {}, {}, {}, None, {}, None
-    for ckpt in checkpoints:
-        model = _load_member(ckpt, device)
+    profiles, tomograms, tomogram_fold, table = {}, [], [], None
+    for k, ckpt in enumerate(checkpoints):
+        model = load_member_isolated(ckpt, device)
         sig = _signature(model)
         if signature is not None and sig != signature:
             raise ValueError(f"{ckpt} differs from {checkpoints[0]} in class table or scale settings")
         signature = sig
+        table = model.class_table()
         val = _val_tomograms(ckpt)
         for entry in val:
             stem = Path(str(entry["tomogram_path"])).stem
@@ -146,20 +182,38 @@ def build_ensemble(checkpoints: Sequence, out_path, infer_cfg: Optional[InferCon
                 raise ValueError(f"validation tomogram {stem} is in the folds of {seen[stem]} and {ckpt}; "
                                  "out-of-fold calibration needs disjoint folds")
             seen[stem] = ckpt
-        logger.info(f"Out-of-fold picks of {ckpt} on {len(val)} tomogram(s)...")
-        p, t, r, grid = collect_validation_picks(model, val, cfg, device)
+        saved = _reusable_val_picks(ckpt, val, fingerprint)
+        if saved is not None:
+            logger.info(f"Out-of-fold picks of {ckpt}: reusing {C.val_picks_path(ckpt)}")
+            p, t, r, grid, prof = saved["picks"], saved["truths"], saved["radii"], saved["grid"], saved["profiles"]
+        else:
+            logger.info(f"Out-of-fold picks of {ckpt} on {len(val)} tomogram(s)...")
+            prof = {}
+            p, t, r, grid = C.collect_validation_picks(model, val, cfg, device, profiles=prof)
         for number in p:
             picks.setdefault(number, []).extend(p[number])
             truths.setdefault(number, []).extend(t[number])
+        for number, acc in prof.items():
+            profiles[number] = acc if number not in profiles else C._add_profiles(profiles[number], acc)
         radii.update(r)
+        tomograms.extend(str(e["tomogram_path"]) for e in val)
+        tomogram_fold.extend([k] * len(val))
         del model
 
     classes = calibrate_thresholds(picks, truths, radii, beta=cfg.calibration_beta,
                                    min_particles=cfg.calibration_min_particles, grid=grid)
+    out_path = Path(out_path)
+    oof_name = "oof_picks.npz"
+    arrays = C.pack_picks(table, picks, truths, radii, profiles, tomogram_fold=tomogram_fold)
+    C._savez_atomic(out_path.parent / oof_name, tomograms=np.array(tomograms, dtype=str),
+                    tomogram_fold=np.array(tomogram_fold, dtype=np.int64),
+                    class_names=np.array([str(r.name) for r in table], dtype=str),
+                    grid=np.asarray(list(grid), dtype=np.float64), fingerprint=np.array(fingerprint), **arrays)
     record = {
         "kind": ENSEMBLE_KIND,
         "version": ENSEMBLE_VERSION,
         "checkpoints": checkpoints,
+        "oof_picks": oof_name,
         "calibration": {
             "version": CALIBRATION_VERSION,
             "beta": float(cfg.calibration_beta),
@@ -172,7 +226,6 @@ def build_ensemble(checkpoints: Sequence, out_path, infer_cfg: Optional[InferCon
         thr = "None (falls back)" if e["threshold"] is None else f"{e['threshold']:.2f}"
         logger.info(f"Ensemble calibration, class {number}: threshold {thr}, F-beta {e['fbeta']:.3f}, "
                     f"{e['n_true']} true particle(s)")
-    out_path = Path(out_path)
     out_path.parent.mkdir(parents=True, exist_ok=True)
     tmp = out_path.with_suffix(out_path.suffix + ".tmp")
     with open(tmp, "w") as fh:
@@ -180,6 +233,49 @@ def build_ensemble(checkpoints: Sequence, out_path, infer_cfg: Optional[InferCon
     os.replace(tmp, out_path)
     logger.info(f"Ensemble of {len(checkpoints)} model(s) written to {out_path}")
     return record
+
+
+def _reusable_val_picks(ckpt, val: List[dict], fingerprint: str) -> Optional[dict]:
+    """The saved validation picks of ``ckpt`` if they were made on the same tomograms with the
+    same pick settings, else None."""
+    from tomocpt.predict import calibration as C
+
+    path = C.val_picks_path(ckpt)
+    if not path.is_file():
+        return None
+    try:
+        saved = C.read_val_picks(path)
+    except Exception as e:
+        logger.warning(f"Cannot read {path} ({e}); predicting again.")
+        return None
+    same_tomos = [str(Path(t).resolve()) for t in saved["tomograms"]] == \
+        [str(Path(str(e["tomogram_path"])).resolve()) for e in val]
+    if not same_tomos or saved["fingerprint"] != fingerprint:
+        logger.info(f"{path} was made on other tomograms or with other pick settings; predicting again.")
+        return None
+    return saved
+
+
+def read_oof_picks(ensemble_path) -> dict:
+    """The pooled out-of-fold picks of an ensemble file: ``tomograms``, ``tomogram_fold``,
+    ``picks``, ``truths``, ``radii`` (``calibrate_thresholds`` formats, tomograms in
+    ``tomograms`` order), ``available``, ``class_names`` (``{number: name}``), ``profiles``,
+    ``grid``, ``fingerprint``."""
+    from tomocpt.predict import calibration as C
+
+    ensemble_path = Path(ensemble_path)
+    record = read_ensemble(ensemble_path)
+    name = record.get("oof_picks")
+    if not name:
+        raise ValueError(f"{ensemble_path} records no out-of-fold picks (built before Gate 4c)")
+    with np.load(str(ensemble_path.parent / name), allow_pickle=False) as z:
+        out = C.unpack_picks(z, fold_column=True)
+        out["tomograms"] = [str(t) for t in z["tomograms"]]
+        out["tomogram_fold"] = np.asarray(z["tomogram_fold"], dtype=np.int64)
+        out["class_names"] = {int(n): str(s) for n, s in zip(z["class_numbers"], z["class_names"])}
+        out["grid"] = [float(g) for g in z["grid"]] if "grid" in z else None
+        out["fingerprint"] = str(z["fingerprint"])
+    return out
 
 
 def main(argv: Optional[Sequence[str]] = None) -> None:

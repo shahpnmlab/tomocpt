@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# k-fold training, out-of-fold (OOF) threshold calibration and fold ensemble (Gate 4b), CZII.
+# k-fold CV on CZII with the built-in CV mode (Gate 4c; earlier versions looped the folds here).
 #
-# Each fold trains a pipeline-v2 picker with one fold of tomograms held out for validation
-# (its own chunks_dir and model_dir). The fold models' picks on their own held-out tomograms
-# are pooled to calibrate one threshold per class; every tomogram is then scored by a model
-# that never trained on it (the cross-validation estimate). The fold models form the ensemble.
+# `tomocpt train` with train.cv_all_folds=True chunks every tomogram once (<OUT>/chunks/pool),
+# trains each fold in its own process (<OUT>/cv/folds/fold<k>), builds the fold ensemble with
+# out-of-fold calibration (<OUT>/cv/ensemble.json, oof_picks.npz) and writes the CV report
+# (<OUT>/cv/cv_summary.md, cv_summary.json, peak_profiles.png).
 #
 # Usage (from anywhere):
 #   nohup experiments/run_cv.sh > cv.log 2>&1 &
@@ -13,6 +13,7 @@
 #   CONFIG [data/czii/v2_config.yaml]  base config (prepData, train, infer sections)
 #   OUT [data/czii/cv_<date>]          reuse an OUT to resume: finished folds are skipped
 #   FOLDS [5]  EPOCHS [60]  CLASS_HEAD [softmax]  CROSS_CLASS_K [0.0]
+#   WEIGHTS [CZII Kaggle weights]      train.cv_class_weights of the report
 #   PREDICT_DIR                        optional: tomograms to predict with the ensemble
 set -euo pipefail
 
@@ -27,70 +28,34 @@ FOLDS="${FOLDS:-5}"
 EPOCHS="${EPOCHS:-60}"
 CLASS_HEAD="${CLASS_HEAD:-softmax}"
 CROSS_CLASS_K="${CROSS_CLASS_K:-0.0}"
+WEIGHTS="${WEIGHTS:-beta-amylase:0,beta-galactosidase:2,thyroglobulin:2}"
 mkdir -p "$OUT"
 log() { echo "[$(date '+%F %T')] $*"; }
 
-ckpts=()
-for ((k = 0; k < FOLDS; k++)); do
-    fold="$OUT/fold$k"
-    mkdir -p "$fold"
-    ckpt="$(find "$fold/model" -name '*.ckpt' 2>/dev/null | sort | tail -1 || true)"
-    if [[ -f "$fold/done" && -n "$ckpt" ]]; then
-        log "fold $k already trained: $ckpt"
-    else
-        # Per-fold config: k-fold split, own chunks and model directories, class head.
-        python - "$CONFIG" "$fold/config.yaml" "$FOLDS" "$k" "$fold" "$EPOCHS" "$CLASS_HEAD" "$CROSS_CLASS_K" <<'PY'
+# CV config: the base config with the CV settings, chunks and model directories under OUT.
+python - "$CONFIG" "$OUT/config.yaml" "$FOLDS" "$OUT" "$EPOCHS" "$CLASS_HEAD" "$CROSS_CLASS_K" "$WEIGHTS" <<'PY'
 import sys, yaml
-src, dst, folds, k, fold, epochs, head, kneg = sys.argv[1:]
+src, dst, folds, out, epochs, head, kneg, weights = sys.argv[1:]
 cfg = yaml.safe_load(open(src))
 for sec in ("shared", "train"):
-    cfg.setdefault(sec, {})["chunks_dir"] = f"{fold}/chunks"
+    cfg.setdefault(sec, {})["chunks_dir"] = f"{out}/chunks"
 t = cfg["train"]
-t.update(model_dir=f"{fold}/model", experiment_name=f"fold{k}", n_epochs=int(epochs),
-         cv_folds=int(folds), cv_fold=int(k), data_pipeline_version=2)
+t.update(model_dir=out, experiment_name="cv", n_epochs=int(epochs), cv_folds=int(folds), cv_all_folds=True,
+         cv_class_weights=weights, data_pipeline_version=2)
 t.setdefault("particles", {}).update(class_head=head, cross_class_neg_weight=float(kneg))
 yaml.safe_dump(cfg, open(dst, "w"), sort_keys=False)
 PY
-        log "fold $k / $FOLDS: training (log: $fold/train.log)"
-        tomocpt train --config_file "$fold/config.yaml" > "$fold/train.log" 2>&1
-        ckpt="$(find "$fold/model" -name '*.ckpt' | sort | tail -1)"
-        touch "$fold/done"
-    fi
-    ckpts+=("$ckpt")
-done
 
-log "building the ensemble from out-of-fold picks"
-python -m tomocpt.predict.ensemble "${ckpts[@]}" --out "$OUT/ensemble.json" --config_file "$CONFIG" \
-    > "$OUT/ensemble.log" 2>&1
+log "k-fold CV: $FOLDS folds (log: $OUT/train.log)"
+tomocpt train --config_file "$OUT/config.yaml" > "$OUT/train.log" 2>&1
 
-# Cross-validation estimate: per-class F4 of the pooled OOF picks at the calibrated thresholds,
-# and the Kaggle-weighted mean (weights 0 beta-amylase, 2 beta-galactosidase and thyroglobulin, 1 others).
-python - "$OUT/ensemble.json" "$CONFIG" "$OUT" "$FOLDS" "$EPOCHS" "$CLASS_HEAD" <<'PY' | tee "$OUT/cv_summary.md"
-import json, sys, yaml
-path, config, out, folds, epochs, head = sys.argv[1:]
-cal = json.load(open(path))["calibration"]
-names = dict(p.split(":", 1) for p in yaml.safe_load(open(config))["prepData"]["class_names"].split(","))
-kaggle = {"beta-amylase": 0, "beta-galactosidase": 2, "thyroglobulin": 2}
-rows, num, den = [], 0.0, 0.0
-for number, e in sorted(cal["classes"].items(), key=lambda kv: int(kv[0])):
-    name = names.get(str(number), str(number))
-    thr = "-" if e["threshold"] is None else f"{e['threshold']:.2f}"
-    rows.append(f"| {name} | {e['n_true']} | {thr} | {e['fbeta']:.3f} |")
-    w = kaggle.get(name, 1)
-    num, den = num + w * e["fbeta"], den + w
-print(f"\n## k-fold CV on CZII ({folds} folds, {epochs} epochs, {head} head)\n")
-print(f"- output: `{out}`; OOF tomograms: {', '.join(cal['oof_tomograms'])}")
-print("- F4 of pooled out-of-fold picks at the thresholds calibrated on them (slightly optimistic)\n")
-print("| class | true particles | threshold | OOF F4 |\n|---|---|---|---|")
-print("\n".join(rows))
-print(f"\nKaggle-weighted OOF F4: **{num / den:.3f}** (Kaggle 1st place: 0.788 on its hidden test set)\n")
-PY
-cat "$OUT/cv_summary.md" >> experiments/czii_v2_results.md
+{ echo; echo "## k-fold CV on CZII ($FOLDS folds, $EPOCHS epochs, $CLASS_HEAD head): \`$OUT\`"; echo
+  cat "$OUT/cv/cv_summary.md"; } >> experiments/czii_v2_results.md
 log "results appended to experiments/czii_v2_results.md"
 
 if [[ -n "${PREDICT_DIR:-}" ]]; then
     log "predicting $PREDICT_DIR with the ensemble -> $OUT/predictions"
-    tomocpt predict --config_file "$CONFIG" --tomogram_dir "$PREDICT_DIR" --weights "$OUT/ensemble.json" \
+    tomocpt predict --config_file "$CONFIG" --tomogram_dir "$PREDICT_DIR" --weights "$OUT/cv/ensemble.json" \
         --predictions_dir "$OUT/predictions" > "$OUT/predict.log" 2>&1
 fi
 log "done: $OUT"

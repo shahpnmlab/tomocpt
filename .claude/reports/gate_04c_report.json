@@ -1,0 +1,83 @@
+{
+ "gate_id": "4c",
+ "agent_name": "04c_AGENT_CV_ROUTINE (orchestrator acting as TA and implementer)",
+ "status": "AWAITING_HUMAN",
+ "base_ref": "ccae02b88fce1ff20f91d61ba5cb42dcf617fde4",
+ "files_created": [
+  "tomocpt/training/cv.py",
+  "tomocpt/predict/cv_report.py",
+  "tests/gate4c/*",
+  ".claude/agents/04c_AGENT_CV_ROUTINE.md"
+ ],
+ "files_modified": [
+  "tomocpt/dataManager/chunking.py",
+  "tomocpt/defaultConfigs/train_config.py",
+  "tomocpt/predict/calibration.py",
+  "tomocpt/predict/ensemble.py",
+  "tomocpt/training/run.py",
+  "experiments/run_cv.sh",
+  "README.md"
+ ],
+ "exported_symbols": {
+  "tomocpt.training.cv": [
+   "run_cv",
+   "prepare_cv_chunks",
+   "fold_config"
+  ],
+  "tomocpt.dataManager.chunking": [
+   "chunk_pool_v2",
+   "link_fold_chunks",
+   "POOL_SETTINGS"
+  ],
+  "tomocpt.predict.calibration": [
+   "peak_profile_accumulate",
+   "val_picks_path",
+   "read_val_picks",
+   "write_val_picks",
+   "picks_fingerprint",
+   "pack_picks",
+   "unpack_picks",
+   "collect_validation_picks(profiles=)"
+  ],
+  "tomocpt.predict.ensemble": [
+   "isolated_checkpoint_load",
+   "load_member_isolated",
+   "read_oof_picks"
+  ],
+  "tomocpt.predict.cv_report": [
+   "write_cv_report",
+   "peak_profile_stats"
+  ]
+ },
+ "config_fields_added": [
+  "train.cv_all_folds: bool = False",
+  "train.cv_class_weights: Optional[str] = None"
+ ],
+ "legacy_equivalence": {
+  "defaults": "tomocpt train without cv_all_folds is unchanged (run.py dispatches only when the flag is set; tomocpt.training.cv is not imported otherwise, G4c-C1). _do_chunking_v2 output unchanged (val_tomograms / layout code moved into helpers; pool=False path identical; G4b-C3 and Gate 2 tests).",
+  "behaviour_changes_v2_only": [
+   "calibrate_checkpoint (post-fit calibration of every pipeline-v2 training) also writes <ckpt stem>.val_picks.npz next to the checkpoint and loads the checkpoint through isolated_checkpoint_load",
+   "build_ensemble / load_ensemble load members with their own train settings (no CLI snapshot changes applied to members) and build_ensemble writes oof_picks.npz next to the ensemble file (record key oof_picks)"
+  ]
+ },
+ "metrics": {
+  "c8_cv_mode": "3 folds x 1 epoch, tiny model, 6 phantoms: pool chunked once, fold dirs are symlinks, ensemble reused all saved picks (0 re-predictions), rerun trained nothing and gave the same thresholds"
+ },
+ "pytest_fast": {
+  "tests -m 'not slow'": "793 passed, 1 failed, 27 skipped (fails: tests/gate4b/test_g4b_ensemble.py::test_G4b_C5_one_member_equals_the_model[softmax]; test dispute .claude/reports/gate_04c_test_dispute.md: its reference load inherits the softmax head through the CLAUDE.md 1.10 leak that Gate 4c fixes for ensembles)",
+  "tests/gate4c -m 'not slow'": "34 passed"
+ },
+ "pytest_slow": {
+  "tests/gate4c -m slow": "1 passed (C8)"
+ },
+ "benchmarks": {},
+ "known_limitations": [
+  "Fold processes run sequentially on the visible GPUs (each fold may use DDP itself); folds are not run in parallel.",
+  "Localisation in the report uses the coordinate CSV truths, which are floored to whole voxels until TODO 3b.1.",
+  "Filament classes are reported like particle classes (F-beta of their traced points); peak profiles are computed for particle classes only.",
+  "A pool is reused when its settings match; adding tomograms to the training data needs a new chunks_dir or deleting the pool (link_fold_chunks raises ValueError naming the missing tomograms).",
+  "Unfinished folds restart from scratch (no mid-fold resume)."
+ ],
+ "notes_for_next_agent": "TODO 3b.4 runs the CZII baseline and 'both' CVs with train.cv_all_folds (experiments/run_cv.sh wraps it). OOF picks for diagnostics: tomocpt.predict.ensemble.read_oof_picks(<cv dir>/ensemble.json).",
+ "attempt": 1
+}

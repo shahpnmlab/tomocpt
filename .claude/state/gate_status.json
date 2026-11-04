@@ -357,7 +357,7 @@
    ]
   },
   "4c": {
-   "status": "IN_PROGRESS",
+   "status": "AWAITING_HUMAN",
    "agent": "04c_AGENT_CV_ROUTINE",
    "attempts": 1,
    "test_hashes": {
@@ -374,7 +374,8 @@
    },
    "path_exceptions": [],
    "notes": [
-    "Human decision (4 Nov 2026): TODO 3a, built-in CV + ensembling opt-in, first after Gate 7. Tests written and frozen by the orchestrator acting as TA (usage-frugal, no agent fan-out)."
+    "Human decision (4 Nov 2026): TODO 3a, built-in CV + ensembling opt-in, first after Gate 7. Tests written and frozen by the orchestrator acting as TA (usage-frugal, no agent fan-out).",
+    "4 Nov 2026: implementation done; fast 34/34 gate4c, slow C8 passed; full fast suite 793 passed, 1 failed (G4b-C5 softmax one-member, test dispute gate_04c_test_dispute.md)."
    ]
   }
  }

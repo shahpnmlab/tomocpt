@@ -782,7 +782,8 @@ def _run_tasks(func, all_tasks: List[Dict[str, Any]], n_cpus: int, use_gpus: boo
 def _do_chunking_v2(tomosDf: pd.DataFrame, chunkedDataDir: str, n_cpus: int, require_labels: bool,
                     train_val_level: CrossValidationLevelSplit, use_gpus: bool, scale_cfg: ScaleConfig,
                     class_table: Optional[list], seed: int, alpha_drop_empty: float, chunk_size: int,
-                    chunk_stride: int, label_border_policy: str, cv: Optional[Tuple[int, int]] = None):
+                    chunk_stride: int, label_border_policy: str, cv: Optional[Tuple[int, int]] = None,
+                    pool: bool = False):
     """Pipeline v2 chunking (spec T2.3). Output: ``<split>/<dir name>__L{level}s{k}/`` with
     ``volumes/``, ``points/`` (or dense ``labels_supervised/``) and ``chunk_meta.json``; the
     manifest ``chunk_layout.json`` (v1 keys plus ``pipeline_version: 2``, the band, the class
@@ -807,7 +808,11 @@ def _do_chunking_v2(tomosDf: pd.DataFrame, chunkedDataDir: str, n_cpus: int, req
     merged = _merge_rows_v2(tomosDf, table)
     chunk_dir_names = assign_chunk_dir_names(merged)
     dir_names_layout = "unique" if merged["tomogram_path"].map(lambda p: Path(str(p)).stem).is_unique else "prefixed"
-    if cv is not None:
+    if pool:
+        # Gate 4c chunk pool: every tomogram once, under train/; folds link to it.
+        df_train, df_val = merged, None
+        split_layout = "pool"
+    elif cv is not None:
         df_train, df_val = split_rows_by_fold(merged, cv[0], cv[1], seed=seed)
         split_layout = "folds"
     elif train_val_level == CrossValidationLevelSplit.tomos:
@@ -855,29 +860,58 @@ def _do_chunking_v2(tomosDf: pd.DataFrame, chunkedDataDir: str, n_cpus: int, req
     if failed:
         raise RuntimeError(f"Pipeline v2 chunking failed for {failed}; see the log for the tracebacks.")
 
-    if train_val_level == CrossValidationLevelSplit.cubes:
+    if train_val_level == CrossValidationLevelSplit.cubes and not pool:
         all_tomo_dirs = sorted(d for d in train_outDir.iterdir() if d.is_dir())
         _, val_dirs = train_test_split(all_tomo_dirs, test_size=constants.PERCENT_TO_VALIDATE, random_state=42)
         for d in val_dirs:
             shutil.move(str(d), val_outDir)
 
-    val_tomograms = []
-    if df_val is not None:
-        for idx, row in df_val.iterrows():
-            paths = list(row["coords_paths"])
-            if len(paths) == 1:
-                coords_path = paths[0]
-            else:
-                coords_path = Path(chunkedDataDir) / "val_coords" / f"{chunk_dir_names.loc[idx]}.csv"
-                coords_path.parent.mkdir(parents=True, exist_ok=True)
-                pd.concat([_read_coords(p) for p in paths], ignore_index=True).to_csv(coords_path, index=False)
-            val_tomograms.append({
-                "tomogram_path": str(row["tomogram_path"]), "coords_path": str(coords_path),
-                "dataset_id": int(row["dataset_id"]), "apix_native": float(row["apix_native"]),
-                "class_available": [bool(a) for a in row["class_available"]],
-            })
+    if pool:
+        layout = _v2_layout(dir_names_layout, split_layout, scale_cfg, resample, storage, policy, chunk_size,
+                            chunk_stride, seed, table_json, val_tomograms=None, cv=None)
+        layout.pop("val_tomograms")
+        # results arrive in completion order: match them to tasks by tomogram path
+        dirs_of_tomo = {str(r["tomo"]): sorted(Path(d).name for d in r.get("dirs", [])) for r in results}
+        dirs_by_name: Dict[str, List[str]] = {task["chunk_dir_name"]: dirs_of_tomo.get(str(task["tomogram_path"]), [])
+                                              for task in all_tasks}
+        layout.update(kind="pool", alpha_drop_empty=float(alpha_drop_empty), pool_dirs=dirs_by_name)
+        write_chunk_layout(chunkedDataDir, layout)
+    else:
+        val_tomograms = _v2_val_tomograms(df_val, chunk_dir_names, chunkedDataDir)
+        write_chunk_layout(chunkedDataDir, _v2_layout(dir_names_layout, split_layout, scale_cfg, resample, storage,
+                                                      policy, chunk_size, chunk_stride, seed, table_json,
+                                                      val_tomograms, cv))
+    with open(get_chunking_name_done(chunkedDataDir, require_labels), "w") as f:
+        f.write("done")
+    logging.info(f"Pipeline v2 chunking finished: {sum(r['n_chunks'] for r in results)} chunks in "
+                 f"{train_outDir} and {val_outDir}")
 
-    write_chunk_layout(chunkedDataDir, {
+
+def _v2_val_tomograms(df_val, chunk_dir_names, chunkedDataDir) -> List[dict]:
+    """``val_tomograms`` entries of a v2 manifest (coordinates of tomograms with several
+    coordinate files are merged into ``<chunks_dir>/val_coords/<dir name>.csv``)."""
+    val_tomograms = []
+    if df_val is None:
+        return val_tomograms
+    for idx, row in df_val.iterrows():
+        paths = list(row["coords_paths"])
+        if len(paths) == 1:
+            coords_path = paths[0]
+        else:
+            coords_path = Path(chunkedDataDir) / "val_coords" / f"{chunk_dir_names.loc[idx]}.csv"
+            coords_path.parent.mkdir(parents=True, exist_ok=True)
+            pd.concat([_read_coords(p) for p in paths], ignore_index=True).to_csv(coords_path, index=False)
+        val_tomograms.append({
+            "tomogram_path": str(row["tomogram_path"]), "coords_path": str(coords_path),
+            "dataset_id": int(row["dataset_id"]), "apix_native": float(row["apix_native"]),
+            "class_available": [bool(a) for a in row["class_available"]],
+        })
+    return val_tomograms
+
+
+def _v2_layout(dir_names_layout, split_layout, scale_cfg, resample, storage, policy, chunk_size, chunk_stride,
+               seed, table_json, val_tomograms, cv) -> dict:
+    return {
         "layout": 2, "dir_names": dir_names_layout, "split": split_layout,
         "pipeline_version": 2,
         "band": [float(scale_cfg.band_min_vox), float(scale_cfg.band_max_vox)],
@@ -886,8 +920,80 @@ def _do_chunking_v2(tomosDf: pd.DataFrame, chunkedDataDir: str, n_cpus: int, req
         "chunk_size": chunk_size, "chunk_stride": chunk_stride, "seed": int(seed),
         "class_table": table_json, "val_tomograms": val_tomograms,
         **({"cv": {"folds": int(cv[0]), "fold": int(cv[1])}} if cv is not None else {}),
-    })
-    with open(get_chunking_name_done(chunkedDataDir, require_labels), "w") as f:
+    }
+
+
+# ------------------------------------------------------------------------------------------
+# Gate 4c: one chunk pool for every fold of a k-fold CV
+# ------------------------------------------------------------------------------------------
+
+#: Pool manifest keys that must match a new request (else the pool is refused).
+POOL_SETTINGS = ("band", "resample", "scales_per_level", "target_storage", "label_border_policy", "chunk_size",
+                 "chunk_stride", "seed", "class_table", "alpha_drop_empty")
+
+
+def chunk_pool_v2(tomosDf: pd.DataFrame, pool_dir, n_cpus: int, use_gpus: bool, scale_cfg: ScaleConfig,
+                  class_table: list, seed: int, alpha_drop_empty: float, chunk_size: int, chunk_stride: int,
+                  label_border_policy: str) -> dict:
+    """Chunks every tomogram once into ``<pool_dir>/train/<dir>/`` (pipeline v2, no split) and
+    writes the pool manifest (``"kind": "pool"``, the v2 settings, ``pool_dirs``: chunk directories
+    per tomogram) and the done file last. Pipeline-v2 chunks of a tomogram do not depend on the
+    split (names and random draws are seeded by the chunk directory name), so fold chunk dirs can
+    link to these (:func:`link_fold_chunks`). Returns the manifest."""
+    from tomocpt.dataManager.metadata import read_chunk_layout
+
+    _do_chunking_v2(tomosDf, str(pool_dir), n_cpus=n_cpus, require_labels=True,
+                    train_val_level=CrossValidationLevelSplit.tomos, use_gpus=use_gpus, scale_cfg=scale_cfg,
+                    class_table=class_table, seed=seed, alpha_drop_empty=float(alpha_drop_empty),
+                    chunk_size=int(chunk_size), chunk_stride=int(chunk_stride),
+                    label_border_policy=label_border_policy, cv=None, pool=True)
+    return read_chunk_layout(pool_dir)
+
+
+def link_fold_chunks(pool_dir, fold_dir, tomosDf: pd.DataFrame, folds: int, fold: int) -> dict:
+    """Builds the chunks_dir of fold ``fold`` of ``folds`` from a chunk pool: ``train/`` and
+    ``val/`` hold symlinks to the pool's per-tomogram chunk directories (split by
+    :func:`split_rows_by_fold` with the pool's seed), and the manifest and done file are the ones
+    ``_do_chunking_v2(..., cv=(folds, fold))`` writes. Returns the manifest."""
+    from tomocpt.dataManager.metadata import read_chunk_layout, write_chunk_layout
+    from tomocpt.labels.multiclass import class_table_from_json
+
+    pool_dir, fold_dir = Path(pool_dir), Path(fold_dir)
+    pool = read_chunk_layout(pool_dir)
+    if not pool or pool.get("kind") != "pool" or not Path(get_chunking_name_done(str(pool_dir), True)).is_file():
+        raise ValueError(f"{pool_dir} is not a complete chunk pool")
+    table = class_table_from_json(pool["class_table"])
+    merged = _merge_rows_v2(tomosDf, table)
+    names = assign_chunk_dir_names(merged)
+    dir_names_layout = "unique" if merged["tomogram_path"].map(lambda p: Path(str(p)).stem).is_unique else "prefixed"
+    missing = sorted(set(names) - set(pool["pool_dirs"]))
+    if missing:
+        raise ValueError(f"the chunk pool {pool_dir} lacks tomograms {missing[:5]}; delete it to rebuild")
+    df_train, df_val = split_rows_by_fold(merged, int(folds), int(fold), seed=int(pool["seed"]))
+
+    for stale in (get_chunking_name_done(str(fold_dir), True), get_chunk_layout_path(str(fold_dir))):
+        if Path(stale).is_file():
+            os.remove(stale)
+    for d in ("train", "val", "val_coords"):
+        if (fold_dir / d).exists() or (fold_dir / d).is_symlink():
+            shutil.rmtree(fold_dir / d)
+    for split, df in (("train", df_train), ("val", df_val)):
+        out = fold_dir / split
+        out.mkdir(parents=True, exist_ok=True)
+        for idx in df.index:
+            for d in pool["pool_dirs"][str(names.loc[idx])]:
+                os.symlink((pool_dir / "train" / d).resolve(), out / d, target_is_directory=True)
+
+    val_tomograms = _v2_val_tomograms(df_val, names, str(fold_dir))
+
+    class _Scale:  # the band and levels as recorded by the pool
+        band_min_vox, band_max_vox = pool["band"]
+        scales_per_level = pool["scales_per_level"]
+
+    layout = _v2_layout(dir_names_layout, "folds", _Scale, pool["resample"], pool["target_storage"],
+                        pool["label_border_policy"], pool["chunk_size"], pool["chunk_stride"], pool["seed"],
+                        pool["class_table"], val_tomograms, (int(folds), int(fold)))
+    write_chunk_layout(fold_dir, layout)
+    with open(get_chunking_name_done(str(fold_dir), True), "w") as f:
         f.write("done")
-    logging.info(f"Pipeline v2 chunking finished: {sum(r['n_chunks'] for r in results)} chunks in "
-                 f"{train_outDir} and {val_outDir}")
+    return layout
