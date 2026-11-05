@@ -58,9 +58,11 @@ class MySwinUNETR(SwinUNETR):
         logits = self.out(out)
         return logits, hidden_states_out[4]
 
-    def forward_features(self, x_in, apix=None):
+    def forward_features(self, x_in, apix=None, with_decoder1=False):
         """``forward`` plus the ``decoder2`` output (``[B, fs, D/2, H/2, W/2]``, Gate 7 contrastive
-        features): ``(logits, hidden_states_out[4], decoder2)``. ``apix`` is ignored (unconditioned)."""
+        features): ``(logits, hidden_states_out[4], decoder2)``; ``with_decoder1=True`` appends the
+        ``decoder1`` output (``[B, fs, D, H, W]``, Gate 4f offset head). ``apix`` is ignored
+        (unconditioned)."""
         hidden_states_out = self.swinViT(x_in, self.normalize)
         enc0 = self.encoder1(x_in)
         enc1 = self.encoder2(hidden_states_out[0])
@@ -73,6 +75,8 @@ class MySwinUNETR(SwinUNETR):
         dec0 = self.decoder2(dec1, enc1)
         out = self.decoder1(dec0, enc0)
         logits = self.out(out)
+        if with_decoder1:
+            return logits, hidden_states_out[4], dec0, out
         return logits, hidden_states_out[4], dec0
 
 
@@ -116,11 +120,11 @@ class ScaleConditionedSwinUNETR(MySwinUNETR):
         logits = self.out(out)
         return logits, hidden_states_out[4]
 
-    def forward_features(self, x_in, apix=None):
+    def forward_features(self, x_in, apix=None, with_decoder1=False):
         """``forward(x, apix)`` plus the FiLM-conditioned ``decoder2`` output:
-        ``(logits, hidden_states_out[4], decoder2)``."""
+        ``(logits, hidden_states_out[4], decoder2)`` (``with_decoder1``: plus ``decoder1``)."""
         if apix is None:
-            return super().forward_features(x_in)
+            return super().forward_features(x_in, with_decoder1=with_decoder1)
         e = self.cond.scale_embed(apix)
         film = self.cond.film
         hidden_states_out = self.swinViT(x_in, self.normalize)
@@ -135,6 +139,8 @@ class ScaleConditionedSwinUNETR(MySwinUNETR):
         dec0 = film[4](self.decoder2(dec1, enc1), e)
         out = film[5](self.decoder1(dec0, enc0), e)
         logits = self.out(out)
+        if with_decoder1:
+            return logits, hidden_states_out[4], dec0, out
         return logits, hidden_states_out[4], dec0
 
 

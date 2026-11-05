@@ -13,18 +13,20 @@ from utils.tiny import applied_main_config
 
 
 @pytest.mark.parametrize("centre", [(20.3, 31.7, 25.45), (20.0, 31.0, 25.0), (19.6, 30.55, 24.9)])
-def test_G4f_C6_parabolic_refinement(centre):
-    from tomocpt.predict.multiclass import refine_parabolic
+def test_G4f_C6_default_fit_is_subvoxel(centre):
+    """The default ``subvoxel_refine="fit"`` (legacy log-quadratic fit) recovers a sub-voxel centre."""
+    from tomocpt.defaultConfigs.infer_config import InferConfig
+    from tomocpt.labels.multiclass import build_class_table
+    from tomocpt.predict.multiclass import peaks_from_class_maps
 
+    cfg = InferConfig()
+    cfg.use_cuda = False
+    assert cfg.subvoxel_refine == "fit"
+    table = build_class_table({1: 100.0}, {1: "A"})
     m = H.gaussian_map((40, 64, 50), centre, sigma=2.0)
-    v = np.round(centre).astype(int)
-    peaks = np.array([[v[0], v[1], v[2], float(m[tuple(v)])]], float)
-    out = refine_parabolic(torch.from_numpy(m), peaks)
-    assert out.shape == (1, 4) and out[0, 3] == pytest.approx(peaks[0, 3])
-    assert np.abs(out[0, :3] - np.array(centre)).max() < 0.1
-    # a peak on the border gets no shift on that axis
-    edge = np.array([[0, v[1], v[2], 0.5]], float)
-    assert refine_parabolic(torch.from_numpy(m), edge)[0, 0] == 0
+    peaks, _ = peaks_from_class_maps({0: torch.from_numpy(m)}, table, 10.0, cfg, {0: 0.3}, "t")
+    assert peaks[0].shape == (1, 4)
+    assert np.abs(peaks[0][0, :3] - np.array(centre)).max() < 0.1
 
 
 def _cond_classes():
@@ -76,18 +78,28 @@ def _picks(tmp_path, monkeypatch, weights, refine, tomo):
 def test_G4f_C9_constant_offset_shifts_picks(tmp_path, monkeypatch, offset_ckpt):
     v = HB.blob_val_tomogram(tmp_path / "tomos", "TS_off", _cond_classes())
     with H4.oracle_models(monkeypatch, H4.neg_oracle_factory(conditioned=False)):
-        base = _picks(tmp_path / "a", monkeypatch, offset_ckpt, "none", v["path"])
+        base = _picks(tmp_path / "a", monkeypatch, offset_ckpt, "fit", v["path"])
         _constant_offsets(monkeypatch)
         shifted = _picks(tmp_path / "b", monkeypatch, offset_ckpt, "offset", v["path"])
+    # offsets are in working voxels: native shift = SHIFT * apix_work / apix_native of the class's level
+    from tomocpt.networks.inference import InferenceModel
+    from tomocpt.predict import helpers as PH
+    from tomocpt.predict.multiclass import scale_config_of
+
+    with applied_main_config(None):
+        model = InferenceModel.load_from_checkpoint(str(offset_ckpt), map_location="cpu", strict=True)
+    table = model.class_table()
+    levels = PH.plan_inference(10.0, table, scale_config_of(model), 20, 2)
+    factor = {table[c].name: lv.apix_work / 10.0 for lv in levels for c in lv.classes}
     n = 0
     for name in base:
         assert base[name].shape == shifted[name].shape, name
         if len(base[name]):
             n += len(base[name])
-            # star rows are x, y, z, score; the tomogram is predicted at its native voxel size
-            want = base[name][:, :3] + np.array(SHIFT[::-1])
+            # star rows are x, y, z, score; v = the rounded fitted pick
+            want = np.round(base[name][:, :3]) + np.array(SHIFT[::-1]) * factor[name]
             np.testing.assert_allclose(HB.sort_rows(np.c_[want, base[name][:, 3]])[:, :3], shifted[name][:, :3],
-                                       atol=1e-3)
+                                       atol=6e-3)  # STAR files hold 2 decimals
     assert n > 0, "no picks (test is vacuous)"
 
 

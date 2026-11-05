@@ -9,7 +9,6 @@
   from the validation where averaging starts on).
 * ``tomocpt.training.offsets.offset_targets(y, class_d_vox, available, particle_channels=None) ->
   (target [B, 3, D, H, W], mask [B, 1, D, H, W] bool)``.
-* ``tomocpt.predict.multiclass.refine_parabolic(class_map [D, H, W], peaks [N, 4]) -> [N, 4]``.
 * ``BasePickingModel.offset_head`` (None when off), ``predict_step_with_offsets(x, apix=None,
   classes=None) -> (probs, offsets)``, ``has_offset_head()``; ``EnsembleModel`` has the same two.
 * ``predict_class_maps(..., offsets_out=None)``; ``peaks_from_class_maps(..., offsets=None)``.

@@ -453,11 +453,26 @@ def _setup_callbacks(
         checkpointer,
         LearningRateMonitor(logging_interval="epoch"),
     ]
-    if not bool(safe_getattr(config, "schedule_free", False)):
+    schedule_free = bool(safe_getattr(config, "schedule_free", False))
+    averaging = str(safe_getattr(config, "weight_averaging", "swa"))
+    if averaging not in ("swa", "ema", "swa_plateau", "none"):
+        raise ValueError(f"train.weight_averaging must be swa, ema, swa_plateau or none, got {averaging!r}")
+    if schedule_free and averaging in ("ema", "swa_plateau"):
+        raise ValueError(f"train.weight_averaging={averaging} cannot be combined with train.schedule_free "
+                         "(the schedule-free optimiser already averages the weights)")
+    if averaging == "swa" and not schedule_free:
         callbacks.append(StochasticWeightAveraging(
             annealing_epochs=config.COSINE_LR_SCHEDULE_N_EPOCHS,
             swa_lrs=0.1 * model.lr,
         ))
+    elif averaging in ("ema", "swa_plateau"):
+        # Gate 4f: average validated and saved, no fixed start epoch
+        from tomocpt.training.averaging import WeightAveraging
+
+        callbacks.append(WeightAveraging(
+            averaging, ema_decay=float(safe_getattr(config, "ema_decay", 0.999)),
+            plateau_patience=int(safe_getattr(config, "swa_plateau_patience", 5)),
+            plateau_rel_delta=float(safe_getattr(config, "swa_plateau_rel_delta", 1e-3))))
     callbacks.append(LRVerificationCallback())
     return callbacks
 

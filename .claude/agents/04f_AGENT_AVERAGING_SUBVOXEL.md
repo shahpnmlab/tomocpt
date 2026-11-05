@@ -10,7 +10,10 @@ Added 4–5 Nov 2026 by human decisions (TODO 3b.3a, 3b.3b; "build 3b.3a and 3b.
   stopping (all Gate 7 folds stopped at epoch 25–28 of 60) no average is ever used.
 - **Narrow core not learned** (TODO 3a.3 on TS_69_2): predicted peaks follow only the wide Gaussian
   (FWHM 0.63–0.83 R vs 0.53 R, heights 0.3–0.9); the core voxels are a tiny share of the weighted loss.
-- **Picks are whole voxels** (`peak_local_max_torch`); since Gate 4d the targets are sub-voxel.
+- **Picks** are already sub-voxel: `predict.helpers._refine_peaks_subpixel_gpu` fits a 3D quadratic to the
+  log of the map around each local maximum (exact for a Gaussian peak; finding of 5 Nov 2026, which corrects
+  TODO 3b.3b's "integer voxel indices"). With flattened, widened peaks (3a.3) that fit is the reference the
+  offset head has to beat.
 
 ## Design
 
@@ -39,12 +42,13 @@ Added 4–5 Nov 2026 by human decisions (TODO 3b.3a, 3b.3b; "build 3b.3a and 3b.
 channels the Section 1.5 value weight becomes `w * (1 + core_weight * y^core_power)` (Huber and focal
 value terms; the Hessian term unchanged). `core_weight = 0` leaves the loss bit-identical.
 
-### D3 Sub-voxel picks (3b.3b b, c) — `infer.subvoxel_refine`: `"none"` (default) | `"parabolic"` | `"offset"`
-- `"parabolic"`: for each peak, per axis, `delta = 0.5 (f[-1] - f[+1]) / (f[-1] - 2 f[0] + f[+1])`
-  on the class map at native voxels, clipped to [-0.5, 0.5] (0 if the denominator is >= 0 or a
-  neighbour is outside the map).
-- `"offset"`: shift each peak by the offset head's prediction (D4) at the peak voxel. ValueError if
-  the model (or an ensemble member) has no offset head.
+### D3 Sub-voxel picks (3b.3b b, c) — `infer.subvoxel_refine`: `"fit"` (default) | `"offset"`
+- `"fit"`: the legacy log-quadratic fit (unchanged; amended 5 Nov 2026: the planned per-axis parabola
+  was dropped, the legacy fit already does this better).
+- `"offset"`: each pick becomes `v + offset(v)`, `v` = the fitted pick rounded to a voxel, `offset`
+  the offset head's prediction (D4) there (the head predicts the vector from any core voxel to the
+  centre). ValueError if the model (or an ensemble member) has no offset head, or with
+  `skip_inference` (offsets are not saved).
 - Scores unchanged; picks stay `[N, 4]` rows `z, y, x, score`. Applied before cross-class
   suppression. The saved-picks fingerprint (Gate 4c) includes the field.
 
@@ -58,7 +62,7 @@ value terms; the Hessian term unchanged). `core_weight = 0` leaves the loss bit-
 - **Target** (`training/offsets.py`, `offset_targets(y, class_d_vox, available, particle_channels)`),
   computed from the (augmented) dense target so flips and rotations need no extra handling: for
   class `c` with radius `R = d_vox / 2`, the centre of the blob around voxel `v` is the
-  `y`-weighted centroid in the box `|u| <= ceil(R) + 1` around `v` (box sums by cumulative sums);
+  `y`-weighted centroid in the box `|u| <= ceil(1.3 R) + 1` around `v` (covers the blob from any core voxel) (box sums by cumulative sums);
   target `= centroid - v` on voxels with `y_c > 0.5` (the core); where cores of two classes
   overlap the larger `y` wins. Returns `(target [B, 3, D, H, W], mask [B, 1, D, H, W])`.
 - **Loss**: `offset_weight * mean(|pred - target|)` over masked voxels and the 3 components (0 with
@@ -78,7 +82,7 @@ value terms; the Hessian term unchanged). `core_weight = 0` leaves the loss bit-
 | `train.swa_plateau_patience`, `train.swa_plateau_rel_delta` | `5`, `1e-3` |
 | `train.particles.core_weight`, `train.particles.core_power` | `0.0`, `4.0` |
 | `train.particles.offset_weight` | `0.0` |
-| `infer.subvoxel_refine` | `"none"` |
+| `infer.subvoxel_refine` | `"fit"` |
 
 ## Allowed write paths
 `tomocpt/training/{averaging,offsets,multiclass_loss,helpers}.py` (`helpers`: `_setup_callbacks`),
@@ -97,13 +101,13 @@ particles_config,infer_config}.py`, `tomocpt/predict/{multiclass,ensemble,calibr
 - **G4f-C4** `schedule_free` + `ema` / `swa_plateau` raises ValueError; `none` adds no averaging.
 - **G4f-C5** Core weight: equals `w * (1 + k y^p)` on particle channels by hand on small tensors;
   filament channels unchanged.
-- **G4f-C6** Parabolic refinement recovers a sub-voxel Gaussian peak centre within 0.1 voxel
-  (`none` gives the integer voxel).
+- **G4f-C6** The default `"fit"` recovers a sub-voxel Gaussian peak centre within 0.1 voxel through
+  `peaks_from_class_maps` (legacy refinement, documents the reference).
 - **G4f-C7** `offset_targets` on targets rendered at known float centres gives `centre - v` on the
   core (atol 0.05 voxel) and an empty mask where there is no particle.
 - **G4f-C8** Offset head: absent when off; zero-initialised and zero output when on; every head
   parameter gets a gradient in a training step (also with an empty target); loss includes the term;
   checkpoint round trip `strict=True`; `forward` unchanged.
-- **G4f-C9** Predict with `"offset"`: a constant predicted offset shifts every pick by that offset
-  times `apix_work / apix_native` (atol 1e-4) relative to `"none"`; `"offset"` without a head raises
+- **G4f-C9** Predict with `"offset"`: with a constant predicted offset every pick is the rounded
+  `"fit"` pick plus that offset times `apix_work / apix_native` (atol 6e-3: STAR files hold 2 decimals); `"offset"` without a head raises
   ValueError; an ensemble averages the members' offsets.

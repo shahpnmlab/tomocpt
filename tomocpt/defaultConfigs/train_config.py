@@ -294,6 +294,19 @@ class TrainConfig:
                                 "'tomocpt[schedulefree]'): no LR scheduler, no SWA; validation and "
                                 "checkpoints use the optimiser's averaged weights")
     ] = False
+    weight_averaging: Annotated[
+        str, typer.Option(help="Weight averaging: 'swa' (legacy Lightning SWA), 'ema' (EMA of the weights from step "
+                               "0), 'swa_plateau' (SWA started when val_loss_smooth plateaus) or 'none'. EMA and "
+                               "plateau SWA validate and save the averaged weights")
+    ] = "swa"
+    ema_decay: Annotated[float, typer.Option(help="Maximum EMA decay (weight_averaging=ema)")] = 0.999
+    swa_plateau_patience: Annotated[
+        int, typer.Option(help="weight_averaging=swa_plateau: validations without a relative improvement before "
+                               "averaging starts")
+    ] = 5
+    swa_plateau_rel_delta: Annotated[
+        float, typer.Option(help="weight_averaging=swa_plateau: relative improvement of val_loss_smooth that counts")
+    ] = 1e-3
     cv_all_folds: Annotated[
         bool, typer.Option(help="k-fold CV in one command (pipeline v2): train every fold of cv_folds, each in its own "
                                 "process, from one shared chunk pool; then build the fold ensemble with out-of-fold "

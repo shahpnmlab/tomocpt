@@ -88,6 +88,18 @@ class EnsembleModel(nn.Module):
             total = p if total is None else total + p
         return total / len(self.members)
 
+    def has_offset_head(self) -> bool:
+        return all(getattr(m, "has_offset_head", lambda: False)() for m in self.members)
+
+    def predict_step_with_offsets(self, batch, apix=None, classes=None):
+        """Mean of the members' probabilities and offsets (Gate 4f)."""
+        tp = to = None
+        for m in self.members:
+            p, o = m.predict_step_with_offsets(batch, apix=apix, classes=classes)
+            p, o = p.float(), o.float()
+            tp, to = (p, o) if tp is None else (tp + p, to + o)
+        return tp / len(self.members), to / len(self.members)
+
 
 @contextlib.contextmanager
 def isolated_checkpoint_load():

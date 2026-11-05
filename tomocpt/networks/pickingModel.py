@@ -67,6 +67,8 @@ class BasePickingModel(BaseModel):
             raise ValueError(f"train.particles.class_head must be one of {CLASS_HEADS}, got {self.class_head()!r}")
         self.contrastive_head = None
         self._build_discriminative()
+        self.offset_head = None
+        self._build_offset_head()
 
     # ------------------------------------------------------------------ Gate 7
     def _disc(self, name, default):
@@ -97,6 +99,60 @@ class BasePickingModel(BaseModel):
         dim = int(self._disc("embed_dim", 64))
         self.contrastive_head = DenseProjectionHead(fs, dim)
         self.contrastive_bank = ContrastiveMemoryBank(len(self.class_table()), int(self._disc("bank_size", 1024)), dim)
+
+    # ------------------------------------------------------------------ Gate 4f
+    def _particles(self, name, default):
+        """``train.particles.<name>`` of this model's (checkpoint) config, or ``default``."""
+        particles = safe_getattr(self.hparams.config.train, "particles", None)
+        return safe_getattr(particles, name, default) if particles is not None else default
+
+    def offset_weight(self) -> float:
+        return float(self._particles("offset_weight", 0.0) or 0.0)
+
+    def has_offset_head(self) -> bool:
+        return self.offset_head is not None
+
+    def _build_offset_head(self):
+        """Offset head (``train.particles.offset_weight > 0`` only: invariant 5) on the full-resolution
+        ``decoder1`` output: 3 channels ``(dz, dy, dx)`` in working voxels, last layer zero-initialised
+        (invariant 6)."""
+        if self.offset_weight() <= 0:
+            return
+        if not self.is_pipeline_v2():
+            raise ValueError("train.particles.offset_weight > 0 needs data pipeline v2")
+        fs = self.model.out.conv.conv.in_channels  # decoder1 output channels = feature_size
+        last = nn.Conv3d(16, 3, kernel_size=1)
+        nn.init.zeros_(last.weight)
+        nn.init.zeros_(last.bias)
+        self.offset_head = nn.Sequential(nn.Conv3d(fs, 16, kernel_size=3, padding=1), nn.GELU(), last)
+
+    def _forward_all(self, x, apix=None):
+        """``(logits, decoder2, decoder1)`` in one network pass."""
+        x = x[0] if isinstance(x, (tuple, list)) else x
+        if apix is None or not self.scale_conditioning():
+            out = self.model.forward_features(x, with_decoder1=True)
+        else:
+            out = self.model.forward_features(x, apix=apix, with_decoder1=True)
+        return out[0], out[2], out[3]
+
+    def _offset_term(self, offsets, y, batch):
+        from tomocpt.training.offsets import offset_loss, offset_targets
+
+        target, mask = offset_targets(y, batch["class_d_vox"], batch["class_available"],
+                                      [not f for f in self._is_filament()])
+        return offset_loss(offsets, target, mask)
+
+    def predict_step_with_offsets(self, batch, apix=None, classes=None):
+        """``(probabilities as predict_step, offsets [B, 3, D, H, W] in working voxels)``."""
+        if self.offset_head is None:
+            raise ValueError("this model has no offset head (train.particles.offset_weight was 0)")
+        use_apix = apix if self.scale_conditioning() else None
+        logits, _, dec1 = self._forward_all(batch, apix=use_apix)
+        if self.class_head() == "softmax":
+            probs = class_probabilities(logits, "softmax", classes)
+        else:
+            probs = nn.functional.sigmoid(logits)
+        return probs, self.offset_head(dec1)
 
     def _is_filament(self):
         from tomocpt.labels.multiclass import FILAMENT
@@ -252,6 +308,10 @@ class BasePickingModel(BaseModel):
             # soft focal penalty on particle channels, Huber on filament channels (1 Nov 2026)
             kw = dict(value_loss="focal", focal_channels=[not f for f in self._is_filament()],
                       focal_gamma=float(self._disc("focal_alpha", 2.0)))
+        core = float(self._particles("core_weight", 0.0) or 0.0)
+        if core:
+            kw.update(core_weight=core, core_power=float(self._particles("core_power", 4.0)),
+                      core_channels=[not f for f in self._is_filament()])
         return multiclass_picking_loss(
             y_pred, y, batch["class_available"], batch["class_d_vox"],
             class_weights=self._class_weights(), checkpoint=use_checkpoint,
@@ -262,8 +322,12 @@ class BasePickingModel(BaseModel):
 
     def training_step(self, batch, batch_idx):
         x, y = self.resolve_batch(batch)
+        y_raw = y
         contrastive = self.contrastive_head is not None and self._is_v2_batch(batch)
-        if contrastive:
+        offsets = self.offset_head is not None and self._is_v2_batch(batch)
+        if offsets:
+            logits, features, dec1 = self._forward_all(x, apix=self._batch_apix(batch))
+        elif contrastive:
             logits, features = self._forward_features(x, apix=self._batch_apix(batch))
         else:
             logits = self(x, apix=self._batch_apix(batch))
@@ -276,6 +340,11 @@ class BasePickingModel(BaseModel):
             loss_c, n_anchors = self.contrastive_loss(features, y_pred, batch)
             loss = loss + self.contrastive_weight() * loss_c
             self.log("loss_contrastive", loss_c.detach(), on_step=False, on_epoch=True, sync_dist=True,
+                     batch_size=x.shape[0])
+        if offsets:
+            loss_o = self._offset_term(self.offset_head(dec1), y_raw, batch)
+            loss = loss + self.offset_weight() * loss_o
+            self.log("loss_offset", loss_o.detach(), on_step=False, on_epoch=True, sync_dist=True,
                      batch_size=x.shape[0])
 
         self.log(
@@ -295,13 +364,22 @@ class BasePickingModel(BaseModel):
 
     def validation_step(self, batch, batch_idx):
             x, y = self.resolve_batch(batch)
-            logits = self(x, apix=self._batch_apix(batch))
+            y_raw = y
+            offsets = self.offset_head is not None and self._is_v2_batch(batch)
+            if offsets:
+                logits, _, dec1 = self._forward_all(x, apix=self._batch_apix(batch))
+            else:
+                logits = self(x, apix=self._batch_apix(batch))
             y_pred, y = self._probabilities(logits, y, batch)
             if self._is_v2_batch(batch):
                 loss = self.multiclass_loss(y_pred, y, batch)
                 self._log_per_class_val_loss(y_pred, y, batch)
             else:
                 loss = self.loss(y_pred, y)
+            if offsets:
+                loss_o = self._offset_term(self.offset_head(dec1), y_raw, batch)
+                loss = loss + self.offset_weight() * loss_o
+                self.log("val_loss_offset", loss_o, on_step=False, on_epoch=True, sync_dist=True)
 
             self.log("val_loss", loss, on_step=False, on_epoch=True, prog_bar=True, sync_dist=True)
 

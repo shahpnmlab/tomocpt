@@ -418,18 +418,19 @@
    "agent": "04f_AGENT_AVERAGING_SUBVOXEL",
    "attempts": 1,
    "test_hashes": {
-    "tests/gate4f/README.md": "3c1633b82b9c93396c62ef78ce154257f71b8508da8ec32da245d44af0dcdfcb",
+    "tests/gate4f/README.md": "faa952f8d24ccde64af87880e88167c6fc92f0c562744befb766d7d475813a60",
     "tests/gate4f/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
     "tests/gate4f/conftest.py": "e4da0ddad5f90b1e519048d710981fbf82c1dbea7ce6f5a6a7890e02ecd2c37e",
-    "tests/gate4f/g4f_helpers.py": "dfd4377afc4ba75627cbb563614dfd1d4d9b7c4c62573b5f2f5cbb999d677bfb",
+    "tests/gate4f/g4f_helpers.py": "20b9db70804dac7f20f86ceb4ecbacc61ce2ded520fc1d60af1734b716f78290",
     "tests/gate4f/test_g4f_averaging.py": "f717a2e62317f0be9ab2235b90e8a1feeb829f93eb8a44f97eb884d08cd18011",
     "tests/gate4f/test_g4f_loss.py": "cdef0926ef7974af924851a84b4ea3989a494ff3e96450e9431c96f8a1f4967f",
-    "tests/gate4f/test_g4f_offsets.py": "7ee548111114b631d3190f4c9ca82fa18c4744de69b9de0003d6af1ee428e099",
-    "tests/gate4f/test_g4f_subvoxel.py": "599b21e1be862842a8c212fab85faf53ba44caa4d3da58394db5971a7c407d73"
+    "tests/gate4f/test_g4f_offsets.py": "247369fe7e07e55e1841bc1cb485f2b7d390a51be9595d58b9e604d2bd9aa55e",
+    "tests/gate4f/test_g4f_subvoxel.py": "eaef908e100e59a282b42dc6a902447894253998b4361587cb7e4015dd6559f3"
    },
    "path_exceptions": [],
    "notes": [
-    "Human decision (5 Nov 2026): build TODO 3b.3a and 3b.3b while the 3b fold-0 pilot runs from worktree ../tomocpt-3b-pilot (v2-gate-4e-passed). Finding: Lightning SWA only transfers the average when training reaches max_epochs and after the last validation, so legacy SWA never reaches a saved checkpoint."
+    "Human decision (5 Nov 2026): build TODO 3b.3a and 3b.3b while the 3b fold-0 pilot runs from worktree ../tomocpt-3b-pilot (v2-gate-4e-passed). Finding: Lightning SWA only transfers the average when training reaches max_epochs and after the last validation, so legacy SWA never reaches a saved checkpoint.",
+    "5 Nov 2026, TA amendments before the first passing run: (1) finding: picks were already sub-voxel (predict.helpers._refine_peaks_subpixel_gpu, log-quadratic fit), so the planned per-axis parabola was dropped; infer.subvoxel_refine = fit (default, legacy) | offset; C6 now checks the default fit recovers a sub-voxel centre; (2) C9 expects v + offset with v the rounded fitted pick, scaled by apix_work/apix_native, atol 6e-3 (STAR 2 decimals); (3) C8 loss test calls training_step with batch_idx 1 (batch 0 logs images through a trainer logger)."
    ]
   }
  }

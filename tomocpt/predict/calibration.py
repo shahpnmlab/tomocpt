@@ -108,7 +108,8 @@ def collect_validation_picks(model, val_tomograms: List[dict], infer_cfg: InferC
     ``profiles``: if a dict, it is filled with ``{class number: accumulator}`` of
     :func:`peak_profile_accumulate` around the true particles of every particle class, pooled
     over the tomograms (summed)."""
-    from tomocpt.predict.multiclass import peaks_from_class_maps, predict_class_maps
+    from tomocpt.predict.multiclass import (check_offset_head, peaks_from_class_maps, predict_class_maps,
+                                            subvoxel_mode)
 
     warnings.filterwarnings("ignore", message=".*Using TorchIO images without a torchio.SubjectsLoader.*",
                             category=UserWarning)
@@ -127,8 +128,12 @@ def collect_validation_picks(model, val_tomograms: List[dict], infer_cfg: InferC
             # The voxel size the chunking used (header or prepData.apix_override).
             tomo_cfg = copy.copy(infer_cfg)
             tomo_cfg.apix_override = float(entry["apix_native"])
-        maps, apix = predict_class_maps(model, tomo, tomo_cfg, device, classes=all_classes)
-        peaks, _ = peaks_from_class_maps(maps, table, apix, infer_cfg, lowest, tomo.stem, device)
+        offsets = {} if subvoxel_mode(infer_cfg) == "offset" else None
+        if offsets is not None:
+            check_offset_head(model)
+        maps, apix = predict_class_maps(model, tomo, tomo_cfg, device, classes=all_classes, offsets_out=offsets)
+        peaks, _ = peaks_from_class_maps(maps, table, apix, infer_cfg, lowest, tomo.stem, device, offsets=offsets)
+        del offsets
         available = entry.get("class_available") or [True] * len(table)
         for c, row in enumerate(table):
             # Radii in native voxels, as the coordinates (the same for every tomogram of
@@ -302,7 +307,7 @@ def _trilinear(vol: np.ndarray, pts_zyx: np.ndarray):
 #: calibration forces: no contrast inversion, no masks, every class).
 _FINGERPRINT_FIELDS = ("peak_spacing_fraction", "distance_threshold", "cross_class_nms", "use_tta", "length",
                        "accumulate_dtype", "PATCH_OVERLAP_FACTOR", "invert_contrast", "masks_dir", "classes",
-                       "apix_override")
+                       "apix_override", "subvoxel_refine")
 
 
 def picks_fingerprint(infer_cfg: InferConfig) -> str:

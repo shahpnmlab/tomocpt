@@ -88,6 +88,22 @@ def _value_weights(y_true: torch.Tensor, available: torch.Tensor, cross_class_ne
     return torch.where(y_true > 0, w_pos, neg)
 
 
+def _core_weighted(w: torch.Tensor, y_true: torch.Tensor, core_weight: float, core_power: float,
+                   core_channels: Optional[Sequence[bool]]) -> torch.Tensor:
+    """``w * (1 + core_weight * y^core_power)`` on ``core_channels`` (Gate 4f); ``w`` itself when off."""
+    if not core_weight:
+        return w
+    C = w.shape[1]
+    factor = 1.0 + float(core_weight) * y_true.clamp(min=0) ** float(core_power)
+    if core_channels is not None:
+        sel = [bool(v) for v in core_channels]
+        if len(sel) != C:
+            raise ValueError(f"core_channels has {len(sel)} entries for {C} channels")
+        factor = torch.where(torch.tensor(sel, device=w.device).view(1, C, 1, 1, 1), factor,
+                             torch.ones_like(factor))
+    return w * factor
+
+
 def multiclass_picking_loss(
     y_pred: torch.Tensor,
     y_true: torch.Tensor,
@@ -99,6 +115,9 @@ def multiclass_picking_loss(
     value_loss: str = "huber",
     focal_channels: Optional[Sequence[bool]] = None,
     focal_gamma: float = 2.0,
+    core_weight: float = 0.0,
+    core_power: float = 4.0,
+    core_channels: Optional[Sequence[bool]] = None,
 ) -> torch.Tensor:
     """Pipeline-v2 picking loss.
 
@@ -118,6 +137,10 @@ def multiclass_picking_loss(
             minimiser ``p = y``) on the channels where ``focal_channels`` is True (default all)
             and the Huber penalty on the others (filament channels). The Hessian term is the same.
 
+        core_weight, core_power, core_channels: centroid weight (Gate 4f): on the channels where
+            ``core_channels`` is True (default all; the model passes its particle channels) the value
+            weight ``w`` becomes ``w * (1 + core_weight * y^core_power)``. 0 = off (bit-identical).
+
     Returns the mean over available ``(b, c)`` pairs (0 if none is available). Every output
     channel is part of the graph, so DDP sees a gradient (possibly zero) for every parameter.
     """
@@ -126,12 +149,14 @@ def multiclass_picking_loss(
     available = class_available.to(device=y_pred.device, dtype=torch.bool).view(B, C)
 
     if value_loss == "huber":
-        w = _value_weights(y_true, available, cross_class_neg_weight)
+        w = _core_weighted(_value_weights(y_true, available, cross_class_neg_weight), y_true, core_weight,
+                           core_power, core_channels)
         value_term = (w * nn.functional.huber_loss(y_pred, y_true, reduction="none")).flatten(2).mean(2)
     elif value_loss == "focal":
         from tomocpt.training.discriminative import soft_focal_penalty
 
-        w = _value_weights(y_true, available, cross_class_neg_weight)
+        w = _core_weighted(_value_weights(y_true, available, cross_class_neg_weight), y_true, core_weight,
+                           core_power, core_channels)
         sel = [True] * C if focal_channels is None else [bool(v) for v in focal_channels]
         if len(sel) != C:
             raise ValueError(f"focal_channels has {len(sel)} entries for {C} channels")

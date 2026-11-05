@@ -43,5 +43,6 @@ class InferConfig:
     filament_spacing_ang: Annotated[float, typer.Option(help="Spacing in A of the output points along each traced filament (filament classes).")] = 40.0
     filament_min_length_ang: Annotated[float, typer.Option(help="Traced filaments shorter than this many A are dropped (filament classes).")] = 200.0
     filament_smoothing_ang: Annotated[float, typer.Option(help="Spline smoothing of traced filaments, as an RMS deviation in A (filament classes).")] = 10.0
+    subvoxel_refine: Annotated[str, typer.Option(help="Pipeline v2 particle picks: 'fit' (log-quadratic fit around each peak, the legacy refinement) or 'offset' (the rounded peak plus the model's offset head prediction).")] = "fit"
     PATCH_OVERLAP_FACTOR: int = 4
     N_CPUS_IF_NO_GPU: int = 8

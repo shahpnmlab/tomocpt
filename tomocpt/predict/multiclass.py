@@ -181,9 +181,11 @@ def _hann_window(patch_size: int) -> torch.Tensor:
 
 def _predict_level(model, padded: torch.Tensor, classes: List[int], apix_work: float, overlap: int,
                    infer_config: InferConfig, device: torch.device, pbar: Optional[tqdm],
-                   desc: str) -> torch.Tensor:
+                   desc: str, with_offsets: bool = False):
     """Hann-weighted grid prediction of ``classes`` on one padded working volume (with flip
-    TTA if enabled). Returns ``[len(classes), *padded.shape]`` float32 on the CPU."""
+    TTA if enabled). Returns ``[len(classes), *padded.shape]`` float32 on the CPU; with
+    ``with_offsets`` (Gate 4f) also the offset head's ``[3, *padded.shape]`` (working voxels,
+    flipped components negated back under TTA)."""
     patch = int(model.patch_size)
     dtype = getattr(torch, str(infer_config.accumulate_dtype))
     acc_device = _accumulator_device(infer_config.accumulate_device, device, len(classes), padded.shape, dtype)
@@ -192,13 +194,14 @@ def _predict_level(model, padded: torch.Tensor, classes: List[int], apix_work: f
     overlap = int(overlap) + int(overlap) % 2
     flips = [None] + ([0, 1, 2] if infer_config.use_tta else [])
 
-    maps = []
+    maps, offs = [], []
     for k, flip in enumerate(flips):
         vol = padded if flip is None else torch.flip(padded, dims=(flip,))
         sampler = tio.GridSampler(tio.Subject(volume=tio.ScalarImage(tensor=vol.unsqueeze(0))),
                                   patch_size=patch, patch_overlap=overlap)
         loader = DataLoader(sampler, batch_size=infer_config.predictions_batch_size, num_workers=0)
         acc = torch.zeros((len(classes),) + tuple(vol.shape), dtype=dtype, device=acc_device)
+        acc_off = torch.zeros((3,) + tuple(vol.shape), dtype=torch.float32, device=acc_device) if with_offsets else None
         weight = torch.zeros(tuple(vol.shape), dtype=torch.float32, device=acc_device)
         if pbar is not None:
             tta = f" [TTA {k + 1}/{len(flips)}]" if len(flips) > 1 else ""
@@ -208,30 +211,48 @@ def _predict_level(model, padded: torch.Tensor, classes: List[int], apix_work: f
             for batch in loader:
                 x = batch["volume"][tio.DATA].to(device)
                 with torch.amp.autocast(device_type=device.type, enabled=infer_config.use_cuda):
-                    probs = model.predict_step(x, 0, apix=float(apix_work), classes=classes)
+                    if with_offsets:
+                        probs, off = model.predict_step_with_offsets(x, apix=float(apix_work), classes=classes)
+                        off = off.float().to(acc_device)
+                    else:
+                        probs = model.predict_step(x, 0, apix=float(apix_work), classes=classes)
                 probs = probs[:, classes].float().to(acc_device)
-                for p, loc in zip(probs, batch[tio.LOCATION]):
+                for i, (p, loc) in enumerate(zip(probs, batch[tio.LOCATION])):
                     i0, j0, k0, i1, j1, k1 = (int(v) for v in loc)
                     acc[:, i0:i1, j0:j1, k0:k1] += (p * hann).to(dtype)
+                    if with_offsets:
+                        acc_off[:, i0:i1, j0:j1, k0:k1] += off[i] * hann
                     weight[i0:i1, j0:j1, k0:k1] += hann
                 if pbar is not None:
                     pbar.update(1)
         m = (acc.float() / weight).cpu()
-        del acc, weight
+        if with_offsets:
+            o = (acc_off / weight).cpu()
+            if flip is not None:
+                o = torch.flip(o, dims=(flip + 1,))
+                o[flip] = -o[flip]  # a vector component along the flipped axis changes sign
+            offs.append(o)
+        del acc, weight, acc_off
         if flip is not None:
             m = torch.flip(m, dims=(flip + 1,))
         maps.append(m)
-    return torch.stack(maps).mean(dim=0) if len(maps) > 1 else maps[0]
+    out = torch.stack(maps).mean(dim=0) if len(maps) > 1 else maps[0]
+    if with_offsets:
+        return out, (torch.stack(offs).mean(dim=0) if len(offs) > 1 else offs[0])
+    return out
 
 
 def predict_class_maps(model, tomo_fname, infer_config: InferConfig, device: torch.device,
                        classes: Optional[Sequence[int]] = None,
-                       pbar: Optional[tqdm] = None) -> Tuple[Dict[int, torch.Tensor], float]:
+                       pbar: Optional[tqdm] = None,
+                       offsets_out: Optional[dict] = None) -> Tuple[Dict[int, torch.Tensor], float]:
     """Per-class probability maps of one tomogram at its native shape.
 
     ``classes``: class-table rows to read (default: ``infer.classes``). The levels are
     planned on the full class table, so a class keeps its level when others are dropped.
     Returns ``({row: [D, H, W] float32 CPU tensor}, apix_native)``.
+    ``offsets_out`` (Gate 4f): if a dict, it is filled with ``{row: [3, D, H, W]}`` offsets of the
+    model's offset head in **native** voxels (classes of one level share the tensor).
     """
     tomo_fname = Path(tomo_fname)
     table = model.class_table()
@@ -266,10 +287,21 @@ def predict_class_maps(model, tomo_fname, infer_config: InferConfig, device: tor
         padded, padding = symmetrize_and_pad(x.float(), int(model.patch_size))
         padded = padded.cpu()  # TorchIO samples patches from a CPU tensor
         del x
+        with_offsets = offsets_out is not None
         level_maps = _predict_level(model, padded, level_classes, level.apix_work, level.overlap,
-                                    infer_config, device, pbar, tomo_fname.name)
+                                    infer_config, device, pbar, tomo_fname.name, with_offsets=with_offsets)
         del padded
         zyx_padding = H.fpad_to_zyx(padding)
+        if with_offsets:
+            level_maps, level_off = level_maps
+            off = torch.stack([H.unpad(level_off[i], zyx_padding).contiguous() for i in range(3)])
+            if tuple(off.shape[1:]) != native_shape:
+                off = torch.stack([resample_volume(off[i].to(device), native_shape, scale_cfg.resample).cpu()
+                                   for i in range(3)])
+            # working voxels -> native voxels
+            off = off.float() * (float(level.apix_work) / float(apix_native))
+            for c in level_classes:
+                offsets_out[c] = off
         for j, c in enumerate(level_classes):
             m = H.unpad(level_maps[j], zyx_padding).contiguous()
             if tuple(m.shape) != native_shape:
@@ -295,9 +327,30 @@ def predict_class_maps(model, tomo_fname, infer_config: InferConfig, device: tor
 # peaks
 # --------------------------------------------------------------------------------------
 
+def subvoxel_mode(infer_config) -> str:
+    mode = str(safe_getattr(infer_config, "subvoxel_refine", "fit") or "fit")
+    if mode not in ("fit", "offset"):
+        raise ValueError(f"infer.subvoxel_refine must be fit or offset, got {mode!r}")
+    return mode
+
+
+def _apply_offsets(peaks: np.ndarray, offsets: torch.Tensor) -> np.ndarray:
+    """``v + offset(v)`` with ``v`` the (fitted) peak rounded to a voxel and ``offset`` the head's map
+    ``[3, D, H, W]`` in native voxels: the head predicts the vector from any core voxel to the centre."""
+    peaks = np.asarray(peaks, dtype=np.float64).reshape(-1, 4).copy()
+    if not len(peaks):
+        return peaks
+    idx = np.round(peaks[:, :3]).astype(np.int64)
+    o = offsets.detach().float().cpu()
+    shift = o[:, idx[:, 0], idx[:, 1], idx[:, 2]].numpy().T  # [N, 3]
+    peaks[:, :3] = idx + shift
+    return peaks
+
+
 def peaks_from_class_maps(maps: Dict[int, torch.Tensor], class_table: Sequence, apix: float,
                           infer_config: InferConfig, thresholds: Dict[int, float], tomo_name: str,
                           device: torch.device = torch.device("cpu"),
+                          offsets: Optional[Dict[int, torch.Tensor]] = None,
                           ) -> Tuple[Dict[int, np.ndarray], Dict[Tuple[int, int], int]]:
     """Peaks per class (``[N, 4]`` rows ``z, y, x, score`` in native voxels), found with the
     class diameter and ``thresholds[row]``, then cross-class suppression if
@@ -320,6 +373,11 @@ def peaks_from_class_maps(maps: Dict[int, torch.Tensor], class_table: Sequence, 
             length=diameter, distance_threshold=spacing, threshold=float(thresholds[c]),
         )
         peaks[c] = np.asarray(res["coords"], dtype=np.float64).reshape(-1, 4) if res else np.zeros((0, 4))
+        if subvoxel_mode(infer_config) == "offset":
+            if offsets is None or c not in offsets:
+                raise ValueError("infer.subvoxel_refine=offset needs the offset head's prediction "
+                                 "(a model trained with train.particles.offset_weight > 0)")
+            peaks[c] = _apply_offsets(peaks[c], offsets[c])
     counts: Dict[Tuple[int, int], int] = {}
     if infer_config.cross_class_nms and len(peaks) > 1:
         radii = {c: float(class_table[c].diameter_ang) / (2.0 * apix) for c in peaks}
@@ -377,6 +435,14 @@ def save_class_maps(maps: Dict[int, torch.Tensor], class_table: Sequence, apix: 
 # drivers
 # --------------------------------------------------------------------------------------
 
+def check_offset_head(model) -> None:
+    """ValueError unless the model (every ensemble member) has an offset head."""
+    has = getattr(model, "has_offset_head", None)
+    if has is None or not has():
+        raise ValueError("infer.subvoxel_refine=offset: the model has no offset head "
+                         "(train with train.particles.offset_weight > 0)")
+
+
 def infer_tomos_v2(model, tomo_fnames: List[Path], gpu_id: Optional[int], worker_id: int,
                    model_fname, infer_config: InferConfig, device: torch.device) -> List[Dict[str, Any]]:
     """Dask worker body for a pipeline-v2 model (called by ``helpers.infer_tomos``).
@@ -393,12 +459,16 @@ def infer_tomos_v2(model, tomo_fnames: List[Path], gpu_id: Optional[int], worker
         for tomo_fname in tomo_fnames:
             tomo_fname = Path(tomo_fname)
             try:
-                maps, apix = predict_class_maps(model, tomo_fname, infer_config, device, classes, pbar)
+                offsets = {} if subvoxel_mode(infer_config) == "offset" else None
+                if offsets is not None:
+                    check_offset_head(model)
+                maps, apix = predict_class_maps(model, tomo_fname, infer_config, device, classes, pbar,
+                                                offsets_out=offsets)
                 if infer_config.save_prediction_confidence_map:
                     save_class_maps(maps, table, apix, thresholds, tomo_fname.stem, infer_config.predictions_dir)
                 if infer_config.save_predicted_coords:
                     peaks, counts = peaks_from_class_maps(maps, table, apix, infer_config, thresholds,
-                                                          tomo_fname.stem, device)
+                                                          tomo_fname.stem, device, offsets=offsets)
                     fils = trace_class_maps(maps, table, apix, infer_config, thresholds, tomo_fname.stem)
                     results.append(_result(tomo_fname.stem, apix, peaks, counts, fils))
                 del maps
@@ -430,6 +500,9 @@ def peaks_from_saved_maps(tomo_fnames: List[Path], settings: CheckpointSettings,
             maps[c] = torch.from_numpy(data).float()
         if not maps:
             continue
+        if subvoxel_mode(infer_config) == "offset":
+            raise ValueError("infer.subvoxel_refine=offset needs inference (offsets are not saved); "
+                             "use subvoxel_refine=fit with skip_inference")
         peaks, counts = peaks_from_class_maps(maps, table, float(apix), infer_config, thresholds, stem, device)
         fils = trace_class_maps(maps, table, float(apix), infer_config, thresholds, stem)
         results.append(_result(stem, float(apix), peaks, counts, fils))

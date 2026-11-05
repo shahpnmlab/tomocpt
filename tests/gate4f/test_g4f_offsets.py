@@ -105,7 +105,7 @@ def test_G4f_C8_loss_includes_offset_term(tmp_path, monkeypatch):
         logged = {}
         monkeypatch.setattr(m, "log", lambda name, value, *a, **k: logged.__setitem__(name, float(value)))
         m.train()
-        total = float(m.training_step(batch, 0))
+        total = float(m.training_step(batch, 1))  # batch 0 logs images (needs a trainer's logger)
     assert "loss_offset" in logged
     assert logged["loss_offset"] > 0
     assert total == pytest.approx(logged["loss"], rel=1e-6)
