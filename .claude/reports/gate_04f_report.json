@@ -1,0 +1,78 @@
+{
+ "gate_id": "4f",
+ "agent_name": "04f_AGENT_AVERAGING_SUBVOXEL (orchestrator as TA and implementer)",
+ "status": "PASSED",
+ "base_ref": "2226e8ef1b7a4d5c93706ef2707f46377dd854a6",
+ "files_created": [
+  "tomocpt/training/averaging.py",
+  "tomocpt/training/offsets.py",
+  "tests/gate4f/*",
+  ".claude/agents/04f_AGENT_AVERAGING_SUBVOXEL.md"
+ ],
+ "files_modified": [
+  "tomocpt/training/{helpers,multiclass_loss}.py",
+  "tomocpt/networks/{pickingModel,swinunetr}.py",
+  "tomocpt/defaultConfigs/{train_config,particles_config,infer_config}.py",
+  "tomocpt/predict/{multiclass,ensemble,calibration}.py",
+  "README.md"
+ ],
+ "exported_symbols": {
+  "tomocpt.training.averaging": [
+   "WeightAveraging",
+   "PlateauTrigger",
+   "ema_decay_at"
+  ],
+  "tomocpt.training.offsets": [
+   "offset_targets",
+   "offset_loss"
+  ],
+  "tomocpt.networks.pickingModel.BasePickingModel": [
+   "offset_head",
+   "has_offset_head",
+   "predict_step_with_offsets"
+  ],
+  "tomocpt.predict.ensemble.EnsembleModel": [
+   "has_offset_head",
+   "predict_step_with_offsets"
+  ],
+  "tomocpt.predict.multiclass": [
+   "subvoxel_mode",
+   "check_offset_head",
+   "predict_class_maps(offsets_out=)",
+   "peaks_from_class_maps(offsets=)"
+  ],
+  "swinunetr": [
+   "forward_features(with_decoder1=False)"
+  ]
+ },
+ "config_fields_added": [
+  "train.weight_averaging='swa'",
+  "train.ema_decay=0.999",
+  "train.swa_plateau_patience=5",
+  "train.swa_plateau_rel_delta=1e-3",
+  "train.particles.core_weight=0.0",
+  "train.particles.core_power=4.0",
+  "train.particles.offset_weight=0.0",
+  "infer.subvoxel_refine='fit'"
+ ],
+ "legacy_equivalence": {
+  "defaults": "callbacks, loss (core_weight 0 bit-identical, G4f-C5), state-dict keys and predictions unchanged; full fast suite green"
+ },
+ "metrics": {},
+ "pytest_fast": {
+  "tests -m 'not slow'": "841 passed, 27 skipped"
+ },
+ "pytest_slow": {
+  "note": "no slow tests; real-scale checks are the TODO 3b.4 runs"
+ },
+ "benchmarks": {},
+ "known_limitations": [
+  "Finding: legacy Lightning SWA never reaches a checkpoint under early stopping (average applied only at max_epochs, after the last validation).",
+  "Finding: picks were already sub-voxel (log-quadratic fit, _refine_peaks_subpixel_gpu); the parabola option was dropped; TODO 3b.3b text corrected.",
+  "Offset targets: neighbouring same-class particles within 1.3 R bias the centroid of touching particles.",
+  "val_loss_smooth is seeded by the sanity-check validation (untrained model), so it starts high for a few epochs (legacy).",
+  "Offsets are not saved with confidence maps: subvoxel_refine=offset needs inference (not skip_inference)."
+ ],
+ "notes_for_next_agent": "3b.4: measure core_weight, offset head (subvoxel_refine=offset vs fit) and ema/swa_plateau with the CV report (localisation, peak profiles) and OOF F4.",
+ "attempt": 1
+}

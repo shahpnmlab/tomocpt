@@ -414,7 +414,7 @@
    ]
   },
   "4f": {
-   "status": "IN_PROGRESS",
+   "status": "PASSED",
    "agent": "04f_AGENT_AVERAGING_SUBVOXEL",
    "attempts": 1,
    "test_hashes": {

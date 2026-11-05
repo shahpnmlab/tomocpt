@@ -428,6 +428,11 @@ or alignment mismatch.
 - Training schedule: `train.early_stop_min_delta` / `train.early_stop_patience` (legacy 0.005 / 10);
   `train.schedule_free` uses schedule-free RAdam (`pip install "tomocpt[schedulefree]"`): no LR
   scheduler and no SWA, validation and checkpoints use the optimiser's averaged weights.
+- Weight averaging that reaches the checkpoint: `train.weight_averaging: ema | swa_plateau` (default
+  `swa`, the legacy Lightning callback, which only applies its average when training runs to
+  `max_epochs`). Centroid weight `train.particles.core_weight` / `core_power`; offset head
+  `train.particles.offset_weight` (sub-voxel offset to the particle centre) used by
+  `infer.subvoxel_refine: offset` (default `fit`, the log-quadratic peak fit).
 - Exact sub-voxel particle coordinates in the pipeline-v2 coordinate CSVs (`prepare_data`;
   previously truncated to whole voxels). v1 label MRCs are unchanged. Rerun `prepare_data` and
   rechunk data prepared earlier to use them.

@@ -100,7 +100,8 @@ LR recipe; expectation: clears +0.02 over 0.741 by training longer.
       and saved); no LR scheduler; early stopping scale-free (relative, or slope of `val_loss_smooth`
       against its own noise) instead of absolute `min_delta`. Defaults keep RAdam + plateau +
       EarlyStopping (invariant 1); fine-tune differential LR groups kept.
-- [ ] 3b.3a Weight averaging without a fixed start epoch (human decision 4 Nov 2026). RAdam arm: EMA of
+- [x] 3b.3a (Gate 4f: `train.weight_averaging: ema | swa_plateau`; finding: legacy Lightning SWA never reaches a
+      checkpoint under early stopping) Weight averaging without a fixed start epoch (human decision 4 Nov 2026). RAdam arm: EMA of
       the weights from step 0 (warm-up decay, e.g. `min(0.999, (1+t)/(10+t))`; validate and save the EMA
       weights), or SWA started by the scale-free plateau trigger (own callback on
       `torch.optim.swa_utils.AveragedModel`) instead of Lightning's fixed `swa_epoch_start` (0.8 x
@@ -108,9 +109,10 @@ LR recipe; expectation: clears +0.02 over 0.741 by training longer.
       Lightning's `StochasticWeightAveraging` applies the averaged weights when early stopping fires before
       `max_epochs`, and which weights the best checkpoint holds. (Checked 4 Nov: SwinUNETR has only
       LayerNorm / InstanceNorm3d, so no `update_bn` is needed.) Legacy SWA callback stays the default (invariant 1).
-- [ ] 3b.3b Sharper peaks and sub-voxel localisation (human decisions 4 Nov 2026; after 3b.1, which may
+- [x] 3b.3b (Gate 4f: `particles.core_weight/core_power`, `particles.offset_weight` + `infer.subvoxel_refine: offset`;
+      correction 5 Nov: picks were already sub-voxel via the legacy log-quadratic fit, so (b) is that fit) Sharper peaks and sub-voxel localisation (human decisions 4 Nov 2026; after 3b.1, which may
       already help): the narrow core of the target is not learned (3a.3), and picks are integer voxel
-      indices (`peak_local_max_torch`).
+      indices (`peak_local_max_torch`) [wrong: they are refined by a log-quadratic fit].
       (a) Centroid-weighted Huber: multiply the Section 1.5 value weight by `1 + core_weight * y^p` (or by
       the narrow component's share of y), so the few core voxels count; new field e.g.
       `train.particles.core_weight` = 0.0 (off, invariant 1). Check the Hessian term's weight alongside.
