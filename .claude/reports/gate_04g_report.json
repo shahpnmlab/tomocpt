@@ -1,0 +1,39 @@
+{
+ "gate_id": "4g",
+ "agent_name": "04g_AGENT_LR_PLATEAU (orchestrator as TA and implementer)",
+ "status": "PASSED",
+ "base_ref": "a24f54a02e1fe5b621872b6441cdd0033171bf58",
+ "files_created": [
+  "tests/gate4g/*",
+  ".claude/agents/04g_AGENT_LR_PLATEAU.md"
+ ],
+ "files_modified": [
+  "tomocpt/defaultConfigs/train_config.py",
+  "tomocpt/networks/baseModel.py (configure_optimizers, _lr_plateau_checks, _lr_plateau_scheduler)",
+  "README.md",
+  "TODO_v2.md"
+ ],
+ "exported_symbols": {},
+ "config_fields_added": [
+  "train.lr_plateau_match_early_stop: bool = False",
+  "train.lr_plateau_patience: int = 5"
+ ],
+ "legacy_equivalence": {
+  "defaults": "legacy ReduceLROnPlateau (patience 9, factor 0.5, cooldown 1, rel 1e-4) (G4g-C1); full fast suite green"
+ },
+ "metrics": {
+  "replay_ema_pilot_curve": "matched (1e-4, patience 5): LR halves after epochs 38, 46, 54; early stopping at 58. Legacy: never."
+ },
+ "pytest_fast": {
+  "tests -m 'not slow'": "849 passed, 27 skipped"
+ },
+ "pytest_slow": {
+  "note": "no slow tests; real-scale check is the next CZII run"
+ },
+ "benchmarks": {},
+ "known_limitations": [
+  "Replay used a curve recorded at constant LR: it checks the trigger, not the effect of the drop.",
+  "Opt-in (invariant 1); the 3b.4 recipe should set it with early_stop_min_delta 1e-4."
+ ],
+ "notes_for_next_agent": "TODO 3b.1b (annotation offset) is open; human ruling: the fix must be general."
+}

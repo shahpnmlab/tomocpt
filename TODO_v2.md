@@ -87,8 +87,20 @@ LR recipe; expectation: clears +0.02 over 0.741 by training longer.
       coordinates: baseline 0.741, focal 0.727, contrastive 0.729 (apo-ferritin most affected).
 - [ ] 3b.1a IMOD coordinate convention (human to test separately, 4 Nov 2026): are IMOD voxel centres at
       integer or x.5 coordinates? Gate 4d uses IMOD and STAR coordinates as stored (no shift); STAR is the main input.
+- [ ] 3b.1b Annotation offset (finding 5 Nov 2026, open): on all 7 CZII tomograms and 6 classes, picks sit
+      (-0.4, -0.45, -1.4) native voxels (x, y, z) from the exact labels (Gate 7 OOF and 3b pilots alike); synthetic
+      blobs through the full predict path are recovered within 0.025 voxel, so the offset is in the labels. Random
+      flips reverse any label offset, so the model centres on the image and the targets are blurred by +-offset.
+      Human ruling: the fix must be general, not a CZII-specific shift. Undecided (dropping flips declined for now).
+      3b pilots fold 0 (exact coords): schedule-free 0.771, RAdam+EMA 0.745 vs Gate 7 both 0.792 (weighted F4,
+      2 tomograms; beta-galactosidase alone varies by +-0.05, so fold 0 cannot rank recipes).
 - [x] 3b.2 (Gate 4e: `train.early_stop_min_delta`, `train.early_stop_patience`) Configurable early stopping: `train.early_stop_min_delta` (legacy 0.005, absolute) and
       patience; run with 1e-4 so the plateau LR halving and SWA (epoch 48 of 60) can act.
+- [x] 3b.2a (Gate 4g: `train.lr_plateau_match_early_stop`, `train.lr_plateau_patience`; human decision 5 Nov 2026)
+      LR plateau matched to early stopping. Evidence: in the 3b fold-0 pilots (schedule-free; RAdam + EMA, 59 epochs)
+      the LR never left 4e-4: the relative 1e-4 threshold (about 1.5e-6) counts the slow 1e-5..3e-5 per-epoch gains
+      as progress, early stopping's absolute 1e-4 does not. Replayed on the EMA curve the matched scheduler
+      (1e-4, patience 5) halves at epochs 38, 46, 54 before stopping at 58.
 - [x] 3b.3 (Gate 4e: `train.schedule_free`, extra `tomocpt[schedulefree]`, schedulefree 1.4.1 approved 4 Nov) Schedule-free optimiser as the alternative arm (moved here from item 7, human decision 4 Nov
       2026). Evidence: in all finished CZII CV folds the LR never left 4e-4 and SWA never started; early
       stopping fired at epochs 24-29 with the best epoch at or near the last in most folds

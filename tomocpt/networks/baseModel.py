@@ -225,18 +225,51 @@ class BaseModel(pl.LightningModule):
         }
         if self._schedule_free():
             # Schedule-free: no LR schedule (Gate 4e)
+            self._lr_plateau_checks()  # raises if a matched LR plateau was requested (Gate 4g)
             return conf
 
         conf.update({
-            'lr_scheduler': torch.optim.lr_scheduler.ReduceLROnPlateau(
-                opt,
-                factor=train_config.FACTOR_REDUCE_LR_PLATEAU_N_EPOCHS,
-                cooldown=max(1, train_config.PATIENT_REDUCE_LR_PLATEAU_N_EPOCHS // 4),
-                patience=int(1.5 * train_config.PATIENT_REDUCE_LR_PLATEAU_N_EPOCHS)
-            ),
+            'lr_scheduler': self._lr_plateau_scheduler(opt, train_config),
             'monitor': 'val_loss_smooth'
         })
         return conf
+
+    def _lr_plateau_checks(self) -> bool:
+        """True when ``train.lr_plateau_match_early_stop`` is on (Gate 4g); raises ValueError for
+        combinations it does not support."""
+        from tomocpt.configManager.configManager import safe_getattr
+
+        train_config = self.hparams.config.train
+        if not bool(safe_getattr(train_config, "lr_plateau_match_early_stop", False)):
+            return False
+        if self._schedule_free():
+            raise ValueError("train.lr_plateau_match_early_stop needs an LR scheduler; train.schedule_free has none")
+        patience = int(safe_getattr(train_config, "lr_plateau_patience", 5))
+        es_patience = int(safe_getattr(train_config, "early_stop_patience", 10))
+        if patience >= es_patience:
+            raise ValueError(f"train.lr_plateau_patience ({patience}) must be smaller than "
+                             f"train.early_stop_patience ({es_patience}), or the LR never drops before stopping")
+        return True
+
+    def _lr_plateau_scheduler(self, opt, train_config):
+        """Legacy ReduceLROnPlateau, or (Gate 4g) one with early stopping's absolute threshold."""
+        from tomocpt.configManager.configManager import safe_getattr
+
+        factor = train_config.FACTOR_REDUCE_LR_PLATEAU_N_EPOCHS
+        cooldown = max(1, train_config.PATIENT_REDUCE_LR_PLATEAU_N_EPOCHS // 4)
+        if self._lr_plateau_checks():
+            return torch.optim.lr_scheduler.ReduceLROnPlateau(
+                opt, mode="min", factor=factor, cooldown=cooldown,
+                patience=int(safe_getattr(train_config, "lr_plateau_patience", 5)),
+                threshold=float(safe_getattr(train_config, "early_stop_min_delta", 0.005)),
+                threshold_mode="abs",
+            )
+        return torch.optim.lr_scheduler.ReduceLROnPlateau(
+            opt,
+            factor=factor,
+            cooldown=cooldown,
+            patience=int(1.5 * train_config.PATIENT_REDUCE_LR_PLATEAU_N_EPOCHS)
+        )
 
 
     # ------------------------------------------------------------------------------------

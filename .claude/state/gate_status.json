@@ -435,8 +435,8 @@
     },
     "4g": {
       "agent": "04g_AGENT_LR_PLATEAU",
-      "attempts": 0,
-      "status": "TESTS_FROZEN",
+      "attempts": 1,
+      "status": "PASSED",
       "path_exceptions": [],
       "notes": [
         "Human decision (5 Nov 2026): 'give the scheduler a fixed threshold, matched to early stopping, and a shorter patience (about 5), so the rate halves once or twice before training stops.' Opt-in (invariant 1)."

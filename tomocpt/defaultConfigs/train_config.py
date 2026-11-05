@@ -289,6 +289,15 @@ class TrainConfig:
     early_stop_patience: Annotated[
         int, typer.Option(help="Early stopping: epochs without improvement before training stops")
     ] = 10
+    lr_plateau_match_early_stop: Annotated[
+        bool, typer.Option(help="ReduceLROnPlateau uses early stopping's improvement test (absolute "
+                                "early_stop_min_delta on val_loss_smooth) with patience lr_plateau_patience, so the "
+                                "LR halves before training stops (legacy: relative 1e-4, patience 9)")
+    ] = False
+    lr_plateau_patience: Annotated[
+        int, typer.Option(help="lr_plateau_match_early_stop: epochs without improvement before the LR halves "
+                               "(must be < early_stop_patience)")
+    ] = 5
     schedule_free: Annotated[
         bool, typer.Option(help="Schedule-free RAdam (schedulefree.RAdamScheduleFree, pip install "
                                 "'tomocpt[schedulefree]'): no LR scheduler, no SWA; validation and "
