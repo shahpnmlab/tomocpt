@@ -462,6 +462,23 @@
         "tests/gate4h/conftest.py": "abe4ad6da4b49989f1b2b21b0b4ff490678e3e7354b5ab5428e1adb7e1c2ded0",
         "tests/gate4h/test_g4h_rel_threshold.py": "dc3efacaf45b047058386839852b9208379d7b9b8e8c8466fe1c52e3f01c493f"
       }
+    },
+    "6b": {
+      "agent": "06b_AGENT_FILAMENT_CALIBRATION",
+      "attempts": 1,
+      "status": "PASSED",
+      "path_exceptions": [
+        "tomocpt/metrics.py (Gate 1 file; centerline_scores moved in)"
+      ],
+      "notes": [
+        "Handoff step 2 (HANDOFF_filaments.md section 5), not a separate human decision. The F1 default is the orchestrator's choice, to be flagged to the human."
+      ],
+      "test_hashes": {
+        "tests/gate6b/README.md": "c28061026925fb08ce8c245e34e751078ef9628346aaf58cf8f3cd417f379579",
+        "tests/gate6b/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "tests/gate6b/conftest.py": "9d1f71318866c3f5998a1e09ba1a5e7fcce47f665b5f62fabe863b116061e9da",
+        "tests/gate6b/test_g6b_filament_calibration.py": "2b6a6e207351c4c01db6b56fd85b58e304acabdb599551cd9de8d92e8496dd23"
+      }
     }
   }
 }

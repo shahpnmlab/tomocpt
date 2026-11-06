@@ -31,6 +31,15 @@ CALIBRATION_VERSION = 1
 DEFAULT_GRID = tuple(round(0.05 * k, 2) for k in range(1, 20))
 #: Match radius as a fraction of the class radius (as ``tomocpt.metrics.score_classes``).
 MATCH_RADIUS_FRAC = 0.5
+#: Tracing thresholds of filament classes (Gate 6b): tracing is expensive, so a coarser grid.
+FILAMENT_GRID = tuple(round(0.1 * k, 1) for k in range(1, 10))
+#: Centreline tolerance as a fraction of the class diameter (as ``benchmarks/filaments.py``).
+FILAMENT_TOLERANCE_FRAC = 0.5
+#: A threshold above this fraction of the volume is not traced: skeletonising a near-full volume
+#: takes minutes and no such trace can be right.
+FILAMENT_MAX_REGION_FRAC = 0.25
+#: Columns of a score row: covered predicted, predicted, covered true, true length (A), true filaments.
+N_FILAMENT_COLUMNS = 5
 
 
 def calibrate_thresholds(
@@ -84,6 +93,124 @@ def calibrate_thresholds(
     return out
 
 
+def filament_threshold_scores(prob, true_polylines, diameter_ang: float, apix: float, infer_cfg,
+                              grid: Sequence[float]) -> np.ndarray:
+    """Scores of one filament channel of one tomogram at each threshold of ``grid``: ``[G, 5]``
+    (see ``N_FILAMENT_COLUMNS``; lengths in A, so tomograms of different voxel sizes pool).
+
+    ``prob``: ``[D, H, W]`` probability map in native voxels; ``true_polylines``: ``x, y, z``
+    native voxels. Each threshold is traced with the infer settings, so the score is that of what
+    ``predict`` would write."""
+    from tomocpt.labels import filaments as LF
+    from tomocpt.metrics import _covered_length
+
+    prob = np.asarray(prob, dtype=np.float32)
+    apix = float(apix)
+    tol = FILAMENT_TOLERANCE_FRAC * float(diameter_ang) / apix
+    true = [np.asarray(p, dtype=np.float64).reshape(-1, 3) for p in true_polylines if len(p)]
+    out = np.zeros((len(grid), N_FILAMENT_COLUMNS), dtype=np.float64)
+    step = 0.25
+    near_t_empty, len_t = _covered_length(true, [], tol, step)
+    for i, thr in enumerate(grid):
+        pred = []
+        if float(np.mean(prob > float(thr))) <= FILAMENT_MAX_REGION_FRAC:
+            fits = LF._trace_and_fit(prob, float(thr), apix, float(diameter_ang),
+                                     float(infer_cfg.filament_min_length_ang), float(infer_cfg.filament_spacing_ang),
+                                     float(infer_cfg.filament_smoothing_ang))
+            pred = [np.asarray(pts, dtype=np.float64) for pts, _, _ in fits]
+        near_p, len_p = _covered_length(pred, true, tol, step)
+        near_t = _covered_length(true, pred, tol, step)[0] if pred else near_t_empty
+        out[i] = (near_p * apix, len_p * apix, near_t * apix, len_t * apix, len(true))
+    return out
+
+
+def calibrate_filament_thresholds(scores: Dict[Any, List[Optional[np.ndarray]]], grid: Sequence[float],
+                                  beta: float = 1.0) -> Dict[Any, Dict[str, Any]]:
+    """Chooses the tracing threshold of each filament class that maximises the length-weighted
+    centreline F-beta, pooled over the tomograms.
+
+    ``scores[c]``: per tomogram the ``[G, 5]`` of :func:`filament_threshold_scores`, or ``None``
+    where unavailable (skipped); ``grid``: ascending. Ties pick the higher threshold. A class
+    without true length, or whose best F-beta is 0, gets ``"threshold": None``. Returns ``{c:
+    {"threshold", "fbeta", "n_true", "kind", "precision", "recall", "f1", "true_length_ang",
+    "curve"}}``; ``curve`` = ``[[threshold, precision, recall, fbeta], ...]``, ``n_true`` counts
+    true filaments."""
+    from tomocpt.predict.filaments import FILAMENT
+
+    grid = [float(t) for t in grid]
+    out = {}
+    for c, per_tomo in scores.items():
+        rows = [np.asarray(s, dtype=np.float64) for s in per_tomo if s is not None]
+        best = {"threshold": None, "fbeta": 0.0, "precision": 0.0, "recall": 0.0, "f1": 0.0}
+        curve, n_true, true_len = [], 0, 0.0
+        if rows:
+            total = np.sum(rows, axis=0)
+            n_true, true_len = int(total[0, 4]), float(total[0, 3])
+            for i, thr in enumerate(grid):
+                s = _length_scores(total[i], beta)
+                curve.append([thr, s["precision"], s["recall"], s["fbeta"]])
+                # The grid is ascending, so ">=" keeps the higher threshold on ties.
+                if s["fbeta"] > 0.0 and s["fbeta"] >= best["fbeta"] - 1e-12:
+                    best = {"threshold": thr, **s}
+        out[c] = {**best, "n_true": n_true, "kind": FILAMENT, "true_length_ang": true_len, "curve": curve}
+    return out
+
+
+def _length_scores(row: np.ndarray, beta: float) -> Dict[str, float]:
+    """Precision, recall, F1 and F-beta of one (pooled) score row."""
+    near_p, len_p, near_t, len_t = (float(v) for v in row[:4])
+    p = near_p / len_p if len_p > 0 else 0.0
+    r = near_t / len_t if len_t > 0 else 0.0
+    b2 = float(beta) ** 2
+    return {"precision": p, "recall": r, "f1": 2 * p * r / (p + r) if p + r > 0 else 0.0,
+            "fbeta": (1 + b2) * p * r / (b2 * p + r) if p + r > 0 else 0.0}
+
+
+def filament_settings(infer_cfg) -> str:
+    """JSON of the tracing settings the filament scores depend on. Not in :func:`picks_fingerprint`,
+    so that particle picks saved earlier stay reusable."""
+    return json.dumps({k: float(getattr(infer_cfg, k)) for k in
+                       ("filament_min_length_ang", "filament_spacing_ang", "filament_smoothing_ang")}, sort_keys=True)
+
+
+def pack_filament_scores(scores: Dict[Any, List[Optional[np.ndarray]]], settings: str) -> dict:
+    """Arrays of saved picks for ``scores`` (``{}`` without filament classes): ``filament_numbers``,
+    ``filament_grid``, ``filament_scores`` ``[F, T, G, 5]`` (NaN where unavailable),
+    ``filament_settings``."""
+    if not scores:
+        return {}
+    numbers = list(scores)
+    n_tomos = max(len(v) for v in scores.values())
+    arr = np.full((len(numbers), n_tomos, len(FILAMENT_GRID), N_FILAMENT_COLUMNS), np.nan, dtype=np.float64)
+    for f, n in enumerate(numbers):
+        for t, s in enumerate(scores[n]):
+            if s is not None:
+                arr[f, t] = s
+    return {"filament_numbers": np.array(numbers, dtype=np.int64), "filament_grid": np.array(FILAMENT_GRID, dtype=np.float64),
+            "filament_scores": arr, "filament_settings": np.array(str(settings))}
+
+
+def unpack_filament_scores(z) -> dict:
+    """``filament_scores`` (``{number: [array or None, ...]}``), ``filament_grid``,
+    ``filament_settings`` of saved picks; empty for files without them."""
+    if "filament_scores" not in z:
+        return {"filament_scores": {}, "filament_grid": [], "filament_settings": ""}
+    arr = np.asarray(z["filament_scores"], dtype=np.float64)
+    scores = {int(n): [None if np.isnan(arr[f, t]).any() else arr[f, t] for t in range(arr.shape[1])]
+              for f, n in enumerate(z["filament_numbers"])}
+    return {"filament_scores": scores, "filament_grid": [float(g) for g in z["filament_grid"]],
+            "filament_settings": str(z["filament_settings"])}
+
+
+def _true_polylines(path, class_number: int) -> List[np.ndarray]:
+    """True centrelines of one class from a filament CSV: ``x, y, z`` native voxels, in file order."""
+    from tomocpt.labels.filaments import read_filament_csv
+
+    df = read_filament_csv(path)
+    df = df[df["class_number"] == class_number]
+    return [g[["x", "y", "z"]].to_numpy(dtype=np.float64) for _, g in df.groupby("filament_id", sort=False)]
+
+
 def read_calibration(ckpt_path) -> Optional[dict]:
     """The ``"tomocpt_calibration"`` record of a checkpoint (or of an ensemble file), or None."""
     from tomocpt.predict.ensemble import is_ensemble_file, read_ensemble
@@ -100,14 +227,19 @@ def _true_coords(coords_path, class_number: int) -> np.ndarray:
 
 
 def collect_validation_picks(model, val_tomograms: List[dict], infer_cfg: InferConfig, device: torch.device,
-                             profiles: Optional[dict] = None):
+                             profiles: Optional[dict] = None, filament_scores: Optional[dict] = None):
     """Picks of a pipeline-v2 model on its validation tomograms at the lowest grid threshold
     (after cross-class suppression if ``infer_cfg.cross_class_nms``), with the true particles.
     Returns ``(picks, truths, radii, grid)`` in the format of :func:`calibrate_thresholds`.
 
     ``profiles``: if a dict, it is filled with ``{class number: accumulator}`` of
     :func:`peak_profile_accumulate` around the true particles of every particle class, pooled
-    over the tomograms (summed)."""
+    over the tomograms (summed).
+
+    Filament rows have no points: empty ``picks``, ``truths`` None. ``filament_scores``: if a dict,
+    it is filled with ``{class number: [per tomogram scores of filament_threshold_scores or None]}``
+    (traced from the same maps, at every threshold of ``FILAMENT_GRID``)."""
+    from tomocpt.predict.filaments import is_filament
     from tomocpt.predict.multiclass import (check_offset_head, peaks_from_class_maps, predict_class_maps,
                                             subvoxel_mode)
 
@@ -141,6 +273,16 @@ def collect_validation_picks(model, val_tomograms: List[dict], infer_cfg: InferC
             radii[row.number] = float(row.diameter_ang) / (2.0 * apix)
             p = peaks.get(c, np.zeros((0, 4)))
             picks[row.number].append((p[:, [2, 1, 0]], p[:, 3]))
+            if is_filament(row):
+                truths[row.number].append(None)
+                if filament_scores is not None:
+                    path = entry.get("filaments_path")
+                    filament_scores.setdefault(row.number, []).append(
+                        filament_threshold_scores(maps[c].detach().float().cpu().numpy(),
+                                                  _true_polylines(path, row.number), row.diameter_ang, apix,
+                                                  infer_cfg, FILAMENT_GRID)
+                        if path and available[c] and c in maps else None)
+                continue
             truths[row.number].append(_true_coords(entry["coords_path"], row.number) if available[c] else None)
             if profiles is not None and available[c] and getattr(row, "kind", PARTICLE) == PARTICLE and c in maps:
                 acc = peak_profile_accumulate(maps[c], truths[row.number][-1], radii[row.number])
@@ -161,6 +303,7 @@ def calibrate_checkpoint(ckpt_path, val_tomograms: List[dict], infer_cfg: InferC
     then rename); the other checkpoint keys are kept. Returns the record.
     """
     from tomocpt.networks.inference import InferenceModel
+    from tomocpt.predict.filaments import filament_rows
 
     if infer_cfg.use_cuda and torch.cuda.is_available():
         device = torch.device("cuda")
@@ -174,10 +317,15 @@ def calibrate_checkpoint(ckpt_path, val_tomograms: List[dict], infer_cfg: InferC
         raise ValueError(f"{ckpt_path} is not a pipeline-v2 checkpoint; nothing to calibrate.")
     table = model.class_table()
     profiles: dict = {}
-    picks, truths, radii, grid = collect_validation_picks(model, val_tomograms, infer_cfg, device, profiles=profiles)
+    fil_scores: dict = {}
+    # Particle-only tables keep the call of Gate 4c (its signature is a frozen interface).
+    fil_kw = {"filament_scores": fil_scores} if filament_rows(table) else {}
+    picks, truths, radii, grid = collect_validation_picks(model, val_tomograms, infer_cfg, device, profiles=profiles,
+                                                          **fil_kw)
 
     classes = calibrate_thresholds(picks, truths, radii, beta=infer_cfg.calibration_beta,
                                    min_particles=infer_cfg.calibration_min_particles, grid=grid)
+    classes.update(calibrate_filament_thresholds(fil_scores, FILAMENT_GRID, beta=infer_cfg.filament_calibration_beta))
     record = {
         "version": CALIBRATION_VERSION,
         "beta": float(infer_cfg.calibration_beta),
@@ -188,13 +336,14 @@ def calibrate_checkpoint(ckpt_path, val_tomograms: List[dict], infer_cfg: InferC
     for row in table:
         e = classes[row.number]
         thr = "None (falls back)" if e["threshold"] is None else f"{e['threshold']:.2f}"
-        logger.info(f"Calibration, class {row.name}: threshold {thr}, F-beta {e['fbeta']:.3f}, "
-                    f"{e['n_true']} true particle(s)")
+        what = "true filament(s)" if "kind" in e else "true particle(s)"
+        logger.info(f"Calibration, class {row.name}: threshold {thr}, F-beta {e['fbeta']:.3f}, {e['n_true']} {what}")
 
     del model
     try:
         write_val_picks(val_picks_path(ckpt_path), [str(e["tomogram_path"]) for e in val_tomograms], table,
-                        picks, truths, radii, grid, profiles, picks_fingerprint(infer_cfg))
+                        picks, truths, radii, grid, profiles, picks_fingerprint(infer_cfg),
+                        filaments=pack_filament_scores(fil_scores, filament_settings(infer_cfg)))
     except Exception as e:  # the calibration itself does not depend on the saved picks
         logger.error(f"Could not save the validation picks of {ckpt_path}: {e}")
     ckpt = torch.load(str(ckpt_path), map_location="cpu", weights_only=False)
@@ -405,20 +554,25 @@ def _savez_atomic(path: Path, **arrays) -> None:
     os.replace(tmp, path)
 
 
-def write_val_picks(path, tomograms: Sequence[str], table, picks, truths, radii, grid, profiles, fingerprint: str) -> Path:
-    """Saves the validation picks of one checkpoint (spec 04c D3)."""
+def write_val_picks(path, tomograms: Sequence[str], table, picks, truths, radii, grid, profiles, fingerprint: str,
+                    filaments: Optional[dict] = None) -> Path:
+    """Saves the validation picks of one checkpoint (spec 04c D3). ``filaments``: the arrays of
+    :func:`pack_filament_scores`."""
     arrays = pack_picks(table, picks, truths, radii, profiles)
     _savez_atomic(Path(path), tomograms=np.array([str(t) for t in tomograms], dtype=str),
-                  grid=np.asarray(list(grid), dtype=np.float64), fingerprint=np.array(str(fingerprint)), **arrays)
+                  grid=np.asarray(list(grid), dtype=np.float64), fingerprint=np.array(str(fingerprint)), **arrays,
+                  **(filaments or {}))
     return Path(path)
 
 
 def read_val_picks(path) -> dict:
     """The saved validation picks: ``picks``, ``truths``, ``radii``, ``grid`` (formats of
-    :func:`calibrate_thresholds`), ``tomograms``, ``available``, ``fingerprint``, ``profiles``."""
+    :func:`calibrate_thresholds`), ``tomograms``, ``available``, ``fingerprint``, ``profiles``, and those of
+    :func:`unpack_filament_scores`."""
     with np.load(str(path), allow_pickle=False) as z:
         out = unpack_picks(z)
         out["grid"] = [float(g) for g in z["grid"]]
         out["tomograms"] = [str(t) for t in z["tomograms"]]
         out["fingerprint"] = str(z["fingerprint"])
+        out.update(unpack_filament_scores(z))
     return out

@@ -354,6 +354,13 @@ carry `rlnHelicalTubeID`, `rlnHelicalTrackLengthAngst` and the helical priors of
 because spin and polarity are unknown). IMOD outputs use one open contour per filament. Filament
 channels do not take part in cross-class suppression of particle picks.
 
+After training, the tracing threshold of each filament class is calibrated on the validation
+tomograms: every threshold from 0.1 to 0.9 is traced and scored against the true centrelines (length
+within 0.5 x diameter), and the best F-beta is kept in the checkpoint (`infer.filament_calibration_beta`,
+default 1). `infer.class_thresholds` overrides it. k-fold reports (`cv_summary.md`) have a table of
+filament classes. Chunks built by an earlier version lack the filament files this needs: rebuild them,
+or those classes use `infer.confidence_threshold`.
+
 For multi-class models with particles and filaments, use `train.particles.class_head: softmax`.
 `benchmarks/filaments.py` trains on portal data (DS-10490, DS-10477; test DS-10513) and reports
 centreline precision, recall and F1 (length-weighted, tolerance 0.5 x diameter).

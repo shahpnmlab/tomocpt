@@ -4,7 +4,7 @@ Coordinates are arrays of shape ``[N, 3]`` in any consistent unit (voxels or Å)
 the match radius must be in the same unit. β = 4 is the CZII challenge metric.
 """
 
-from typing import Dict, Optional, Tuple
+from typing import Dict, Optional, Sequence, Tuple
 
 import numpy as np
 from scipy.spatial import cKDTree
@@ -147,3 +147,84 @@ def score_classes(
             k: float(np.dot(w, [per_class[n][k] for n in names]) / w.sum()) for k in keys
         }
     return {"per_class": per_class, "macro": macro}
+
+
+# ------------------------------------------------------------------------------------------
+# Filament centrelines (Gate 6; moved here at Gate 6b so the calibration can use it)
+# ------------------------------------------------------------------------------------------
+
+def _densify(p: np.ndarray, step: float) -> np.ndarray:
+    p = np.asarray(p, dtype=np.float64).reshape(-1, 3)
+    if len(p) < 2:
+        return p
+    out = [p[:1]]
+    for a, b in zip(p[:-1], p[1:]):
+        n = max(1, int(np.ceil(np.linalg.norm(b - a) / step)))
+        t = (np.arange(1, n + 1) / n)[:, None]
+        out.append(a + t * (b - a))
+    return np.concatenate(out)
+
+
+def _point_to_polylines(points: np.ndarray, polylines: Sequence[np.ndarray]) -> np.ndarray:
+    """Exact distance from each point to the nearest segment of any polyline."""
+    best = np.full(len(points), np.inf)
+    for p in polylines:
+        p = np.asarray(p, dtype=np.float64).reshape(-1, 3)
+        if len(p) == 1:
+            best = np.minimum(best, np.linalg.norm(points - p[0], axis=1))
+            continue
+        for a, b in zip(p[:-1], p[1:]):
+            ab = b - a
+            L2 = float(ab @ ab)
+            if L2 == 0:
+                d = np.linalg.norm(points - a, axis=1)
+            else:
+                t = np.clip((points - a) @ ab / L2, 0.0, 1.0)
+                d = np.linalg.norm(points - (a + t[:, None] * ab), axis=1)
+            best = np.minimum(best, d)
+    return best
+
+
+def _within_tolerance(points: np.ndarray, polylines: Sequence[np.ndarray], tol: float, step: float) -> np.ndarray:
+    """``distance(points, polylines) <= tol``. A KD-tree on nodes at most ``step`` apart decides
+    all but the points whose node distance lies in ``(tol, sqrt(tol^2 + (step/2)^2)]``; only those
+    need the exact distance."""
+    nodes = np.concatenate([_densify(p, step) for p in polylines])
+    d, _ = cKDTree(nodes).query(points)
+    inside = d <= tol
+    band = ~inside & (d <= np.sqrt(tol * tol + 0.25 * step * step) + 1e-9)
+    if band.any():
+        inside[band] = _point_to_polylines(points[band], polylines) <= tol
+    return inside
+
+
+def _covered_length(src: Sequence[np.ndarray], ref: Sequence[np.ndarray], tol: float, step: float):
+    """``(length of src within tol of ref, total length of src)``; sub-segments of ``step``."""
+    total, near = 0.0, 0.0
+    for p in src:
+        d = _densify(p, step)
+        if len(d) < 2:
+            continue
+        mid = 0.5 * (d[:-1] + d[1:])
+        seg = np.linalg.norm(np.diff(d, axis=0), axis=1)
+        total += float(seg.sum())
+        if ref:
+            near += float(seg[_within_tolerance(mid, ref, tol, step)].sum())
+    return near, total
+
+
+def centerline_scores(pred_polylines: Sequence[np.ndarray], true_polylines: Sequence[np.ndarray],
+                      tolerance_vox: float, step: float = 0.25) -> Dict[str, float]:
+    """Length-weighted ``{"precision", "recall", "f1", "pred_length", "true_length"}``: precision
+    is the fraction of predicted length within ``tolerance_vox`` of a true centreline, recall the
+    fraction of true length within ``tolerance_vox`` of a predicted one. Polylines are ``[K, 3]``
+    ``x, y, z`` voxels."""
+    pred = [np.asarray(p, dtype=np.float64).reshape(-1, 3) for p in pred_polylines if len(p)]
+    true = [np.asarray(p, dtype=np.float64).reshape(-1, 3) for p in true_polylines if len(p)]
+    tp_p, len_p = _covered_length(pred, true, float(tolerance_vox), step)
+    tp_t, len_t = _covered_length(true, pred, float(tolerance_vox), step)
+    precision = tp_p / len_p if len_p > 0 else 0.0
+    recall = tp_t / len_t if len_t > 0 else 0.0
+    f1 = 2 * precision * recall / (precision + recall) if precision + recall > 0 else 0.0
+    return {"precision": float(precision), "recall": float(recall), "f1": float(f1),
+            "pred_length": float(len_p), "true_length": float(len_t)}

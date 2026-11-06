@@ -1,77 +1,19 @@
-"""Gate 6 benchmark helpers: filament centreline scores.
-
-``centerline_scores(pred_polylines, true_polylines, tolerance_vox)`` is length-weighted:
-precision is the fraction of predicted length within ``tolerance_vox`` of a true centreline,
-recall the fraction of true length within ``tolerance_vox`` of a predicted one. Polylines are
-``[K, 3]`` ``x, y, z`` voxels.
-"""
+"""Gate 6 benchmark driver for filaments. The centreline metric (``centerline_scores``) lives in
+``tomocpt.metrics`` (Gate 6b) and is re-exported here."""
 
 from __future__ import annotations
 
-from typing import Dict, List, Sequence
+import sys
+from pathlib import Path
+
+# Run as a script from a worktree: this checkout's package, not the installed one.
+_REPO = str(Path(__file__).resolve().parents[1])
+if _REPO not in sys.path:
+    sys.path.insert(0, _REPO)
 
 import numpy as np
 
-
-def _densify(p: np.ndarray, step: float) -> np.ndarray:
-    p = np.asarray(p, dtype=np.float64).reshape(-1, 3)
-    if len(p) < 2:
-        return p
-    out = [p[:1]]
-    for a, b in zip(p[:-1], p[1:]):
-        n = max(1, int(np.ceil(np.linalg.norm(b - a) / step)))
-        t = (np.arange(1, n + 1) / n)[:, None]
-        out.append(a + t * (b - a))
-    return np.concatenate(out)
-
-
-def _point_to_polylines(points: np.ndarray, polylines: Sequence[np.ndarray]) -> np.ndarray:
-    """Exact distance from each point to the nearest segment of any polyline."""
-    best = np.full(len(points), np.inf)
-    for p in polylines:
-        p = np.asarray(p, dtype=np.float64).reshape(-1, 3)
-        if len(p) == 1:
-            best = np.minimum(best, np.linalg.norm(points - p[0], axis=1))
-            continue
-        for a, b in zip(p[:-1], p[1:]):
-            ab = b - a
-            L2 = float(ab @ ab)
-            if L2 == 0:
-                d = np.linalg.norm(points - a, axis=1)
-            else:
-                t = np.clip((points - a) @ ab / L2, 0.0, 1.0)
-                d = np.linalg.norm(points - (a + t[:, None] * ab), axis=1)
-            best = np.minimum(best, d)
-    return best
-
-
-def _covered_length(src: Sequence[np.ndarray], ref: Sequence[np.ndarray], tol: float, step: float):
-    """``(length of src within tol of ref, total length of src)``; sub-segments of ``step``."""
-    total, near = 0.0, 0.0
-    for p in src:
-        d = _densify(p, step)
-        if len(d) < 2:
-            continue
-        mid = 0.5 * (d[:-1] + d[1:])
-        seg = np.linalg.norm(np.diff(d, axis=0), axis=1)
-        total += float(seg.sum())
-        if ref:
-            near += float(seg[_point_to_polylines(mid, ref) <= tol].sum())
-    return near, total
-
-
-def centerline_scores(pred_polylines: Sequence[np.ndarray], true_polylines: Sequence[np.ndarray],
-                      tolerance_vox: float, step: float = 0.25) -> Dict[str, float]:
-    """``{"precision", "recall", "f1"}`` (length-weighted, see the module docstring)."""
-    pred = [np.asarray(p, dtype=np.float64).reshape(-1, 3) for p in pred_polylines if len(p)]
-    true = [np.asarray(p, dtype=np.float64).reshape(-1, 3) for p in true_polylines if len(p)]
-    tp_p, len_p = _covered_length(pred, true, float(tolerance_vox), step)
-    tp_t, len_t = _covered_length(true, pred, float(tolerance_vox), step)
-    precision = tp_p / len_p if len_p > 0 else 0.0
-    recall = tp_t / len_t if len_t > 0 else 0.0
-    f1 = 2 * precision * recall / (precision + recall) if precision + recall > 0 else 0.0
-    return {"precision": float(precision), "recall": float(recall), "f1": float(f1),
-            "pred_length": float(len_p), "true_length": float(len_t)}
+from tomocpt.metrics import _covered_length, _densify, _point_to_polylines, centerline_scores  # noqa: E402,F401
 
 
 # ------------------------------------------------------------------------------------------

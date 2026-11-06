@@ -1,0 +1,39 @@
+{
+ "gate_id": "6b",
+ "agent_name": "06b_AGENT_FILAMENT_CALIBRATION (orchestrator as TA and implementer)",
+ "status": "PASSED",
+ "base_ref": "7a941ac",
+ "files_created": [
+  "tests/gate6b/*",
+  ".claude/agents/06b_AGENT_FILAMENT_CALIBRATION.md"
+ ],
+ "files_modified": [
+  "tomocpt/metrics.py",
+  "tomocpt/predict/calibration.py",
+  "tomocpt/predict/ensemble.py",
+  "tomocpt/predict/cv_report.py",
+  "tomocpt/dataManager/chunking.py",
+  "tomocpt/defaultConfigs/infer_config.py",
+  "benchmarks/filaments.py",
+  "README.md",
+  "CLAUDE.md",
+  "TODO_v2.md",
+  "HANDOFF_filaments.md"
+ ],
+ "exported_symbols": {
+  "tomocpt.metrics.centerline_scores": "moved from benchmarks.filaments (re-exported)",
+  "tomocpt.predict.calibration.filament_threshold_scores": "[G, 5] per threshold",
+  "tomocpt.predict.calibration.calibrate_filament_thresholds": "length-pooled F-beta choice"
+ },
+ "config_fields_added": [
+  "infer.filament_calibration_beta: float = 1.0"
+ ],
+ "notes": [
+  "Frozen Gate 4c wrapper fixes collect_validation_picks(model, val, cfg, device, profiles=None): filament_scores is passed only for tables with filament rows.",
+  "No real-data run yet: the driver's smoke run is the next step."
+ ],
+ "tests": {
+  "fast_suite": "874 passed, 27 skipped, 18 deselected (not slow)",
+  "gate6b": "12 passed"
+ }
+}

@@ -364,6 +364,7 @@ time (gradient checkpointing). Pipeline v1 uses Section 1.5 unchanged.
 | `prepData.filament_coords` | Optional[str] = `None` (`"<class number>:<STAR/IMOD dir>"`, spline-fitted) | 6 |
 | `prepData.filament_smoothing_ang`, `prepData.filament_label_spacing_ang`, `prepData.write_filament_masks` | float = `10.0`, Optional[float] = `None`, bool = `False` | 6 |
 | `infer.filament_spacing_ang`, `infer.filament_min_length_ang`, `infer.filament_smoothing_ang` | float = `40.0`, `200.0`, `10.0` (Å) | 6 |
+| `infer.filament_calibration_beta` | float = `1.0` (tracing threshold calibration) | 6b |
 | `train.discriminative` | `DiscriminativeConfig` (`defaultConfigs/discriminative_config.py`; contrastive and focal off) | 7 |
 | `prepData.negative_masks` | Optional[str] = `None` (`"<name>:<mask dir>"`) | 7 |
 
@@ -386,6 +387,7 @@ Field details are in each gate spec. A gate may add fields only to the files it 
 | 5 | `05_AGENT_SSL.md` | Wedge-aware, scale-aware SSL v2 with dense embeddings | `tomocpt/networks/selfSupervisedModel.py`, `tomocpt/networks/ssl/**`, `tomocpt/dataManager/ssl_views.py`, `tomocpt/defaultConfigs/ssl_config.py`, `tomocpt/training/helpers.py` (self-supervised branches only), `benchmarks/ssl_*.py` |
 | 5b | `05b_AGENT_SSL_FIX.md` | Fix SSL v2 embedding collapse and the shared-noise shortcut (human decision, 31 Oct 2026) | `tomocpt/networks/selfSupervisedModel.py`, `tomocpt/networks/ssl/**`, `tomocpt/dataManager/ssl_views.py`, `tomocpt/defaultConfigs/ssl_config.py`, `benchmarks/ssl_*.py`, `experiments/run_benchmarks.sh` |
 | 6 | `06_AGENT_FILAMENTS.md` | Microtubules: mask → centrelines, tube targets, tracing, output | `tomocpt/labels/**`, `tomocpt/dataManager/**`, `tomocpt/predict/**`, `tomocpt/defaultConfigs/{prepdata_config,infer_config}.py`, `scripts/download_portal_data.py`, `benchmarks/filaments.py`, `README.md` |
+| 6b | `06b_AGENT_FILAMENT_CALIBRATION.md` | Tracing threshold calibration on validation centrelines (handoff step 2, 6 Nov 2026) | `tomocpt/metrics.py` (`centerline_scores`), `tomocpt/predict/{calibration,ensemble,cv_report}.py`, `tomocpt/dataManager/chunking.py` (`_v2_val_tomograms`), `tomocpt/defaultConfigs/infer_config.py`, `benchmarks/filaments.py`, `README.md` |
 | 7 | `07_AGENT_DISCRIMINATIVE.md` | Supervised dense contrastive loss with hard negatives, focal value term; particles and filaments (human decision, 30 Oct 2026; after Gate 6) | `tomocpt/training/discriminative.py`, `tomocpt/networks/pickingModel.py`, `tomocpt/networks/swinunetr.py` (`forward_features`), `tomocpt/training/multiclass_loss.py` (value term), `tomocpt/training/helpers.py` (`_create_model` SSL head transfer), `tomocpt/defaultConfigs/{discriminative_config,train_config,prepdata_config}.py` (own fields), `tomocpt/dataManager/**` and `tomocpt/labels/**` (negative masks), `benchmarks/discriminative.py`, `experiments/run_benchmarks.sh`, `README.md` |
 
 Every gate also writes `.claude/reports/gate_0N_report.json`.

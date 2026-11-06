@@ -889,7 +889,8 @@ def _do_chunking_v2(tomosDf: pd.DataFrame, chunkedDataDir: str, n_cpus: int, req
 
 def _v2_val_tomograms(df_val, chunk_dir_names, chunkedDataDir) -> List[dict]:
     """``val_tomograms`` entries of a v2 manifest (coordinates of tomograms with several
-    coordinate files are merged into ``<chunks_dir>/val_coords/<dir name>.csv``)."""
+    coordinate files are merged into ``<chunks_dir>/val_coords/<dir name>.csv``; filament files,
+    if any, the same way into ``filaments_path``)."""
     val_tomograms = []
     if df_val is None:
         return val_tomograms
@@ -901,11 +902,25 @@ def _v2_val_tomograms(df_val, chunk_dir_names, chunkedDataDir) -> List[dict]:
             coords_path = Path(chunkedDataDir) / "val_coords" / f"{chunk_dir_names.loc[idx]}.csv"
             coords_path.parent.mkdir(parents=True, exist_ok=True)
             pd.concat([_read_coords(p) for p in paths], ignore_index=True).to_csv(coords_path, index=False)
-        val_tomograms.append({
+        entry = {
             "tomogram_path": str(row["tomogram_path"]), "coords_path": str(coords_path),
             "dataset_id": int(row["dataset_id"]), "apix_native": float(row["apix_native"]),
             "class_available": [bool(a) for a in row["class_available"]],
-        })
+        }
+        fil_paths = list(row.get("filaments_paths", None) or [])
+        if len(fil_paths) == 1:
+            entry["filaments_path"] = str(fil_paths[0])
+        elif fil_paths:  # Gate 6b: the tracing calibration reads one file per tomogram
+            from tomocpt.labels.filaments import read_filament_csv
+
+            frames = [read_filament_csv(p) for p in fil_paths]
+            for j, fdf in enumerate(frames):  # filament ids unique across files, as the chunking
+                fdf["filament_id"] = fdf["filament_id"].astype(np.int64) + j * 10_000_000
+            merged = Path(chunkedDataDir) / "val_coords" / f"{chunk_dir_names.loc[idx]}.filaments.csv"
+            merged.parent.mkdir(parents=True, exist_ok=True)
+            pd.concat(frames, ignore_index=True).to_csv(merged, index=False)
+            entry["filaments_path"] = str(merged)
+        val_tomograms.append(entry)
     return val_tomograms
 
 

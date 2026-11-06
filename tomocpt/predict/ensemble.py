@@ -167,6 +167,7 @@ def build_ensemble(checkpoints: Sequence, out_path, infer_cfg: Optional[InferCon
     file. Returns the record."""
     from tomocpt.predict import calibration as C
     from tomocpt.predict.calibration import CALIBRATION_VERSION, calibrate_thresholds
+    from tomocpt.predict.filaments import filament_rows
 
     cfg = copy.deepcopy(infer_cfg) if infer_cfg is not None else InferConfig()
     cfg.use_cuda = bool(cfg.use_cuda) and torch.cuda.is_available()
@@ -180,6 +181,7 @@ def build_ensemble(checkpoints: Sequence, out_path, infer_cfg: Optional[InferCon
     fingerprint = C.picks_fingerprint(cfg)
     picks, truths, radii, grid, seen, signature = {}, {}, {}, None, {}, None
     profiles, tomograms, tomogram_fold, table = {}, [], [], None
+    fil_scores, fil_settings = {}, C.filament_settings(cfg)
     for k, ckpt in enumerate(checkpoints):
         model = load_member_isolated(ckpt, device)
         sig = _signature(model)
@@ -195,13 +197,22 @@ def build_ensemble(checkpoints: Sequence, out_path, infer_cfg: Optional[InferCon
                                  "out-of-fold calibration needs disjoint folds")
             seen[stem] = ckpt
         saved = _reusable_val_picks(ckpt, val, fingerprint)
+        if saved is not None and filament_rows(table) and saved["filament_settings"] != fil_settings:
+            logger.info(f"{C.val_picks_path(ckpt)} has other filament scores or tracing settings; predicting again.")
+            saved = None
+        fs = {}
         if saved is not None:
             logger.info(f"Out-of-fold picks of {ckpt}: reusing {C.val_picks_path(ckpt)}")
             p, t, r, grid, prof = saved["picks"], saved["truths"], saved["radii"], saved["grid"], saved["profiles"]
+            fs = saved["filament_scores"]
         else:
             logger.info(f"Out-of-fold picks of {ckpt} on {len(val)} tomogram(s)...")
             prof = {}
-            p, t, r, grid = C.collect_validation_picks(model, val, cfg, device, profiles=prof)
+            # Particle-only tables keep the call of Gate 4c (its signature is a frozen interface).
+            fil_kw = {"filament_scores": fs} if filament_rows(table) else {}
+            p, t, r, grid = C.collect_validation_picks(model, val, cfg, device, profiles=prof, **fil_kw)
+        for number, per_tomo in fs.items():
+            fil_scores.setdefault(number, []).extend(per_tomo)
         for number in p:
             picks.setdefault(number, []).extend(p[number])
             truths.setdefault(number, []).extend(t[number])
@@ -214,13 +225,15 @@ def build_ensemble(checkpoints: Sequence, out_path, infer_cfg: Optional[InferCon
 
     classes = calibrate_thresholds(picks, truths, radii, beta=cfg.calibration_beta,
                                    min_particles=cfg.calibration_min_particles, grid=grid)
+    classes.update(C.calibrate_filament_thresholds(fil_scores, C.FILAMENT_GRID, beta=cfg.filament_calibration_beta))
     out_path = Path(out_path)
     oof_name = "oof_picks.npz"
     arrays = C.pack_picks(table, picks, truths, radii, profiles, tomogram_fold=tomogram_fold)
     C._savez_atomic(out_path.parent / oof_name, tomograms=np.array(tomograms, dtype=str),
                     tomogram_fold=np.array(tomogram_fold, dtype=np.int64),
                     class_names=np.array([str(r.name) for r in table], dtype=str),
-                    grid=np.asarray(list(grid), dtype=np.float64), fingerprint=np.array(fingerprint), **arrays)
+                    grid=np.asarray(list(grid), dtype=np.float64), fingerprint=np.array(fingerprint), **arrays,
+                    **C.pack_filament_scores(fil_scores, fil_settings))
     record = {
         "kind": ENSEMBLE_KIND,
         "version": ENSEMBLE_VERSION,
@@ -272,7 +285,7 @@ def read_oof_picks(ensemble_path) -> dict:
     """The pooled out-of-fold picks of an ensemble file: ``tomograms``, ``tomogram_fold``,
     ``picks``, ``truths``, ``radii`` (``calibrate_thresholds`` formats, tomograms in
     ``tomograms`` order), ``available``, ``class_names`` (``{number: name}``), ``profiles``,
-    ``grid``, ``fingerprint``."""
+    ``grid``, ``fingerprint``, and those of ``calibration.unpack_filament_scores``."""
     from tomocpt.predict import calibration as C
 
     ensemble_path = Path(ensemble_path)
@@ -287,6 +300,7 @@ def read_oof_picks(ensemble_path) -> dict:
         out["class_names"] = {int(n): str(s) for n, s in zip(z["class_numbers"], z["class_names"])}
         out["grid"] = [float(g) for g in z["grid"]] if "grid" in z else None
         out["fingerprint"] = str(z["fingerprint"])
+        out.update(C.unpack_filament_scores(z))
     return out
 
 

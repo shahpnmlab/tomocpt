@@ -40,6 +40,7 @@ class InferConfig:
     class_thresholds: Annotated[Optional[str], typer.Option(help="Per-class confidence thresholds by class name, e.g. 'ribosome:0.4,proteasome:0.35'. Overrides the checkpoint calibration (pipeline v2).")] = None
     calibration_beta: Annotated[float, typer.Option(help="Beta of the F-beta score maximised by the per-class threshold calibration (pipeline v2).")] = 4.0
     calibration_min_particles: Annotated[int, typer.Option(help="Minimum number of true particles of a class for its threshold to be calibrated (pipeline v2).")] = 20
+    filament_calibration_beta: Annotated[float, typer.Option(help="Beta of the length-weighted centreline F-beta maximised by the tracing threshold calibration (filament classes).")] = 1.0
     filament_spacing_ang: Annotated[float, typer.Option(help="Spacing in A of the output points along each traced filament (filament classes).")] = 40.0
     filament_min_length_ang: Annotated[float, typer.Option(help="Traced filaments shorter than this many A are dropped (filament classes).")] = 200.0
     filament_smoothing_ang: Annotated[float, typer.Option(help="Spline smoothing of traced filaments, as an RMS deviation in A (filament classes).")] = 10.0

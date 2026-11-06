@@ -78,10 +78,9 @@ of this yet (it sets pipeline 2, linear labels, class head, conditioning on): up
    d. Thresholds: relative, done (Gate 4h, δ = 0.007).
    Scale check for the smoke run: microtubule ≈ 250 Å is 37 voxels at 6.8 Å (above the band), actin is
    ≈ 10; the ratio 3.6 > 32/10, so `group_lengths` should give two levels. Confirm in `chunk_layout.json`.
-2. **Calibration for filament classes** (small gate, `predict/calibration.py`, `cv_report.py`):
-   skip filament rows in point calibration (saves the wasted time), and optionally calibrate the
-   tracing threshold on validation masks with `centerline_scores` (F1 or F4). Without it the trace
-   threshold is the fixed fallback.
+2. **Calibration for filament classes: done (Gate 6b).** The tracing threshold is calibrated on the
+   validation centrelines (`infer.filament_calibration_beta`, default F1); CV reports have a filament
+   table. Chunks built before Gate 6b have no `filaments_path` and stay uncalibrated: rechunk.
 3. **Update the driver** (`benchmarks/filaments.py`): recipe of section 4; mixed voxel sizes need one
    staged raw dir per dataset (`prepare_picking_star_multiclass` reads one pixel size per directory;
    the smoke run worked with filaments only, recheck for the joint arm); membrane negative masks for

@@ -125,6 +125,31 @@ def _class_scores(oof: dict, number: int, threshold: float, beta: float) -> dict
             "radius_vox": radius, "loc": loc}
 
 
+def _filament_class_scores(oof: dict, number: int, threshold: Optional[float], beta: float) -> dict:
+    """Length-weighted centreline scores of a filament class (same keys as :func:`_class_scores`;
+    point counts and localisation are None). All 0 without a calibrated threshold."""
+    from tomocpt.predict.calibration import _length_scores
+
+    per_tomo = oof["filament_scores"][number]
+    folds = oof["tomogram_fold"]
+    grid = oof["filament_grid"]
+    rows = [(int(folds[t]), s) for t, s in enumerate(per_tomo) if s is not None]
+    s = {"precision": 0.0, "recall": 0.0, "f1": 0.0, "fbeta": 0.0}
+    per_fold: Dict[int, np.ndarray] = {}
+    if threshold is not None and rows:
+        i = int(np.argmin(np.abs(np.asarray(grid) - float(threshold))))
+        for f, row in rows:
+            per_fold[f] = per_fold.get(f, np.zeros(row.shape[1])) + row[i]
+        s = _length_scores(sum(per_fold.values()), beta)
+    n_true = int(sum(row[0, 4] for _, row in rows))
+    true_len = float(sum(row[0, 3] for _, row in rows))
+    return {"kind": "filament", "tp": None, "fp": None, "fn": None, "n_true": n_true, "true_length_ang": true_len,
+            **s, "per_fold_fbeta": {str(k): _length_scores(v, beta)["fbeta"] for k, v in sorted(per_fold.items())},
+            "radius_vox": float(oof["radii"][number]),
+            "loc": {"n_matched": 0, "mean_vox": None, "median_vox": None, "mean_R": None, "median_R": None,
+                    "mean_offset_xyz": None}}
+
+
 def _jsonable(o):
     if isinstance(o, dict):
         return {str(k): _jsonable(v) for k, v in o.items()}
@@ -157,12 +182,20 @@ def _markdown(rep: dict) -> str:
         loc = c["loc"]
         off = "-" if loc["mean_offset_xyz"] is None else ", ".join(f"{v:+.2f}" for v in loc["mean_offset_xyz"])
         L.append(f"| {name} | {c['n_true']} | {thr} | {_fmt(c['fbeta'])} | {_fmt(c['precision'])} | "
-                 f"{_fmt(c['recall'])} | {c['tp']} | {c['fp']} | {c['fn']} | {pf} | "
+                 f"{_fmt(c['recall'])} | {_fmt(c['tp'], 'd')} | {_fmt(c['fp'], 'd')} | {_fmt(c['fn'], 'd')} | {pf} | "
                  f"{_fmt(loc['mean_R'], '.2f')} / {_fmt(loc['median_R'], '.2f')} | {off} |")
     kind = "weighted" if rep["weighted"] else "unweighted"
     L += ["", f"Mean F-beta ({kind}): **{rep['mean_fbeta']:.3f}**"]
     if rep["weighted"]:
         L.append("Weights: " + ", ".join(f"{k} {v:g}" for k, v in rep["weights"].items()))
+    fil = {n: c for n, c in rep["classes"].items() if c.get("kind") == "filament"}
+    if fil:
+        L += ["", "### Filament classes (length-weighted centreline, within 0.5 x diameter)", "",
+              "| class | true filaments | true length (A) | threshold | precision | recall | F1 | F-beta |",
+              "|---|---|---|---|---|---|---|---|"]
+        for name, c in fil.items():
+            L.append(f"| {name} | {c['n_true']} | {c['true_length_ang']:.0f} | {_fmt(c['threshold'], '.2f')} | "
+                     f"{_fmt(c['precision'])} | {_fmt(c['recall'])} | {_fmt(c['f1'])} | {_fmt(c['fbeta'])} |")
     L += ["", "### Peak profiles around true centres (units of R; target: peak 1.0, FWHM 0.53 R)", "",
           "| class | particles | peak height | value at centre | FWHM (radial) |", "|---|---|---|---|---|"]
     for name, c in rep["classes"].items():
@@ -223,6 +256,12 @@ def write_cv_report(ensemble_path, out_dir, class_weights: Optional[str] = None)
     for number, name in names.items():
         entry = cal["classes"].get(str(number), cal["classes"].get(number, {})) or {}
         thr = entry.get("threshold")
+        if number in oof["filament_scores"]:
+            c = _filament_class_scores(oof, number, thr, beta)
+            c.update(number=int(number), threshold=None if thr is None else float(thr),
+                     threshold_used=None if thr is None else float(thr))
+            classes[name] = c
+            continue
         used = FALLBACK_THRESHOLD if thr is None else float(thr)
         c = _class_scores(oof, number, used, beta)
         c.update(number=int(number), threshold=None if thr is None else float(thr), threshold_used=used)
