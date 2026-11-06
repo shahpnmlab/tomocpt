@@ -3,7 +3,7 @@
 Replaces `HANDOFF_gate6_benchmark.md` (31 Oct, stale: Gate 6 has since passed and the CZII recipe
 changed). Read first: `CLAUDE.md`, `.claude/agents/06_AGENT_FILAMENTS.md`, `gate_06_report.json`
 (T6.5 smoke run), `TODO_v2.md` (sections 3b, 3c). Branch `v2-dev` at tag `v2-gate-4g-passed`
-(`8d62afc`); fast suite 849 passed / 27 skipped. Environment:
+(`8d62afc`), plus Gate 4h (relative threshold, tag `v2-gate-4h-passed`); fast suite 861 passed / 27 skipped. Environment:
 `source /home/pranav/Desktop/pranav/software/miniconda3/etc/profile.d/conda.sh && conda activate tomocpt`
 (one RTX A6000). The user is usage-limited: orchestrator implements directly, no agent fan-out, small
 sweeps, one commit per finished TODO item, stop at gate boundaries.
@@ -29,7 +29,8 @@ sweeps, one commit per finished TODO item, stop at gate boundaries.
 | 10477 | experimental | 13.481 Å | 512×948×982 | 12 | microtubule 12, membrane 12 |
 | 10513 | experimental, labels not ground truth | 20.579 Å | 250×1024×1024 | 20 | microtubule 20, membrane 20 |
 DS-10490 particle points (141 STARs) are in `data/filaments/10490_points/` (prep snippet, diameters
-still `???`). **DS-10490 is reserved as the "final boss" particle benchmark (TODO 6).**
+still `???`). **DS-10490 is reserved as the "final boss" particle benchmark (TODO 6)**, except the
+filament runs below (human decision 6 Nov 2026). It is the only set with both microtubules and actin.
 
 ## 3. Changes since Gate 6 and what they mean for filaments
 | Change (gate) | Filament impact |
@@ -41,7 +42,7 @@ still `???`). **DS-10490 is reserved as the "final boss" particle benchmark (TOD
 | Early stopping fields, schedule-free (4e) | General. |
 | EMA / plateau SWA (4f) | General: legacy SWA never reached a checkpoint under early stopping in any run. |
 | Core weight, offset head (4f) | Particle channels only by design; leave off for filament runs. |
-| LR plateau matched to early stopping (4g, opt-in) | Works, but the threshold is **absolute** (`early_stop_min_delta`), tuned to CZII's loss (~0.015). A filament or joint run has a different loss scale: check the curve, or make both thresholds relative first (see 5.1). |
+| LR plateau matched to early stopping (4g, opt-in) + relative threshold (4h) | General: with `early_stop_rel_delta` both callbacks test `val_loss_smooth < best·(1−δ)`, independent of the loss scale. δ = 0.007 reproduces CZII's absolute 1e-4 at its floor (derived from one curve). |
 | Annotation offset (3b.1b, open) | CZII labels sit (+0.4, +0.45, +1.4) voxels from image centres; random flips blur any such offset. Masks are drawn on the tomogram grid, so mask-derived centrelines should have none; STAR filament coordinates might. Human ruling: any fix must be general. |
 
 CZII lessons that carry over: fold-0 (2-tomogram) scores cannot rank recipes (run-to-run noise in
@@ -55,7 +56,7 @@ train:
   chunk_sampling: repeat_factor
   augmentation: {label_interpolation: linear, rotation_mode: flips, flip_p: 0.5}
   particles: {class_head: softmax, cross_class_neg_weight: 0.0}
-  early_stop_min_delta: 0.0001        # see 5.1 for the loss scale
+  early_stop_rel_delta: 0.007         # Gate 4h, relative; replaces early_stop_min_delta
   early_stop_patience: 10
   lr_plateau_match_early_stop: true
   lr_plateau_patience: 5
@@ -66,15 +67,17 @@ prepData: {multiclass: true, label_border_policy: clip}
 of this yet (it sets pipeline 2, linear labels, class head, conditioning on): update it first.
 
 ## 5. Next steps (TODO 3c), in order
-1. **Decide with the user** (ask once, all together):
-   a. DS-10490 use: 3c.1 says "train on a DS-10490 subset", but DS-10490 is the final-boss benchmark.
-      Options: filament masks only from a fixed run subset kept out of the final-boss test split, or
-      skip 10490 and train on 10477 only.
-   b. Run size: tiny was 17 min/epoch for 4 train tomograms; a full-size model is ~3× slower. Pick
-      runs per set, model size and epoch cap.
-   c. Arms: filaments-only first (3c.1), joint with particles later (needs DS-10490 diameters).
-   d. LR / early-stopping thresholds: make them relative (small gate, recommended: one
-      `train.early_stop_rel_delta`, used by both callbacks) or keep absolute and check the curve.
+1. **Decisions (human, 6 Nov 2026)**:
+   a. Data: DS-10490 (simulated; microtubule + actin masks). Fixed runs `sample_1` … `sample_7` (both
+      masks non-empty, checked): 5 train (`sample_1`–`sample_5`), 2 validation (`sample_6`, `sample_7`).
+      These 7 runs are excluded from the final-boss test split (TODO 6). DS-10477 (microtubules only,
+      experimental) is an optional out-of-distribution check of the trained model, not training data.
+   b. Size: small model and few runs for quick checks and smoke tests; validation runs use 7 tomograms
+      (5 / 2, as CZII). Model size for those is the default (as the CZII runs), unless the user says otherwise.
+   c. Arms: filaments only first (3c.1); joint with particles later (needs DS-10490 diameters).
+   d. Thresholds: relative, done (Gate 4h, δ = 0.007).
+   Scale check for the smoke run: microtubule ≈ 250 Å is 37 voxels at 6.8 Å (above the band), actin is
+   ≈ 10; the ratio 3.6 > 32/10, so `group_lengths` should give two levels. Confirm in `chunk_layout.json`.
 2. **Calibration for filament classes** (small gate, `predict/calibration.py`, `cv_report.py`):
    skip filament rows in point calibration (saves the wasted time), and optionally calibrate the
    tracing threshold on validation masks with `centerline_scores` (F1 or F4). Without it the trace

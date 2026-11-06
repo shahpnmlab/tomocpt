@@ -440,16 +440,27 @@ def _setup_callbacks(
     """Creates and returns a list of PyTorch Lightning callbacks.
 
     Early stopping uses ``train.early_stop_min_delta`` / ``early_stop_patience`` (legacy 0.005 /
-    10). With ``train.schedule_free`` there is no SWA: the optimiser averages the weights itself
+    10), or the relative ``train.early_stop_rel_delta`` when set (Gate 4h). With ``train.schedule_free`` there is no SWA: the optimiser averages the weights itself
     and SWA would also reset the learning rate (Gate 4e)."""
-    callbacks = [
-        TQDMProgressBar(refresh_rate=10),
-        EarlyStopping(
+    rel_delta = safe_getattr(config, "early_stop_rel_delta", None)
+    es_patience = int(safe_getattr(config, "early_stop_patience", 10))
+    if rel_delta is None:
+        early_stopping = EarlyStopping(
             monitor="val_loss_smooth",
-            patience=int(safe_getattr(config, "early_stop_patience", 10)),
+            patience=es_patience,
             min_delta=float(safe_getattr(config, "early_stop_min_delta", 0.005)),
             verbose=True,
-        ),
+        )
+    else:
+        # Gate 4h: relative improvement threshold
+        from tomocpt.training.callbacks import RelativeEarlyStopping
+
+        early_stopping = RelativeEarlyStopping(
+            monitor="val_loss_smooth", rel_delta=float(rel_delta), patience=es_patience, verbose=True,
+        )
+    callbacks = [
+        TQDMProgressBar(refresh_rate=10),
+        early_stopping,
         checkpointer,
         LearningRateMonitor(logging_interval="epoch"),
     ]

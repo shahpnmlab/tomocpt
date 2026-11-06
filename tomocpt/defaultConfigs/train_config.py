@@ -289,6 +289,12 @@ class TrainConfig:
     early_stop_patience: Annotated[
         int, typer.Option(help="Early stopping: epochs without improvement before training stops")
     ] = 10
+    early_stop_rel_delta: Annotated[
+        Optional[float], typer.Option(help="Relative improvement threshold in (0, 1): an epoch counts as progress "
+                                           "only if val_loss_smooth < best * (1 - value); replaces "
+                                           "early_stop_min_delta and is used by lr_plateau_match_early_stop "
+                                           "(None = absolute, legacy)")
+    ] = None
     lr_plateau_match_early_stop: Annotated[
         bool, typer.Option(help="ReduceLROnPlateau uses early stopping's improvement test (absolute "
                                 "early_stop_min_delta on val_loss_smooth) with patience lr_plateau_patience, so the "

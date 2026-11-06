@@ -431,6 +431,9 @@ or alignment mismatch.
   `train.lr_plateau_match_early_stop` gives `ReduceLROnPlateau` early stopping's absolute threshold
   with patience `train.lr_plateau_patience` (5, below `early_stop_patience`), so the LR halves before
   training stops (legacy: relative 1e-4, patience 9, which never fired before early stopping).
+  `train.early_stop_rel_delta` (e.g. 0.007) makes the improvement test relative, `val_loss_smooth <
+  best · (1 − value)`, for early stopping and the matched scheduler, so it does not depend on the loss
+  scale; 0.007 reproduces CZII's absolute 1e-4 at its loss floor (~0.015).
 - Weight averaging that reaches the checkpoint: `train.weight_averaging: ema | swa_plateau` (default
   `swa`, the legacy Lightning callback, which only applies its average when training runs to
   `max_epochs`). Centroid weight `train.particles.core_weight` / `core_power`; offset head

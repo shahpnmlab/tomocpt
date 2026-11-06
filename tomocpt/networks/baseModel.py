@@ -252,17 +252,21 @@ class BaseModel(pl.LightningModule):
         return True
 
     def _lr_plateau_scheduler(self, opt, train_config):
-        """Legacy ReduceLROnPlateau, or (Gate 4g) one with early stopping's absolute threshold."""
+        """Legacy ReduceLROnPlateau, or (Gate 4g) one with early stopping's threshold (absolute, or\n        relative with ``train.early_stop_rel_delta``, Gate 4h)."""
         from tomocpt.configManager.configManager import safe_getattr
 
         factor = train_config.FACTOR_REDUCE_LR_PLATEAU_N_EPOCHS
         cooldown = max(1, train_config.PATIENT_REDUCE_LR_PLATEAU_N_EPOCHS // 4)
         if self._lr_plateau_checks():
+            rel_delta = safe_getattr(train_config, "early_stop_rel_delta", None)
+            if rel_delta is None:
+                threshold, mode = float(safe_getattr(train_config, "early_stop_min_delta", 0.005)), "abs"
+            else:
+                threshold, mode = float(rel_delta), "rel"  # Gate 4h
             return torch.optim.lr_scheduler.ReduceLROnPlateau(
                 opt, mode="min", factor=factor, cooldown=cooldown,
                 patience=int(safe_getattr(train_config, "lr_plateau_patience", 5)),
-                threshold=float(safe_getattr(train_config, "early_stop_min_delta", 0.005)),
-                threshold_mode="abs",
+                threshold=threshold, threshold_mode=mode,
             )
         return torch.optim.lr_scheduler.ReduceLROnPlateau(
             opt,

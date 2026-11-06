@@ -35,3 +35,26 @@ class LRVerificationCallback(pl.Callback):
                 lr = param_group['lr']
                 logging.info(f"  - Group {j}: {param_count:,} parameters, Learning Rate = {lr:.2e}")
         logging.info("="*40)
+
+
+from pytorch_lightning.callbacks import EarlyStopping as _EarlyStopping
+
+
+class RelativeEarlyStopping(_EarlyStopping):
+    """Early stopping (mode ``min``) whose improvement test is relative (Gate 4h): an epoch counts
+    as progress only if ``current < best * (1 - rel_delta)``, so the threshold follows the loss
+    scale. Lightning's state dict is unchanged (resume restores the best value and wait count)."""
+
+    def __init__(self, monitor: str, rel_delta: float, patience: int = 10, verbose: bool = False, **kwargs):
+        if not 0.0 < float(rel_delta) < 1.0:
+            raise ValueError(f"rel_delta must be in (0, 1), got {rel_delta}")
+        super().__init__(monitor=monitor, min_delta=0.0, patience=patience, verbose=verbose, mode="min", **kwargs)
+        self.rel_delta = float(rel_delta)
+
+    def _evaluate_stopping_criteria(self, current):
+        import torch
+
+        best = self.best_score
+        # Lightning tests ``current - min_delta < best``; min_delta is stored negated for mode min
+        self.min_delta = -self.rel_delta * float(best) if torch.isfinite(best) else 0.0
+        return super()._evaluate_stopping_criteria(current)

@@ -1,0 +1,43 @@
+{
+ "gate_id": "4h",
+ "agent_name": "04h_AGENT_REL_THRESHOLD (orchestrator as TA and implementer)",
+ "status": "PASSED",
+ "base_ref": "8e7025e",
+ "files_created": [
+  "tests/gate4h/*",
+  ".claude/agents/04h_AGENT_REL_THRESHOLD.md"
+ ],
+ "files_modified": [
+  "tomocpt/defaultConfigs/train_config.py",
+  "tomocpt/training/callbacks.py (RelativeEarlyStopping)",
+  "tomocpt/training/helpers.py (_setup_callbacks)",
+  "tomocpt/networks/baseModel.py (_lr_plateau_scheduler)",
+  "README.md",
+  "TODO_v2.md",
+  "HANDOFF_filaments.md"
+ ],
+ "exported_symbols": {
+  "tomocpt.training.callbacks.RelativeEarlyStopping": "EarlyStopping (mode min) with rel_delta"
+ },
+ "config_fields_added": [
+  "train.early_stop_rel_delta: Optional[float] = None"
+ ],
+ "legacy_equivalence": {
+  "defaults": "None: plain EarlyStopping with early_stop_min_delta, Gate 4g scheduler absolute (G4h-C1, gate 4e/4g tests green)"
+ },
+ "metrics": {
+  "replay_ema_pilot_curve": "rel 0.007, patience 5/10: LR halves at 41, 48; stop 52 (best 0.01469 at 42). Same epochs with the curve x100 and x0.01. Absolute 1e-4 for comparison: 38, 46, 54; stop 58 (best 0.01463). rel 0.001-0.005 reproduce the absolute stop epoch but drop the LR later (0.005: 47, 54)."
+ },
+ "pytest_fast": {
+  "tests -m 'not slow'": "861 passed, 27 skipped"
+ },
+ "pytest_slow": {
+  "note": "no slow tests"
+ },
+ "benchmarks": {},
+ "known_limitations": [
+  "Value 0.007 is derived from one CZII curve recorded at constant LR.",
+  "Relative to the loss value, so a loss with a large constant floor gets a looser test than its slope warrants."
+ ],
+ "notes_for_next_agent": "Filament recipe: early_stop_rel_delta 0.007 with lr_plateau_match_early_stop. Next: HANDOFF_filaments.md section 5."
+}

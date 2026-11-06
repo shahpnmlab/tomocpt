@@ -450,8 +450,8 @@
     },
     "4h": {
       "agent": "04h_AGENT_REL_THRESHOLD",
-      "attempts": 0,
-      "status": "TESTS_FROZEN",
+      "attempts": 1,
+      "status": "PASSED",
       "path_exceptions": [],
       "notes": [
         "Human decision (6 Nov 2026): relative thresholds for early stopping and the matched LR plateau before the filament runs. Recipe value 0.007 derived from the 3b EMA curve (1e-4 / 0.0147); 0.5% in the first proposal was illustrative."

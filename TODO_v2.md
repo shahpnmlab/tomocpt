@@ -101,6 +101,10 @@ LR recipe; expectation: clears +0.02 over 0.741 by training longer.
       the LR never left 4e-4: the relative 1e-4 threshold (about 1.5e-6) counts the slow 1e-5..3e-5 per-epoch gains
       as progress, early stopping's absolute 1e-4 does not. Replayed on the EMA curve the matched scheduler
       (1e-4, patience 5) halves at epochs 38, 46, 54 before stopping at 58.
+- [x] 3b.2b (Gate 4h: `train.early_stop_rel_delta`; human decision 6 Nov 2026) Relative improvement threshold for
+      early stopping and the matched LR plateau (`val_loss_smooth < best·(1−δ)`), so the recipe carries over to other
+      loss scales. δ = 0.007 = 1e-4 / 0.0147 (CZII EMA floor); on the EMA curve: LR halves at 41, 48, stop 52, same
+      epochs at ×100 and ×0.01.
 - [x] 3b.3 (Gate 4e: `train.schedule_free`, extra `tomocpt[schedulefree]`, schedulefree 1.4.1 approved 4 Nov) Schedule-free optimiser as the alternative arm (moved here from item 7, human decision 4 Nov
       2026). Evidence: in all finished CZII CV folds the LR never left 4e-4 and SWA never started; early
       stopping fired at epochs 24-29 with the best epoch at or near the last in most folds
