@@ -33,3 +33,19 @@ some visual feedback of whats going on").
 - **G6c-C5** `classify_traces` separates matched, false and missed; `target_map` is 1 on the centreline;
   `save_filament_view` and `save_threshold_curve` write PNG files.
 - **G6c-C6** `dump_training_images` writes the first and last epoch of each tag.
+
+## Addendum (6 Nov 2026, after the smoke run)
+- **Metric speed.** On real actin (102 filaments) the metric took 93 % of the calibration time: the reference
+  was rebuilt for every polyline and each ambiguous point visited every segment. `_covered_length` builds one
+  index per reference and tests each ambiguous point only against segments with a node within `tol + step`.
+  The values stay exact (G6b-C1). Path exception: `tomocpt/metrics.py`.
+- **Useful chunk panels.** Batch 0 is often empty (black target and prediction). For pipeline v2,
+  `networks.pickingModel.best_slice_panel(x, y, y_pred, c)` returns input | target | prediction of the slice
+  with the most target of class `c` in a batch, or None if the class is below `MIN_PANEL_VOXELS` voxels > 0.5.
+  Each epoch logs the first such panel per class under `train/<class>` and `val/<class>`. Pipeline v1 keeps its
+  panels. Path exception: `tomocpt/networks/pickingModel.py` (image logging only).
+- `python benchmarks/filament_views.py <log root> <out dir>` dumps the panels at any time, also during a run;
+  every panel of each tag's first and last epoch, enlarged 3 times.
+- **G6c-C7** `best_slice_panel`: chooses the sample and slice with the signal, returns None without it, keeps
+  the scale of target and prediction.
+- **G6c-C8** Speed: 200 polylines of 200 segments score in under 5 s, and equal the exact values.
