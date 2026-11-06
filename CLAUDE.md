@@ -353,6 +353,7 @@ time (gradient checkpointing). Pipeline v1 uses Section 1.5 unchanged.
 | `train.particles.class_head` | `sigmoid` \| `softmax` = `sigmoid` | 3d |
 | `infer.apix_override` | Optional[float] = `None` | 4 |
 | `train.cv_folds`, `train.cv_fold` | int = `0`, `0` (k-fold off) | 4b |
+| `train.val_stems` | Optional[str] = `None` (fixed validation tomograms, comma-separated stems) | 6c |
 | `infer.classes` | Optional[str] = `None` (subset of class names) | 4 |
 | `infer.cross_class_nms` | bool = `True` | 4 |
 | `infer.accumulate_dtype`, `infer.accumulate_device` | `float32`, `auto` | 4 |
@@ -388,6 +389,7 @@ Field details are in each gate spec. A gate may add fields only to the files it 
 | 5b | `05b_AGENT_SSL_FIX.md` | Fix SSL v2 embedding collapse and the shared-noise shortcut (human decision, 31 Oct 2026) | `tomocpt/networks/selfSupervisedModel.py`, `tomocpt/networks/ssl/**`, `tomocpt/dataManager/ssl_views.py`, `tomocpt/defaultConfigs/ssl_config.py`, `benchmarks/ssl_*.py`, `experiments/run_benchmarks.sh` |
 | 6 | `06_AGENT_FILAMENTS.md` | Microtubules: mask → centrelines, tube targets, tracing, output | `tomocpt/labels/**`, `tomocpt/dataManager/**`, `tomocpt/predict/**`, `tomocpt/defaultConfigs/{prepdata_config,infer_config}.py`, `scripts/download_portal_data.py`, `benchmarks/filaments.py`, `README.md` |
 | 6b | `06b_AGENT_FILAMENT_CALIBRATION.md` | Tracing threshold calibration on validation centrelines (handoff step 2, 6 Nov 2026) | `tomocpt/metrics.py` (`centerline_scores`), `tomocpt/predict/{calibration,ensemble,cv_report}.py`, `tomocpt/dataManager/chunking.py` (`_v2_val_tomograms`), `tomocpt/defaultConfigs/infer_config.py`, `benchmarks/filaments.py`, `README.md` |
+| 6c | `06c_AGENT_FILAMENT_DRIVER.md` | Filament driver recipe, fixed split, pictures of targets and predictions; metric and tracing speed (handoff step 3, 6 Nov 2026) | `benchmarks/filaments.py`, `benchmarks/filament_views.py`, `tomocpt/dataManager/chunking.py` (fixed split), `tomocpt/defaultConfigs/train_config.py` (`val_stems`), `tomocpt/training/helpers.py` (`_prepare_data_if_needed`), `tomocpt/metrics.py`, `tomocpt/networks/pickingModel.py` (image logging only), `tomocpt/labels/filaments.py` (`_join_gaps`, junction cap), `README.md` |
 | 7 | `07_AGENT_DISCRIMINATIVE.md` | Supervised dense contrastive loss with hard negatives, focal value term; particles and filaments (human decision, 30 Oct 2026; after Gate 6) | `tomocpt/training/discriminative.py`, `tomocpt/networks/pickingModel.py`, `tomocpt/networks/swinunetr.py` (`forward_features`), `tomocpt/training/multiclass_loss.py` (value term), `tomocpt/training/helpers.py` (`_create_model` SSL head transfer), `tomocpt/defaultConfigs/{discriminative_config,train_config,prepdata_config}.py` (own fields), `tomocpt/dataManager/**` and `tomocpt/labels/**` (negative masks), `benchmarks/discriminative.py`, `experiments/run_benchmarks.sh`, `README.md` |
 
 Every gate also writes `.claude/reports/gate_0N_report.json`.

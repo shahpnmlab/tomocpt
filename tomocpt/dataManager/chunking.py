@@ -243,6 +243,24 @@ def process_single_tomo_task(task: Dict[str, Any]) -> tuple:
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
 
+def split_rows_by_stems(tomos_df: pd.DataFrame, val_stems) -> Tuple[pd.DataFrame, pd.DataFrame]:
+    """Fixed train/validation split (Gate 6c): the rows of the tomograms named in ``val_stems``
+    (comma-separated string or list) are the validation set. ValueError for an unknown stem, an
+    empty list, or an empty train split."""
+    names = [s.strip() for s in val_stems.split(",")] if isinstance(val_stems, str) else [str(s).strip() for s in val_stems]
+    names = sorted({s for s in names if s})
+    if not names:
+        raise ValueError("train.val_stems names no tomogram")
+    stems = tomos_df["tomogram_path"].map(lambda p: Path(str(p)).stem)
+    unknown = sorted(set(names) - set(stems))
+    if unknown:
+        raise ValueError(f"train.val_stems names unknown tomograms: {unknown}; known: {sorted(stems.unique())}")
+    is_val = stems.isin(names)
+    if is_val.all():
+        raise ValueError("train.val_stems names every tomogram: nothing is left for training")
+    return tomos_df[~is_val], tomos_df[is_val]
+
+
 def split_rows_by_fold(tomos_df: pd.DataFrame, folds: int, fold: int, seed: int = 42
                        ) -> Tuple[pd.DataFrame, pd.DataFrame]:
     """k-fold train/validation split by tomogram (Gate 4b). The sorted distinct stems are
@@ -270,7 +288,7 @@ def do_chunking(tomosDf: pd.DataFrame, chunkedDataDir: str, desired_particle_pix
                 class_table: Optional[list] = None, seed: int = 42,
                 alpha_drop_empty: Optional[float] = None, chunk_size: Optional[int] = None,
                 chunk_stride: Optional[int] = None, label_border_policy: str = "skip",
-                cv: Optional[Tuple[int, int]] = None):
+                cv: Optional[Tuple[int, int]] = None, val_stems: Optional[List[str]] = None):
     """Chunk the tomograms of ``tomosDf`` into ``chunkedDataDir/{train,val}``.
 
     Defaults run the pipeline v1 code path unchanged. ``pipeline_version=2`` runs pipeline
@@ -296,7 +314,10 @@ def do_chunking(tomosDf: pd.DataFrame, chunkedDataDir: str, desired_particle_pix
             train_val_level=train_val_level, use_gpus=use_gpus,
             scale_cfg=scale_cfg if scale_cfg is not None else ScaleConfig(),
             class_table=class_table, seed=seed, alpha_drop_empty=alpha_drop_empty,
-            chunk_size=chunk_size, chunk_stride=chunk_stride, label_border_policy=label_border_policy, cv=cv)
+            chunk_size=chunk_size, chunk_stride=chunk_stride, label_border_policy=label_border_policy, cv=cv,
+            val_stems=val_stems)
+    if val_stems:
+        raise ValueError("train.val_stems needs train.data_pipeline_version=2")
     if cv is not None:
         raise ValueError("k-fold training (train.cv_folds > 0) needs train.data_pipeline_version=2")
     if int(pipeline_version) != 1:
@@ -783,7 +804,7 @@ def _do_chunking_v2(tomosDf: pd.DataFrame, chunkedDataDir: str, n_cpus: int, req
                     train_val_level: CrossValidationLevelSplit, use_gpus: bool, scale_cfg: ScaleConfig,
                     class_table: Optional[list], seed: int, alpha_drop_empty: float, chunk_size: int,
                     chunk_stride: int, label_border_policy: str, cv: Optional[Tuple[int, int]] = None,
-                    pool: bool = False):
+                    pool: bool = False, val_stems: Optional[List[str]] = None):
     """Pipeline v2 chunking (spec T2.3). Output: ``<split>/<dir name>__L{level}s{k}/`` with
     ``volumes/``, ``points/`` (or dense ``labels_supervised/``) and ``chunk_meta.json``; the
     manifest ``chunk_layout.json`` (v1 keys plus ``pipeline_version: 2``, the band, the class
@@ -812,6 +833,9 @@ def _do_chunking_v2(tomosDf: pd.DataFrame, chunkedDataDir: str, n_cpus: int, req
         # Gate 4c chunk pool: every tomogram once, under train/; folds link to it.
         df_train, df_val = merged, None
         split_layout = "pool"
+    elif val_stems:
+        df_train, df_val = split_rows_by_stems(merged, val_stems)
+        split_layout = "fixed"
     elif cv is not None:
         df_train, df_val = split_rows_by_fold(merged, cv[0], cv[1], seed=seed)
         split_layout = "folds"
@@ -878,9 +902,11 @@ def _do_chunking_v2(tomosDf: pd.DataFrame, chunkedDataDir: str, n_cpus: int, req
         write_chunk_layout(chunkedDataDir, layout)
     else:
         val_tomograms = _v2_val_tomograms(df_val, chunk_dir_names, chunkedDataDir)
-        write_chunk_layout(chunkedDataDir, _v2_layout(dir_names_layout, split_layout, scale_cfg, resample, storage,
-                                                      policy, chunk_size, chunk_stride, seed, table_json,
-                                                      val_tomograms, cv))
+        layout = _v2_layout(dir_names_layout, split_layout, scale_cfg, resample, storage, policy, chunk_size,
+                            chunk_stride, seed, table_json, val_tomograms, cv)
+        if split_layout == "fixed":
+            layout["val_stems"] = sorted(df_val["tomogram_path"].map(lambda p: Path(str(p)).stem).unique().tolist())
+        write_chunk_layout(chunkedDataDir, layout)
     with open(get_chunking_name_done(chunkedDataDir, require_labels), "w") as f:
         f.write("done")
     logging.info(f"Pipeline v2 chunking finished: {sum(r['n_chunks'] for r in results)} chunks in "

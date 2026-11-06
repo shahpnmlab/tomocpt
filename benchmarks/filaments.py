@@ -34,6 +34,11 @@ scored: centreline precision / recall / F1 (length-weighted, within 0.5 x diamet
 ``filament_spacing_ang``, particle F-beta, time and peak GPU memory. Test-set numbers (labels
 not ground truth, e.g. DS-10513) are reported separately. The particle STAR must name tomograms
 as staged here: ``<dataset id>_<run>``.
+
+Fixed runs of one set (``--train_sets 10490 --test_sets "" --train_runs sample_1,... --val_runs
+sample_6,sample_7``): the validation runs are the ``held_out`` report. They also choose the tracing
+threshold, so those scores are slightly optimistic. Pictures go to ``<arm>/views/``
+(``benchmarks/filament_views.py``).
 """
 
 DEFAULT_DIAMETERS = {"microtubule": 250.0, "actin": 70.0}
@@ -71,7 +76,44 @@ def _stage(data_root, sets, objects, out, test_frac, seed, max_runs, all_test=Fa
     return staged
 
 
-def _train_arm(work, stage_dir, fil_classes, part_classes, particles_star, settings):
+def _stage_fixed(data_root, ds, objects, out, train_runs, val_runs):
+    """Fixed runs of one dataset: all linked under ``out/train`` (the chunking splits them by
+    ``train.val_stems``). Returns ``{"train": [...], "test": [the validation runs]}``."""
+    import os
+    from pathlib import Path
+
+    overlap = sorted(set(train_runs) & set(val_runs))
+    if overlap:
+        raise ValueError(f"Runs in both the training and the validation split: {overlap}")
+    root = Path(data_root) / str(ds)
+    staged = {"train": [], "test": []}
+    for split, runs in (("train", train_runs), ("test", val_runs)):
+        for r in runs:
+            sources = {Path("tomograms") / f"{ds}_{r}.mrc": root / "tomograms" / f"{r}.mrc"}
+            sources.update({Path("masks") / o / f"{ds}_{r}.mrc": root / "masks" / o / f"{r}.mrc" for o in objects})
+            for rel, src in sources.items():
+                if not src.is_file():
+                    raise FileNotFoundError(f"Run {r} of dataset {ds}: {src} is missing")
+                dst = Path(out) / "train" / rel
+                dst.parent.mkdir(parents=True, exist_ok=True)
+                if not dst.exists():
+                    os.symlink(src.resolve(), dst)
+            staged[split].append({"name": f"{ds}_{r}", "dataset": str(ds),
+                                  "tomogram": str(Path(out) / "train" / "tomograms" / f"{ds}_{r}.mrc")})
+    return staged
+
+
+def apply_recipe(train: dict) -> dict:
+    """The filament recipe (``HANDOFF_filaments.md`` section 4) on a ``train`` config section."""
+    train["chunk_sampling"] = "repeat_factor"
+    train.setdefault("augmentation", {}).update(rotation_mode="flips", flip_p=0.5)
+    train.setdefault("particles", {}).update(cross_class_neg_weight=0.0)
+    train.update(early_stop_rel_delta=0.007, early_stop_patience=10, lr_plateau_match_early_stop=True,
+                 lr_plateau_patience=5, weight_averaging="ema")
+    return train
+
+
+def _train_arm(work, stage_dir, fil_classes, part_classes, particles_star, settings, val_stems=None):
     from pathlib import Path
 
     from benchmarks.common import _find_checkpoint, _run_cli, _train_section, _write_config
@@ -94,7 +136,9 @@ def _train_arm(work, stage_dir, fil_classes, part_classes, particles_star, setti
     }
     if fil_classes:
         prep["filament_masks"] = ",".join(f"{n}:{Path(stage_dir) / 'masks' / name}" for n, name, _ in fil_classes)
-    train = _train_section(work, settings, 2, conditioning=True)
+    train = apply_recipe(_train_section(work, settings, 2, conditioning=True))
+    if val_stems:
+        train["val_stems"] = ",".join(val_stems)
     cfg = {"shared": {"training_data_dir": str(work / "training_data"), "chunks_dir": str(work / "chunks")},
            "prepData": prep, "train": train,
            "infer": {"predictions_dir": str(work / "predictions"),
@@ -118,7 +162,18 @@ def _point_f1(pred_polys, true_polys, spacing_vox, radius_vox):
     return {"tp": tp, "fp": fp, "fn": fn, "f1": 2 * tp / max(1, 2 * tp + fp + fn)}
 
 
-def _evaluate(ckpt, tests, objects_dir_of, fil_names, particles_star, out_dir):
+def _draw(what, fn, *args, **kwargs):
+    """Pictures never end a run."""
+    from benchmarks.common import _log
+
+    try:
+        return fn(*args, **kwargs)
+    except Exception as e:
+        _log(f"Could not draw {what}: {e}")
+        return None
+
+
+def _evaluate(ckpt, tests, objects_dir_of, fil_names, particles_star, out_dir, views_dir=None):
     import time
     from pathlib import Path
 
@@ -126,6 +181,7 @@ def _evaluate(ckpt, tests, objects_dir_of, fil_names, particles_star, out_dir):
     import pandas as pd
     import torch
 
+    from benchmarks import filament_views as V
     from benchmarks.common import _counts, _device, _gpu_peak_mb, _infer_config, _reset_gpu_peak, isolated_main_config
     from tomocpt.labels.filaments import mask_to_centerlines
     from tomocpt.networks.inference import InferenceModel
@@ -166,6 +222,16 @@ def _evaluate(ckpt, tests, objects_dir_of, fil_names, particles_star, out_dir):
                     s["points"] = _point_f1(pred, true, cfg.filament_spacing_ang / apix, tol)
                     s["n_pred"], s["n_true"] = len(pred), len(true)
                     rec["filaments"][row.name] = s
+                    if views_dir is not None:
+                        def draw_view():
+                            with mrcfile.open(str(t["tomogram"]), permissive=True) as m:
+                                tomo = np.asarray(m.data, dtype=np.float32)
+                            title = (f"{t['name']}, {row.name}: threshold {thr[c]:.2f}, precision {s['precision']:.3f}, "
+                                     f"recall {s['recall']:.3f}, F1 {s['f1']:.3f}, {len(pred)} traced / {len(true)} true")
+                            V.save_filament_view(Path(views_dir) / f"{t['name']}_{row.name}.png", tomo,
+                                                 V.target_map(true, mask.shape, row.diameter_ang, apix),
+                                                 maps[c].detach().float().cpu().numpy(), pred, true, tol, title)
+                        _draw(f"{t['name']} {row.name}", draw_view)
                 elif stars is not None:
                     g = stars[(stars["rlnMicrographName"].astype(str) == t["name"])
                               & (stars["rlnClassNumber"].astype(int) == int(row.number))]
@@ -222,6 +288,8 @@ def main(argv=None):
     if str(repo) not in sys.path:
         sys.path.insert(0, str(repo))
     from benchmarks.common import TrainSettings, _log, save_json
+    from benchmarks.filament_views import dump_training_images, save_threshold_curve
+    from tomocpt.predict.calibration import read_calibration
 
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--data_root", required=True)
@@ -234,7 +302,10 @@ def main(argv=None):
     ap.add_argument("--arms", default="filaments,joint,particles")
     ap.add_argument("--epochs", type=int, default=60)
     ap.add_argument("--batch_size", type=int, default=2)
+    ap.add_argument("--n_cpus", type=int, default=2, help="Data loading and preprocessing workers")
     ap.add_argument("--test_frac", type=float, default=0.2)
+    ap.add_argument("--train_runs", default=None, help="Fixed training runs of the one training set, comma-separated")
+    ap.add_argument("--val_runs", default=None, help="Fixed validation runs (with --train_runs); reported as held_out")
     ap.add_argument("--max_runs", type=int, default=None)
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--tiny", action="store_true", help="feature_size 12 (smoke runs)")
@@ -257,12 +328,22 @@ def main(argv=None):
     fil = [(base + 100 + i, o, diam[o]) for i, o in enumerate(objects)]
     train_sets = [s for s in a.train_sets.split(",") if s.strip()]
     test_sets = [s for s in a.test_sets.split(",") if s.strip()]
-    staged = _stage(a.data_root, train_sets, objects, out / "stage", a.test_frac, a.seed, a.max_runs)
+    val_stems = None
+    if bool(a.train_runs) != bool(a.val_runs):
+        raise ValueError("--train_runs and --val_runs go together")
+    if a.train_runs:
+        if len(train_sets) != 1:
+            raise ValueError("--train_runs needs exactly one training set")
+        names = lambda text: [r.strip() for r in text.split(",") if r.strip()]  # noqa: E731
+        staged = _stage_fixed(a.data_root, train_sets[0], objects, out / "stage", names(a.train_runs), names(a.val_runs))
+        val_stems = [t["name"] for t in staged["test"]]
+    else:
+        staged = _stage(a.data_root, train_sets, objects, out / "stage", a.test_frac, a.seed, a.max_runs)
     if test_sets:
         extra = _stage(a.data_root, test_sets, objects, out / "stage_testsets", 1.0, a.seed, a.max_runs, all_test=True)
         staged["testsets"] = extra["test"]
     _log(f"train runs {len(staged['train'])}, held-out {len(staged['test'])}, test sets {len(staged.get('testsets', []))}")
-    settings = TrainSettings(n_epochs=a.epochs, batch_size=a.batch_size, tiny=a.tiny,
+    settings = TrainSettings(n_epochs=a.epochs, batch_size=a.batch_size, n_cpus=a.n_cpus, tiny=a.tiny,
                              swin={"feature_size": 12} if a.tiny else {}, class_head="softmax")
     arms = [x.strip() for x in a.arms.split(",") if x.strip()]
     if not a.particles_star:
@@ -272,18 +353,28 @@ def main(argv=None):
     for arm in arms:
         f_cls, p_cls = spec[arm]
         t0 = time.time()
-        ckpt = _train_arm(out / arm, out / "stage" / "train", f_cls, p_cls, a.particles_star, settings)
+        ckpt = _train_arm(out / arm, out / "stage" / "train", f_cls, p_cls, a.particles_star, settings, val_stems)
         res = {"checkpoint": str(ckpt), "train_seconds": time.time() - t0}
+        views = out / arm / "views"
+        _draw("training panels", dump_training_images, out / arm / "model", views / "training")
+        calibration = read_calibration(ckpt) or {}
+        res["calibration"] = calibration.get("classes")
+        for n, name, _ in f_cls:
+            entry = (calibration.get("classes") or {}).get(n)
+            if entry:
+                _draw(f"threshold curve of {name}", save_threshold_curve, views / f"threshold_curve_{name}.png", entry,
+                      f"{name}, validation tomograms")
 
         def mask_of(t, name, root):
             return Path(root) / "masks" / name / f"{t['name']}.mrc"
 
-        for key, root in (("held_out", out / "stage" / "test"), ("test_sets", out / "stage_testsets" / "test")):
+        held_out_root = out / "stage" / ("train" if val_stems else "test")
+        for key, root in (("held_out", held_out_root), ("test_sets", out / "stage_testsets" / "test")):
             tests = staged["test"] if key == "held_out" else staged.get("testsets", [])
             if not tests:
                 continue
             ev = _evaluate(ckpt, tests, lambda t, n, r=root: mask_of(t, n, r), [n for _, n, _ in f_cls],
-                           a.particles_star, out / arm / f"pred_{key}")
+                           a.particles_star, out / arm / f"pred_{key}", views_dir=views / key)
             res[key] = {"summary": _summary(ev), **ev}
         report["arms"][arm] = res
         save_json(out / "filaments_benchmark.json", report)

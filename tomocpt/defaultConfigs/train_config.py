@@ -282,6 +282,10 @@ class TrainConfig:
     cv_fold: Annotated[
         int, typer.Option(help="k-fold training: the fold used for validation, in [0, cv_folds)")
     ] = 0
+    val_stems: Annotated[
+        Optional[str], typer.Option(help="Fixed validation split by tomogram (pipeline v2): comma-separated tomogram "
+                                         "stems; None = random split. Cannot be combined with cv_folds")
+    ] = None
     early_stop_min_delta: Annotated[
         float, typer.Option(help="Early stopping on val_loss_smooth: minimum absolute improvement that counts "
                                  "(legacy 0.005)")

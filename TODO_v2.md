@@ -149,7 +149,8 @@ LR recipe; expectation: clears +0.02 over 0.741 by training longer.
 ## 3c. Filament mode: full training and evaluation (human decision 4 Nov 2026; after 3b; handoff: `HANDOFF_filaments.md`)
 Filaments are less tested than particles (Gate 6 passed on synthetic data plus a smoke run only).
 - [x] 3c.0 Tracing threshold calibration on validation centrelines, filament rows in the CV report (Gate 6b, 6 Nov 2026).
-- [ ] 3c.1 T6.5 real-data benchmark (deferred item 1.5): train on DS-10490 subset + DS-10477, test
+- [x] 3c.0b Driver recipe, fixed split, pictures, metric and tracing speed (Gate 6c, 6 Nov 2026).
+- [ ] 3c.1 T6.5 real-data benchmark (deferred item 1.5): DS-10490 `sample_1`-`sample_5` train, `sample_6`, `sample_7` validation (human decision 6 Nov 2026; DS-10477 optional check). Earlier text: train on DS-10490 subset + DS-10477, test
       DS-10477 held-out and DS-10513; centreline precision / recall / F1 (and F4); pick the run size first
       (tiny was 17 min/epoch for 4 train tomograms).
 - [ ] 3c.2 Same with the Gate 7 losses and membrane negative masks

@@ -1,0 +1,41 @@
+{
+ "gate_id": "6c",
+ "agent_name": "06c_AGENT_FILAMENT_DRIVER (orchestrator as TA and implementer)",
+ "status": "PASSED",
+ "base_ref": "5b17d46",
+ "files_created": [
+  "tests/gate6c/*",
+  ".claude/agents/06c_AGENT_FILAMENT_DRIVER.md",
+  "benchmarks/filament_views.py"
+ ],
+ "files_modified": [
+  "benchmarks/filaments.py",
+  "tomocpt/dataManager/chunking.py",
+  "tomocpt/defaultConfigs/train_config.py",
+  "tomocpt/training/helpers.py",
+  "tomocpt/metrics.py",
+  "tomocpt/networks/pickingModel.py",
+  "tomocpt/labels/filaments.py",
+  "README.md",
+  "CLAUDE.md",
+  "TODO_v2.md",
+  "HANDOFF_filaments.md"
+ ],
+ "config_fields_added": [
+  "train.val_stems: Optional[str] = None"
+ ],
+ "tests": {
+  "fast_suite": "905 passed, 27 skipped, 18 deselected (not slow), before the last change (classify_traces reuses one index)",
+  "gate6c": "30 passed after that change",
+  "slow": "gate 6c has no slow tests"
+ },
+ "notes": [
+  "Pass criteria are the frozen tests. No smoke run on the final code reached exit 0.",
+  "1-epoch tiny smoke (18:47-18:59, before the speed fixes): exit 0; two levels, val_stems and filaments_path in the layout, flat prediction, 0 traces.",
+  "3-epoch tiny smoke 1: stalled in calibration, stopped by hand. Smoke 2: training and calibration (9 min) finished, stopped by its own 50 min limit while drawing views. Smoke 3 (views fixed): stopped by hand at 9 min on the human's instruction to go to the real run.",
+  "So the driver has not written scores with real traces end to end on real data; filaments_smoke_6c_20261106/filaments_benchmark.json is from the 1-epoch run. The agreed run is the check.",
+  "Centrelines from real masks with and without the junction cap: identical (sample_1 and sample_6, microtubule and actin).",
+  "Oracle F1 (microtubule 1.00, actin 0.99) tests the tracer only: the target is drawn from the centrelines it is scored against. Label quality is unverified; actin bundles show tangles and loops.",
+  "Validation scores share tomograms with threshold calibration, so they are slightly optimistic."
+ ]
+}

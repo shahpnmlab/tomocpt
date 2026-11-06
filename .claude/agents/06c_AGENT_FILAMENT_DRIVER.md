@@ -49,3 +49,14 @@ some visual feedback of whats going on").
 - **G6c-C7** `best_slice_panel`: chooses the sample and slice with the signal, returns None without it, keeps
   the scale of target and prediction.
 - **G6c-C8** Speed: 200 polylines of 200 segments score in under 5 s, and equal the exact values.
+
+## Addendum 2 (6 Nov 2026, calibration stalled on a noisy map)
+The 3-epoch tiny smoke run spent over 50 minutes on one tomogram at threshold 0.1 (23 % of the volume, 12 634
+components). Path exception: `tomocpt/labels/filaments.py`; it also builds labels, so outputs on real masks must not change.
+- **Gap joining.** `_join_gaps` compared all ends for each merge. It now keeps candidates in a heap and finds
+  near ends with a grid; results and order are the same, ties included.
+- **Junction cap.** `MAX_JUNCTION_ARMS = 32`: above this, a node's arms stay unpaired (quadratic otherwise).
+- **G6c-C9** `_join_gaps` equals the all-pairs version on random fragments, on and off the voxel grid; 6000
+  fragments in under 10 s.
+- **G6c-C10** A crossing is still paired; arms above the cap stay unpaired.
+

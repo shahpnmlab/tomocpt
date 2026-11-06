@@ -479,6 +479,28 @@
         "tests/gate6b/conftest.py": "9d1f71318866c3f5998a1e09ba1a5e7fcce47f665b5f62fabe863b116061e9da",
         "tests/gate6b/test_g6b_filament_calibration.py": "2b6a6e207351c4c01db6b56fd85b58e304acabdb599551cd9de8d92e8496dd23"
       }
+    },
+    "6c": {
+      "agent": "06c_AGENT_FILAMENT_DRIVER",
+      "attempts": 1,
+      "status": "PASSED",
+      "path_exceptions": [
+        "tomocpt/metrics.py (metric speed)",
+        "tomocpt/networks/pickingModel.py (image logging only)",
+        "tomocpt/labels/filaments.py (_join_gaps speed, junction cap; real-mask centrelines unchanged)"
+      ],
+      "notes": [
+        "Handoff step 3 and the human request for target and prediction pictures. See the report: no smoke on the final code reached exit 0; the human moved to the real run."
+      ],
+      "test_hashes": {
+        "tests/gate6c/README.md": "330f223916e19a479b96e827907377d59c42b8263375acab48a4d8929caebdb8",
+        "tests/gate6c/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "tests/gate6c/conftest.py": "74e9a3bb7695f410e85d76f8d8890c6475325b989139c2160e2346125c05fea5",
+        "tests/gate6c/test_g6c_driver.py": "4b496dc54aecc0f450bdcbb69b17beafe485e0aa930b7f08515def0f31148e92",
+        "tests/gate6c/test_g6c_join_gaps.py": "27127778d1b166fd5c8dcabf732081bf9765847d830c92ecf51c6f9d95bfe707",
+        "tests/gate6c/test_g6c_junction_cap.py": "0639a80e82968afbcc832f262d45aeed962a8b2cdc1570b7bb88d939cf4e368f",
+        "tests/gate6c/test_g6c_panels_speed.py": "6d5f09b53634f24e0b3351bc8ade1d61449b6b61f682956e82261e2ca01ca0e6"
+      }
     }
   }
 }

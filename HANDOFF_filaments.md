@@ -81,16 +81,17 @@ of this yet (it sets pipeline 2, linear labels, class head, conditioning on): up
 2. **Calibration for filament classes: done (Gate 6b).** The tracing threshold is calibrated on the
    validation centrelines (`infer.filament_calibration_beta`, default F1); CV reports have a filament
    table. Chunks built before Gate 6b have no `filaments_path` and stay uncalibrated: rechunk.
-3. **Update the driver** (`benchmarks/filaments.py`): recipe of section 4; mixed voxel sizes need one
-   staged raw dir per dataset (`prepare_picking_star_multiclass` reads one pixel size per directory;
-   the smoke run worked with filaments only, recheck for the joint arm); membrane negative masks for
-   3c.2 (`prepData.negative_masks`).
-4. Smoke run (`--tiny --max_runs 4 --epochs 1`) to recheck the pipeline on the current code, then
-   the agreed run in the background with a watcher (`status` file with `start`/`exit`, as the CZII
-   pilots in `benchmarks/out/czii_3b_*`).
-5. Report: centreline precision / recall / F1 (and F4) on DS-10477 held-out and DS-10513, plus views of
-   traced filaments (3c.3: missed / false / broken traces). Then 3c.2 (Gate 7 losses + membrane
-   negatives) only if 3c.1 works.
+3. **Driver: done (Gate 6c).** Recipe of section 4, fixed split (`--train_runs`, `--val_runs`,
+   `train.val_stems`), pictures in `<arm>/views/` (held-out views, threshold curves, training panels;
+   `python benchmarks/filament_views.py <log root> <out dir>` works during a run). Tracing is fast
+   enough on noisy maps (about 100 s per class per tomogram at worst).
+4. Smoke runs on the tiny model showed only noise, so the human moved on to the real run (6 Nov 2026):
+   DS-10490 5 / 2, default model, in the worktree, with a `status` file.
+5. Report: centreline precision / recall / F1 (and F4) on `sample_6`, `sample_7`, plus views of traced
+   filaments (3c.3: missed / false / broken traces). Check actin bundle targets against the masks: they
+   show tangles and loops, and the oracle F1 cannot judge the labels. DS-10477 is an optional
+   out-of-distribution check. Then 3c.2 (Gate 7 losses + membrane negatives) only if 3c.1 works.
+   Membrane masks: `prepData.negative_masks`. Joint arm: mixed voxel sizes need one staged raw dir per dataset.
 
 ## 6. Known traps
 - Frozen tests: disputes go to `.claude/reports/gate_0N_test_dispute.md`; never edit a frozen file.

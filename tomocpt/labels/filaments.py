@@ -15,6 +15,7 @@ distance from the centreline (the union of the segments, so the ends are round c
 
 from __future__ import annotations
 
+import heapq
 import math
 import warnings
 from pathlib import Path
@@ -293,6 +294,10 @@ _OFFS = np.array([(dz, dy, dx) for dz in (-1, 0, 1) for dy in (-1, 0, 1) for dx 
                   if (dz, dy, dx) != (0, 0, 0)], dtype=np.int64)
 
 
+# More arms than this at one node is a percolated region, not a crossing: they stay unpaired.
+MAX_JUNCTION_ARMS = 32
+
+
 class _Graph:
     """Skeleton graph: nodes are clusters of non-degree-2 voxels; edges are voxel paths."""
 
@@ -466,7 +471,7 @@ def _graph_polylines(skel: np.ndarray, R: float) -> List[np.ndarray]:
             if a[0] != b[0]:
                 partner[a], partner[b] = b, a
             continue
-        if len(ends) < 3:
+        if len(ends) < 3 or len(ends) > MAX_JUNCTION_ARMS:
             continue
         c = centre[node]
         dirs = [_end_direction(oriented(i, s), c, 0.5 * R, 3.0 * R) for i, s in ends]
@@ -589,38 +594,77 @@ def _join_gaps(polys: List[np.ndarray], max_gap: float, R: float) -> List[np.nda
         n = np.linalg.norm(d)
         return d / n if n > 1e-9 else np.zeros(3)
 
-    merged = True
-    while merged and len(polys) > 1:
-        merged = False
-        best = None
-        for a in range(len(polys)):
-            for b in range(len(polys)):
-                if a == b:
-                    continue
-                for ea in (0, 1):
-                    for eb in (0, 1):
-                        pa = polys[a][0] if ea == 0 else polys[a][-1]
-                        pb = polys[b][0] if eb == 0 else polys[b][-1]
-                        gap = float(np.linalg.norm(pb - pa))
-                        if gap > max_gap:
-                            continue
-                        da, db = end_dir(polys[a], ea == 0), end_dir(polys[b], eb == 0)
-                        if float(da @ db) > -0.7:
-                            continue
-                        if gap > 1e-6:
-                            gv = (pb - pa) / gap
-                            if float(da @ gv) < 0.5:
-                                continue
-                        if best is None or gap < best[0]:
-                            best = (gap, a, ea, b, eb)
-        if best is not None:
-            _, a, ea, b, eb = best
-            pa = polys[a] if ea == 1 else polys[a][::-1]   # ends at the join
-            pb = polys[b] if eb == 0 else polys[b][::-1]   # starts at the join
-            new = np.concatenate([pa, pb], axis=0)
-            polys = [p for k, p in enumerate(polys) if k not in (a, b)] + [new]
-            merged = True
-    return polys
+    # Ids grow with each merge and survivors keep their order, so an id orders polylines as the
+    # position in a list that drops the merged pair and appends the result. Polylines never
+    # change, so a candidate stays valid until one of its polylines is merged.
+    alive = dict(enumerate(polys))
+    cell = max(float(max_gap), 1e-9)
+    grid: dict = {}
+
+    def key(point):
+        return tuple(np.floor(point / cell).astype(np.int64).tolist())
+
+    def near(point):
+        i, j, k = key(point)
+        for di in (-1, 0, 1):
+            for dj in (-1, 0, 1):
+                for dk in (-1, 0, 1):
+                    yield from grid.get((i + di, j + dj, k + dk), ())
+
+    def candidate(a, ea, b, eb):
+        pa, pb = alive[a][0 if ea == 0 else -1], alive[b][0 if eb == 0 else -1]
+        gap = float(np.linalg.norm(pb - pa))
+        if gap > max_gap:
+            return None
+        da, db = end_dir(alive[a], ea == 0), end_dir(alive[b], eb == 0)
+        if float(da @ db) > -0.7:
+            return None
+        if gap > 1e-6 and float(da @ ((pb - pa) / gap)) < 0.5:
+            return None
+        return (gap, a, b, ea, eb)   # ties: first in the order a, b, ea, eb
+
+    def add_ends(a):
+        for ea in (0, 1):
+            grid.setdefault(key(alive[a][0 if ea == 0 else -1]), set()).add((a, ea))
+
+    def remove_ends(a):
+        for ea in (0, 1):
+            k = key(alive[a][0 if ea == 0 else -1])
+            grid[k].discard((a, ea))
+            if not grid[k]:
+                del grid[k]
+
+    for a in alive:
+        add_ends(a)
+    heap = []
+    for a in alive:
+        for ea in (0, 1):
+            for b, eb in near(alive[a][0 if ea == 0 else -1]):
+                c = candidate(a, ea, b, eb) if b != a else None
+                if c is not None:
+                    heap.append(c)
+    heapq.heapify(heap)
+
+    next_id = len(polys)
+    while heap:
+        _, a, b, ea, eb = heapq.heappop(heap)
+        if a not in alive or b not in alive:
+            continue
+        pa = alive[a] if ea == 1 else alive[a][::-1]   # ends at the join
+        pb = alive[b] if eb == 0 else alive[b][::-1]   # starts at the join
+        remove_ends(a)
+        remove_ends(b)
+        del alive[a], alive[b]
+        n = next_id
+        next_id += 1
+        alive[n] = np.concatenate([pa, pb], axis=0)
+        for en in (0, 1):
+            for x, ex in near(alive[n][0 if en == 0 else -1]):
+                for c in (candidate(n, en, x, ex), candidate(x, ex, n, en)):
+                    if c is not None:
+                        heapq.heappush(heap, c)
+        add_ends(n)
+    return [alive[a] for a in sorted(alive)]
 
 
 def _region_polylines(region: np.ndarray, apix: float, diameter_ang: float, min_length_ang: float,

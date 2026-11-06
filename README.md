@@ -364,6 +364,10 @@ or those classes use `infer.confidence_threshold`.
 For multi-class models with particles and filaments, use `train.particles.class_head: softmax`.
 `benchmarks/filaments.py` trains on portal data (DS-10490, DS-10477; test DS-10513) and reports
 centreline precision, recall and F1 (length-weighted, tolerance 0.5 x diameter).
+`--train_runs` and `--val_runs` fix the split (`train.val_stems`). Each arm writes pictures to `views/`: whole
+tomograms with target, prediction and traces (matched, false, missed), threshold curves, and input | target |
+prediction panels of training chunks. `python benchmarks/filament_views.py <log root> <out dir>` dumps the panels
+during a run; TensorBoard shows them under `train/<class>` and `val/<class>`.
 
 ### Benchmarks
 

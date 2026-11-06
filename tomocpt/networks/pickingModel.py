@@ -11,6 +11,25 @@ from tomocpt.logger import get_logger
 
 logging = get_logger()
 
+#: A class needs this many voxels above 0.5 in a slice for a chunk panel of it.
+MIN_PANEL_VOXELS = 20
+
+
+def best_slice_panel(x, y, y_pred, c: int):
+    """``[1, H, 3 W + 2]``: input | target | prediction of class ``c`` at the sample and Z slice with
+    the most target, or None if no slice has ``MIN_PANEL_VOXELS`` voxels above 0.5. The input is
+    scaled to [0, 1]; target and prediction keep their scale, so a weak prediction looks weak."""
+    counts = (y[:, c].detach() > 0.5).sum(dim=(-1, -2))  # [B, D]
+    best = int(counts.argmax())
+    if int(counts.reshape(-1)[best]) < MIN_PANEL_VOXELS:
+        return None
+    b, z = best // counts.shape[1], best % counts.shape[1]
+    image = x[b, 0, z].detach().float()
+    image = (image - image.min()) / (image.max() - image.min()).clamp_min(1e-6)
+    tiles = [image, y[b, c, z].detach().float(), y_pred[b, c, z].detach().float()]
+    gap = torch.ones(image.shape[0], 1, dtype=image.dtype, device=image.device)
+    return torch.cat([tiles[0], gap, tiles[1], gap, tiles[2]], dim=1).unsqueeze(0).cpu()
+
 
 def parse_class_weights(text: str) -> dict:
     """Parse ``train.particles.class_weights`` (``"1:1.0,2:2.0"``) into ``{class number: weight}``."""
@@ -357,8 +376,7 @@ class BasePickingModel(BaseModel):
             batch_size=x.shape[0],
         )  # if on_step=True, reconsider sync_dist
 
-        if batch_idx == 0 and self.global_rank == 0:
-            self._log_images(x, y, y_pred, "train")
+        self._log_panels(x, y, y_pred, "train", batch_idx, batch)
         return loss
 
 
@@ -383,8 +401,7 @@ class BasePickingModel(BaseModel):
 
             self.log("val_loss", loss, on_step=False, on_epoch=True, prog_bar=True, sync_dist=True)
 
-            if batch_idx == 0 and self.global_rank == 0:
-                self._log_images(x, y, y_pred, "val")
+            self._log_panels(x, y, y_pred, "val", batch_idx, batch)
                 
             return loss
 
@@ -412,6 +429,34 @@ class BasePickingModel(BaseModel):
         # y_pred = nn.functional.softplus(logits, beta=BETA_FOR_SOFTPLUS)
         y_pred = nn.functional.sigmoid(logits)
         return y_pred
+
+    def _log_panels(self, x, y, y_pred, prefix, batch_idx, batch):
+        """Image logging of one step. Pipeline v1: the first batch. Pipeline v2: per epoch and class,
+        the first batch where the class is present (batch 0 is often empty)."""
+        if self.global_rank != 0:
+            return
+        if not self._is_v2_batch(batch):
+            if batch_idx == 0:
+                self._log_images(x, y, y_pred, prefix)
+            return
+        if batch_idx == 0 or not hasattr(self, "_panels_done"):
+            self._panels_done = getattr(self, "_panels_done", {})
+            self._panels_done[prefix] = set()
+        done = self._panels_done.setdefault(prefix, set())
+        names = [row.name for row in self.class_table()]
+        if len(done) == len(names):
+            return
+        experiment = self.logger.experiment if self.logger is not None else None
+        if not hasattr(experiment, "add_image"):
+            return
+        with torch.no_grad():
+            for c, name in enumerate(names):
+                if c in done:
+                    continue
+                panel = best_slice_panel(x, y, y_pred, c)
+                if panel is not None:
+                    experiment.add_image(f"{prefix}/{name}", panel, global_step=self.current_epoch)
+                    done.add(c)
 
     def _log_images(self, x, y, y_pred, prefix):
         """Central slices of input, target and prediction; one target/prediction panel per

@@ -1,3 +1,4 @@
+from typing import List, Optional
 import os
 import os.path as osp
 import shutil
@@ -62,6 +63,7 @@ def _prepare_data_if_needed(config: DictConfig):
     cv = (cv_folds, int(safe_getattr(config, "cv_fold", 0) or 0)) if cv_folds > 0 else None
     if cv is not None and pipeline_version != 2:
         raise ValueError("k-fold training (train.cv_folds > 0) needs train.data_pipeline_version=2")
+    val_stems = _requested_val_stems(config)
     chunking_name_done = get_chunking_name_done(
         config.chunks_dir, require_labels=require_labels
     )
@@ -90,6 +92,7 @@ def _prepare_data_if_needed(config: DictConfig):
                     f"{class_table_to_json(recorded)}. Fix prepData.class_diameters / class_names, or "
                     f"delete {chunking_name_done} to rebuild the chunks."
                 )
+            _check_layout_val_stems(layout, val_stems, chunking_name_done)
             requested = {"folds": cv[0], "fold": cv[1]} if cv is not None else None
             if layout.get("cv") != requested:
                 raise RuntimeError(
@@ -140,6 +143,7 @@ def _prepare_data_if_needed(config: DictConfig):
             seed=getattr(config, "SEED_FOR_TRAIN_VAL_SPLIT", 42),
             label_border_policy=mainConfig.prepData.label_border_policy,
             cv=cv,
+            val_stems=val_stems,
         )
     do_chunking(
         tomos_df,
@@ -152,6 +156,26 @@ def _prepare_data_if_needed(config: DictConfig):
         **chunk_kwargs,
     )
     logging.info("Data preparation complete.")
+
+
+def _requested_val_stems(config) -> Optional[List[str]]:
+    """Sorted stems of ``train.val_stems`` (Gate 6c), or None for the random split or k-fold."""
+    text = safe_getattr(config, "val_stems", None)
+    if text is None or not str(text).strip():
+        return None
+    if int(safe_getattr(config, "cv_folds", 0) or 0) > 0:
+        raise ValueError("train.val_stems cannot be combined with train.cv_folds")
+    if int(getattr(config, "data_pipeline_version", 1) or 1) != 2:
+        raise ValueError("train.val_stems needs train.data_pipeline_version=2")
+    return sorted({s.strip() for s in str(text).split(",") if s.strip()})
+
+
+def _check_layout_val_stems(layout: dict, requested: Optional[List[str]], done_file) -> None:
+    """Existing chunks must have the requested fixed validation split."""
+    found = layout.get("val_stems")
+    if found != requested:
+        raise RuntimeError(f"Validation split mismatch: the chunks were built with val_stems={found} but "
+                           f"train.val_stems requests {requested}. Delete {done_file} to rebuild the chunks.")
 
 
 def _ssl_version(config) -> int:

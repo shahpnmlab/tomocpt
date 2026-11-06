@@ -185,22 +185,55 @@ def _point_to_polylines(points: np.ndarray, polylines: Sequence[np.ndarray]) -> 
     return best
 
 
+class _PolylineIndex:
+    """KD-tree on nodes at most ``step`` apart along polylines, each node knowing its segment."""
+
+    def __init__(self, polylines: Sequence[np.ndarray], step: float):
+        self.step = float(step)
+        nodes, owner, starts, ends = [], [], [], []
+        for p in polylines:
+            p = np.asarray(p, dtype=np.float64).reshape(-1, 3)
+            pairs = zip(p[:-1], p[1:]) if len(p) >= 2 else ((p[0], p[0]),)
+            for a, b in pairs:
+                n = max(1, int(np.ceil(np.linalg.norm(b - a) / self.step)))
+                nodes.append(a + (np.arange(n + 1) / n)[:, None] * (b - a))
+                owner.append(np.full(n + 1, len(starts), dtype=np.int64))
+                starts.append(a)
+                ends.append(b)
+        self.owner = np.concatenate(owner)
+        self.starts, self.ends = np.array(starts), np.array(ends)
+        self.tree = cKDTree(np.concatenate(nodes))
+
+    def _exact_within(self, point: np.ndarray, tol: float) -> bool:
+        """Against the segments with a node within ``tol + step`` (the nearest point of a segment
+        within ``tol`` has a node of that segment at most ``step / 2`` away)."""
+        near = self.tree.query_ball_point(point, tol + self.step)
+        segs = np.unique(self.owner[near])
+        a, ab = self.starts[segs], self.ends[segs] - self.starts[segs]
+        L2 = np.sum(ab * ab, axis=1)
+        t = np.clip(np.sum((point - a) * ab, axis=1) / np.where(L2 > 0, L2, 1.0), 0.0, 1.0)
+        return bool(len(segs) and np.min(np.linalg.norm(point - (a + t[:, None] * ab), axis=1)) <= tol)
+
+    def within(self, points: np.ndarray, tol: float) -> np.ndarray:
+        """``distance(points, polylines) <= tol``. The node distance decides all but the points in
+        ``(tol, sqrt(tol^2 + (step/2)^2)]``; only those need the exact distance."""
+        d, _ = self.tree.query(points)
+        inside = d <= tol
+        band = np.nonzero(~inside & (d <= np.sqrt(tol * tol + 0.25 * self.step * self.step) + 1e-9))[0]
+        for i in band:
+            inside[i] = self._exact_within(points[i], tol)
+        return inside
+
+
 def _within_tolerance(points: np.ndarray, polylines: Sequence[np.ndarray], tol: float, step: float) -> np.ndarray:
-    """``distance(points, polylines) <= tol``. A KD-tree on nodes at most ``step`` apart decides
-    all but the points whose node distance lies in ``(tol, sqrt(tol^2 + (step/2)^2)]``; only those
-    need the exact distance."""
-    nodes = np.concatenate([_densify(p, step) for p in polylines])
-    d, _ = cKDTree(nodes).query(points)
-    inside = d <= tol
-    band = ~inside & (d <= np.sqrt(tol * tol + 0.25 * step * step) + 1e-9)
-    if band.any():
-        inside[band] = _point_to_polylines(points[band], polylines) <= tol
-    return inside
+    """``distance(points, polylines) <= tol``."""
+    return _PolylineIndex(polylines, step).within(np.asarray(points, dtype=np.float64), tol)
 
 
 def _covered_length(src: Sequence[np.ndarray], ref: Sequence[np.ndarray], tol: float, step: float):
     """``(length of src within tol of ref, total length of src)``; sub-segments of ``step``."""
     total, near = 0.0, 0.0
+    index = _PolylineIndex(ref, step) if ref else None
     for p in src:
         d = _densify(p, step)
         if len(d) < 2:
@@ -208,8 +241,8 @@ def _covered_length(src: Sequence[np.ndarray], ref: Sequence[np.ndarray], tol: f
         mid = 0.5 * (d[:-1] + d[1:])
         seg = np.linalg.norm(np.diff(d, axis=0), axis=1)
         total += float(seg.sum())
-        if ref:
-            near += float(seg[_within_tolerance(mid, ref, tol, step)].sum())
+        if index is not None:
+            near += float(seg[index.within(mid, tol)].sum())
     return near, total
 
 
