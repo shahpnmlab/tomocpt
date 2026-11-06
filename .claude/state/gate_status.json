@@ -447,6 +447,21 @@
         "tests/gate4g/conftest.py": "57747d027f3aa390e8f1965307b9204e19e8c6c22ec9ecf3987ba5a1f66008ee",
         "tests/gate4g/test_g4g_lr_plateau.py": "1ae07ae184e5535dfdcb7ed9a25040106446078f45a1e4e83df98cd0e16c347f"
       }
+    },
+    "4h": {
+      "agent": "04h_AGENT_REL_THRESHOLD",
+      "attempts": 0,
+      "status": "TESTS_FROZEN",
+      "path_exceptions": [],
+      "notes": [
+        "Human decision (6 Nov 2026): relative thresholds for early stopping and the matched LR plateau before the filament runs. Recipe value 0.007 derived from the 3b EMA curve (1e-4 / 0.0147); 0.5% in the first proposal was illustrative."
+      ],
+      "test_hashes": {
+        "tests/gate4h/README.md": "2372c35303e320e2537d5e5dcb0c89899444b2f443bc0caa7462c171c49ac3b5",
+        "tests/gate4h/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "tests/gate4h/conftest.py": "abe4ad6da4b49989f1b2b21b0b4ff490678e3e7354b5ab5428e1adb7e1c2ded0",
+        "tests/gate4h/test_g4h_rel_threshold.py": "dc3efacaf45b047058386839852b9208379d7b9b8e8c8466fe1c52e3f01c493f"
+      }
     }
   }
 }
