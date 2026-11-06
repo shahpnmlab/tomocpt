@@ -142,7 +142,7 @@ LR recipe; expectation: clears +0.02 over 0.741 by training longer.
 - [ ] 3b.4 Pilot on fold 0 (both recipes), then full CZII CV of the winner. A fair Gate 7 verdict needs the
       baseline (Huber, no contrastive) retrained with the same recipe as well.
 
-## 3c. Filament mode: full training and evaluation (human decision 4 Nov 2026; after 3b)
+## 3c. Filament mode: full training and evaluation (human decision 4 Nov 2026; after 3b; handoff: `HANDOFF_filaments.md`)
 Filaments are less tested than particles (Gate 6 passed on synthetic data plus a smoke run only).
 - [ ] 3c.1 T6.5 real-data benchmark (deferred item 1.5): train on DS-10490 subset + DS-10477, test
       DS-10477 held-out and DS-10513; centreline precision / recall / F1 (and F4); pick the run size first

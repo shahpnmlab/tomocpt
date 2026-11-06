@@ -1,5 +1,7 @@
 # HANDOFF — Gate 6 benchmark (state on 31 Oct 2026)
 
+**Superseded by `HANDOFF_filaments.md` (6 Nov 2026).**
+
 Read `HANDOFF_scale_free.md`, `CLAUDE.md`, `.claude/agents/06_AGENT_FILAMENTS.md` and
 `.claude/reports/gate_06_report.json` first. Branch `v2-dev`, last commits `18ef039` (Gate 6
 implementation), `21fd96c` (handoff), `58cc195` (diagnosis). Not pushed.
