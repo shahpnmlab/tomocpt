@@ -109,7 +109,12 @@ Actin diagnosis (maps re-predicted from the checkpoint; reproduces 0.760 and 0.4
 - Filters do not rescue it: at threshold 0.3, a 400 A minimum length gives `sample_6` 0.793 but `sample_7` 0.297. Straightness barely separates false traces (median 0.96-0.97 against 0.99).
 - True traces are broken: median length of matched traces 499 A, 307 A at threshold 0.3, true filaments 939 A.
 - Overfitting: actin validation loss bottoms near epoch 32 (0.109) and rises (0.1125 at 44); training loss keeps falling (0.048).
-3c.2 and 3c.1b await a human choice. Hand-cleaning of the centrelines is also pending (edit `data/filaments/10490/centerlines/`).
+Two-class check (`views/held_out/*_both_classes.png`): each class is trained and read at its own level (actin 6.8 A/px, microtubule 7.812 A/px), so the softmax never has both classes available and they do not compete directly. Each channel treats the other class as ordinary background (weight about 2 against hundreds for positives). P(microtubule) on actin is at background. P(actin) is not: at microtubule walls (13-19 voxels from the centre) the 99th percentile is 0.30-0.36 against 0.25 in background, and 5% (`sample_6`) and 16% (`sample_7`) of false actin length lies there (chance 3%, 5.5%). `cross_class_neg_weight` cannot address this: it reads available classes only, and the microtubule target is 0.03 or less at the wall. Use the portal masks as negatives (`prepData.negative_masks` feeds the contrastive loss only; a mask weight in the value term would be new code). `band_max_vox=37` would give one level at 6.8 A/px.
+Actin confidence: microtubules are calibrated; actin is low on filaments (median 0.19-0.47, training tomograms included) and too high off them (map 0.5-0.6, mean target 0.13-0.27).
+False actin length near membranes is 20-21% (3-6% of the volume is that near one); matched traces 0%.
+Actin contrast at filament width (`sample_1`-`sample_7`): 0.85, 0.90, 0.73, 0.97, 0.63, 0.87, 0.58. `sample_7` is the lowest.
+Human decision 7 Nov 2026: rerun with more tomograms (train `sample_1`-`sample_5`, `sample_8`-`sample_22`; validation unchanged). Labels: 776 actin lines (7 bend over 30 degrees), 175 microtubule lines (none). Run: `benchmarks/out/filaments_3c1b_20tomos_20261107`, default band. `sample_1`-`sample_22` leave the final-boss test split.
+3c.2 awaits that result. Hand-cleaning of the centrelines is also pending (edit `data/filaments/10490/centerlines/`).
 
 ## 6. Known traps
 - Frozen tests: disputes go to `.claude/reports/gate_0N_test_dispute.md`; never edit a frozen file.
