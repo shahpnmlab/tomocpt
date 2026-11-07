@@ -113,7 +113,7 @@ Two-class check (`views/held_out/*_both_classes.png`): each class is trained and
 Actin confidence: microtubules are calibrated; actin is low on filaments (median 0.19-0.47, training tomograms included) and too high off them (map 0.5-0.6, mean target 0.13-0.27).
 False actin length near membranes is 20-21% (3-6% of the volume is that near one); matched traces 0%.
 Actin contrast at filament width (`sample_1`-`sample_7`): 0.85, 0.90, 0.73, 0.97, 0.63, 0.87, 0.58. `sample_7` is the lowest.
-Human decision 7 Nov 2026: rerun with more tomograms (train `sample_1`-`sample_5`, `sample_8`-`sample_22`; validation unchanged). Labels: 776 actin lines (7 bend over 30 degrees), 175 microtubule lines (none). Run: `benchmarks/out/filaments_3c1b_20tomos_20261107`, default band. `sample_1`-`sample_22` leave the final-boss test split.
+Human decision 7 Nov 2026: rerun with more tomograms (train `sample_1`-`sample_5`, `sample_8`-`sample_22`; validation unchanged). Labels: 776 actin lines (7 bend over 30 degrees), 175 microtubule lines (none). Human decision 7 Nov 2026: also `band_max_vox=37` (one level at 6.8 A/px, driver `--band_max_vox`). Run: `benchmarks/out/filaments_3c1b_20tomos_band37_20261107`. The default-band directory `filaments_3c1b_20tomos_20261107` was stopped during chunking; ignore it. `sample_1`-`sample_22` leave the final-boss test split.
 3c.2 awaits that result. Hand-cleaning of the centrelines is also pending (edit `data/filaments/10490/centerlines/`).
 
 ## 6. Known traps
