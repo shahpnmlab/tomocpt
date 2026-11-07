@@ -85,6 +85,10 @@ of this yet (it sets pipeline 2, linear labels, class head, conditioning on): up
    `train.val_stems`), pictures in `<arm>/views/` (held-out views, threshold curves, training panels;
    `python benchmarks/filament_views.py <log root> <out dir>` works during a run). Tracing is fast
    enough on noisy maps (about 100 s per class per tomogram at worst).
+   **Labels (human decision, 6-7 Nov 2026):** skeleton centrelines tangle in actin bundles (closing at the tube
+   radius merges neighbours). DS-10490 has no filament points on the portal: `Actin` is a separate particle
+   species. Labels and scores now come from `scripts/masks_to_centerlines.py` (template matching, a one-dataset
+   script, not core): `data/filaments/10490/centerlines/<object>/<run>.mod`, `--centerlines` in the driver.
 4. Smoke runs on the tiny model showed only noise, so the human moved on to the real run (6 Nov 2026):
    DS-10490 5 / 2, default model, in the worktree, with a `status` file.
 5. Report: centreline precision / recall / F1 (and F4) on `sample_6`, `sample_7`, plus views of traced

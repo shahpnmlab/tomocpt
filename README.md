@@ -369,6 +369,10 @@ tomograms with target, prediction and traces (matched, false, missed), threshold
 prediction panels of training chunks. `python benchmarks/filament_views.py <log root> <out dir>` dumps the panels
 during a run; TensorBoard shows them under `train/<class>` and `val/<class>`.
 
+Masks whose filaments touch or cross (DS-10490) merge under skeleton tracing. `scripts/masks_to_centerlines.py` traces
+such masks with oriented templates instead and writes one IMOD model per mask, for `prepData.filament_coords`
+(`benchmarks/filaments.py --centerlines`).
+
 ### Benchmarks
 
 `benchmarks/synthetic_multisize.py` (phantoms from 80 to 500 A, two levels) and
