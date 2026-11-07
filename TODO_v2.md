@@ -150,9 +150,11 @@ LR recipe; expectation: clears +0.02 over 0.741 by training longer.
 Filaments are less tested than particles (Gate 6 passed on synthetic data plus a smoke run only).
 - [x] 3c.0 Tracing threshold calibration on validation centrelines, filament rows in the CV report (Gate 6b, 6 Nov 2026).
 - [x] 3c.0b Driver recipe, fixed split, pictures, metric and tracing speed (Gate 6c, 6 Nov 2026).
-- [ ] 3c.1 T6.5 real-data benchmark (deferred item 1.5): DS-10490 `sample_1`-`sample_5` train, `sample_6`, `sample_7` validation (human decision 6 Nov 2026; DS-10477 optional check). Earlier text: train on DS-10490 subset + DS-10477, test
+- [x] 3c.1 T6.5 real-data benchmark (deferred item 1.5): DS-10490 `sample_1`-`sample_5` train, `sample_6`, `sample_7` validation (human decision 6 Nov 2026; DS-10477 optional check). Earlier text: train on DS-10490 subset + DS-10477, test
       DS-10477 held-out and DS-10513; centreline precision / recall / F1 (and F4); pick the run size first
       (tiny was 17 min/epoch for 4 train tomograms).
+      Result (7 Nov 2026, `benchmarks/out/filaments_3c1_templates_20261107`, code `bd569f6`, stopped at epoch 44, best epoch 34, 4.9 h): microtubule F1 0.995 (20 of 20 traced); actin F1 0.617 (P 0.613, R 0.620; `sample_6` 0.760, `sample_7` 0.455). Scores are agreement with the template traces, on the tomograms that also picked the threshold. Actin is limited by the map, not the tracer: median probability along true centrelines 0.36 / 0.19 against a background 99.9th percentile near 0.46; a length filter gives at most +0.03 on `sample_6` and lowers `sample_7`. Actin validation loss rises after about epoch 32 while training loss keeps falling.
+- [ ] 3c.1b Actin signal (human choice of order, not started): more training tomograms (DS-10490 beyond `sample_1`-`sample_7` shrinks the final-boss test split), 96^3 box or lower `band_max_vox`, training tube diameter nearer the 50 A mask than 70 A.
 - [ ] 3c.2 Same with the Gate 7 losses and membrane negative masks
       (`data/filaments/{10477,10490,10513}/masks/membrane/`), with the 3b recipe (exact coordinates,
       early stopping / schedule-free).

@@ -97,6 +97,20 @@ of this yet (it sets pipeline 2, linear labels, class head, conditioning on): up
    out-of-distribution check. Then 3c.2 (Gate 7 losses + membrane negatives) only if 3c.1 works.
    Membrane masks: `prepData.negative_masks`. Joint arm: mixed voxel sizes need one staged raw dir per dataset.
 
+## 5b. Result of 3c.1 (7 Nov 2026)
+`benchmarks/out/filaments_3c1_templates_20261107` (code `bd569f6`; early stop at epoch 44, best epoch 34, 4.9 h).
+| Class | Threshold | Precision | Recall | F1 | `sample_6` F1 | `sample_7` F1 | Traced / true |
+|---|---|---|---|---|---|---|---|
+| microtubule | 0.4 | 0.993 | 0.996 | 0.995 | 0.995 | 0.994 | 20 / 20 |
+| actin | 0.3 | 0.613 | 0.620 | 0.617 | 0.760 | 0.455 | 234 / 104 |
+Scores measure agreement with the template traces, and the same two tomograms chose the threshold and the checkpoint.
+Actin diagnosis (maps re-predicted from the checkpoint; reproduces 0.760 and 0.455):
+- Weak map: median probability along true centrelines 0.355 (`sample_6`), 0.192 (`sample_7`); background 99.9th percentile 0.47, 0.46. Why `sample_7` is weaker is not known.
+- Filters do not rescue it: at threshold 0.3, a 400 A minimum length gives `sample_6` 0.793 but `sample_7` 0.297. Straightness barely separates false traces (median 0.96-0.97 against 0.99).
+- True traces are broken: median length of matched traces 499 A, 307 A at threshold 0.3, true filaments 939 A.
+- Overfitting: actin validation loss bottoms near epoch 32 (0.109) and rises (0.1125 at 44); training loss keeps falling (0.048).
+3c.2 and 3c.1b await a human choice. Hand-cleaning of the centrelines is also pending (edit `data/filaments/10490/centerlines/`).
+
 ## 6. Known traps
 - Frozen tests: disputes go to `.claude/reports/gate_0N_test_dispute.md`; never edit a frozen file.
 - Unpickled checkpoint configs lack new fields: use `safe_getattr` before `BaseModel.__init__`.
