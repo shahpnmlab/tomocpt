@@ -103,6 +103,23 @@ def _stage_fixed(data_root, ds, objects, out, train_runs, val_runs):
     return staged
 
 
+def _stage_negative_masks(data_root, ds, names, out, runs):
+    """Links ``<root>/<ds>/masks/<name>/<run>.mrc`` to ``out/train/masks/<name>/<ds>_<run>.mrc``
+    (structures that are never a class, e.g. membranes; ``prepData.negative_masks``)."""
+    import os
+    from pathlib import Path
+
+    for name in names:
+        for r in runs:
+            src = Path(data_root) / str(ds) / "masks" / name / f"{r}.mrc"
+            if not src.is_file():
+                raise FileNotFoundError(f"Run {r}: no {name} mask at {src}")
+            dst = Path(out) / "train" / "masks" / name / f"{ds}_{r}.mrc"
+            dst.parent.mkdir(parents=True, exist_ok=True)
+            if not dst.exists():
+                os.symlink(src.resolve(), dst)
+
+
 def _stage_centerlines(root, ds, objects, out, runs):
     """Links ``<root>/<object>/<run>.mod`` to ``out/train/centerlines/<object>/<dataset>_<run>.mod``."""
     import os
@@ -130,7 +147,8 @@ def apply_recipe(train: dict) -> dict:
 
 
 def _train_arm(work, stage_dir, fil_classes, part_classes, particles_star, settings, val_stems=None,
-               use_centerlines=False, band_max_vox=None, snapshot_chunks=0):
+               use_centerlines=False, band_max_vox=None, snapshot_chunks=0, negative_masks=(),
+               contrastive_weight=0.0):
     from pathlib import Path
 
     from benchmarks.common import _find_checkpoint, _run_cli, _train_section, _write_config
@@ -155,6 +173,8 @@ def _train_arm(work, stage_dir, fil_classes, part_classes, particles_star, setti
         prep["filament_coords"] = ",".join(f"{n}:{Path(stage_dir) / 'centerlines' / name}" for n, name, _ in fil_classes)
     elif fil_classes:
         prep["filament_masks"] = ",".join(f"{n}:{Path(stage_dir) / 'masks' / name}" for n, name, _ in fil_classes)
+    if negative_masks:
+        prep["negative_masks"] = ",".join(f"{name}:{Path(stage_dir) / 'masks' / name}" for name in negative_masks)
     train = apply_recipe(_train_section(work, settings, 2, conditioning=True))
     if val_stems:
         train["val_stems"] = ",".join(val_stems)
@@ -162,6 +182,8 @@ def _train_arm(work, stage_dir, fil_classes, part_classes, particles_star, setti
         train["scale"] = {"band_max_vox": float(band_max_vox)}
     if snapshot_chunks:
         train["snapshot_chunks"] = int(snapshot_chunks)
+    if contrastive_weight:
+        train["discriminative"] = {"contrastive_weight": float(contrastive_weight)}
     cfg = {"shared": {"training_data_dir": str(work / "training_data"), "chunks_dir": str(work / "chunks")},
            "prepData": prep, "train": train,
            "infer": {"predictions_dir": str(work / "predictions"),
@@ -339,6 +361,11 @@ def main(argv=None):
     ap.add_argument("--snapshot_chunks", type=int, default=0,
                     help="train.snapshot_chunks: chunks per class and split saved as volumes every epoch for "
                          "scripts/train_dashboard.py (2 is about 1.8 MB per epoch); 0 = off")
+    ap.add_argument("--negative_masks", default=None,
+                    help="Mask objects that are never a class, e.g. 'membrane' (<root>/<set>/masks/<name>/<run>.mrc; "
+                         "prepData.negative_masks, negatives of the contrastive loss; with --train_runs)")
+    ap.add_argument("--contrastive_weight", type=float, default=0.0,
+                    help="train.discriminative.contrastive_weight (Gate 7; 0 = off; the CZII Gate 7 runs used 0.1)")
     ap.add_argument("--max_runs", type=int, default=None)
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--tiny", action="store_true", help="feature_size 12 (smoke runs)")
@@ -364,6 +391,8 @@ def main(argv=None):
     val_stems = None
     if a.centerlines and not a.train_runs:
         raise ValueError("--centerlines needs --train_runs")
+    if a.negative_masks and not a.train_runs:
+        raise ValueError("--negative_masks needs --train_runs")
     if bool(a.train_runs) != bool(a.val_runs):
         raise ValueError("--train_runs and --val_runs go together")
     if a.train_runs:
@@ -374,6 +403,9 @@ def main(argv=None):
         val_stems = [t["name"] for t in staged["test"]]
         if a.centerlines:
             _stage_centerlines(a.centerlines, train_sets[0], objects, out / "stage", names(a.train_runs) + names(a.val_runs))
+        if a.negative_masks:
+            _stage_negative_masks(a.data_root, train_sets[0], names(a.negative_masks), out / "stage",
+                                  names(a.train_runs) + names(a.val_runs))
     else:
         staged = _stage(a.data_root, train_sets, objects, out / "stage", a.test_frac, a.seed, a.max_runs)
     if test_sets:
@@ -392,7 +424,9 @@ def main(argv=None):
         t0 = time.time()
         ckpt = _train_arm(out / arm, out / "stage" / "train", f_cls, p_cls, a.particles_star, settings, val_stems,
                           use_centerlines=bool(a.centerlines), band_max_vox=a.band_max_vox,
-                          snapshot_chunks=a.snapshot_chunks)
+                          snapshot_chunks=a.snapshot_chunks,
+                          negative_masks=[m.strip() for m in (a.negative_masks or "").split(",") if m.strip()],
+                          contrastive_weight=a.contrastive_weight)
         res = {"checkpoint": str(ckpt), "train_seconds": time.time() - t0}
         views = out / arm / "views"
         _draw("training panels", dump_training_images, out / arm / "model", views / "training")
