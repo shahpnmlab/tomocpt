@@ -509,6 +509,11 @@ def _setup_callbacks(
             plateau_patience=int(safe_getattr(config, "swa_plateau_patience", 5)),
             plateau_rel_delta=float(safe_getattr(config, "swa_plateau_rel_delta", 1e-3))))
     callbacks.append(LRVerificationCallback())
+    n_snap = int(safe_getattr(config, "snapshot_chunks", 0))
+    if n_snap > 0 and int(safe_getattr(config, "data_pipeline_version", 1)) == 2:
+        from tomocpt.training.snapshots import VolumeSnapshots
+
+        callbacks.append(VolumeSnapshots(n_snap))
     return callbacks
 
 

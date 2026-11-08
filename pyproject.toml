@@ -53,6 +53,12 @@ dev = [
 schedulefree = [
     "schedulefree==1.4.1",
 ]
+# scripts/train_dashboard.py: Qt window (works over ssh -X), panels rendered off-screen on the GPU
+# through EGL (human-approved 8 Nov 2026). EGL itself is a system library the NVIDIA driver provides.
+dashboard = [
+    "vispy==0.17.0",
+    "PySide6==6.8.1",
+]
 # Only needed for scripts/download_portal_data.py
 portal = [
     "cryoet-data-portal>=4,<5",

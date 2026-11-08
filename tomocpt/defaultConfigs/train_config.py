@@ -319,6 +319,10 @@ class TrainConfig:
                                "plateau SWA validate and save the averaged weights")
     ] = "swa"
     ema_decay: Annotated[float, typer.Option(help="Maximum EMA decay (weight_averaging=ema)")] = 0.999
+    snapshot_chunks: Annotated[
+        int, typer.Option(help="Pipeline v2: chunks per class and split (train, val) predicted after every validation "
+                               "and saved as volumes in <log_dir>/snapshots for scripts/train_dashboard.py; 0 = off")
+    ] = 0
     swa_plateau_patience: Annotated[
         int, typer.Option(help="weight_averaging=swa_plateau: validations without a relative improvement before "
                                "averaging starts")
