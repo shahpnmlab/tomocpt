@@ -116,6 +116,17 @@ Actin contrast at filament width (`sample_1`-`sample_7`): 0.85, 0.90, 0.73, 0.97
 Human decision 7 Nov 2026: rerun with more tomograms (train `sample_1`-`sample_5`, `sample_8`-`sample_22`; validation unchanged). Labels: 776 actin lines (7 bend over 30 degrees), 175 microtubule lines (none). Human decision 7 Nov 2026: also `band_max_vox=37` (one level at 6.8 A/px, driver `--band_max_vox`). Run: `benchmarks/out/filaments_3c1b_20tomos_band37_20261107`. The default-band directory `filaments_3c1b_20tomos_20261107` was stopped during chunking; ignore it. `sample_1`-`sample_22` leave the final-boss test split.
 3c.2 awaits that result. Hand-cleaning of the centrelines is also pending (edit `data/filaments/10490/centerlines/`).
 
+### Result of 3c.1b (8 Nov 2026)
+`benchmarks/out/filaments_3c1b_20tomos_band37_20261107` (code `79d407b`; 20 training tomograms, one level at 6.8 A/px; early stop at epoch 51, best epoch 46, 16.8 h).
+| Class | Threshold | Precision | Recall | F1 | `sample_6` F1 | `sample_7` F1 | Traced / true |
+|---|---|---|---|---|---|---|---|
+| microtubule | 0.8 | 0.999 | 1.000 | 0.9995 | 0.998 | 1.000 | 20 / 20 |
+| actin | 0.3 | 0.817 | 0.749 | 0.782 | 0.889 | 0.662 | 164 / 104 |
+Gains cannot be split between more tomograms and the single level. Validation loss: actin 0.077 (0.109 before), microtubule 0.016 (0.038); actin did not overfit (flat from epoch 36). Predict 23.7 s per tomogram, one pass for both classes.
+- Microtubule walls: fixed by the single level (both classes in one softmax). False actin length near walls 0% (5%, 16% before); P(actin) > 0.3 in the microtubule mask 0.05-0.08% against 0.34-0.37% outside (1.5-2% before). Microtubule negatives are no longer needed for this.
+- Membranes: 19% (`sample_6`), 27% (`sample_7`) of false actin length lies near a membrane or wall (now all membrane); vesicles are visible in the actin map (`views/held_out/*_both_classes.png`). Membrane negatives (3c.2) are the next lever.
+- Extraction (CPU, `_trace_and_fit`, 40 A spacing): 0.4-1.9 s per class and tomogram. On points within tolerance of a true line: offset median 1.0-1.4 voxels (6.7-9.5 A); axis angle median 1.8-4.4 deg, 95th percentile 6.3-11.7 deg except `sample_7` actin 24.3 (8% over 20 deg). Matched point fraction: microtubule 0.99-1.00, actin 0.86 / 0.71. The last spacing of a trace can be 0.7-2.7 A (near-duplicate end point): fix pending. tilt/psi convert back to the tangent exactly; rot and polarity are not determined.
+
 ## 6. Known traps
 - Frozen tests: disputes go to `.claude/reports/gate_0N_test_dispute.md`; never edit a frozen file.
 - Unpickled checkpoint configs lack new fields: use `safe_getattr` before `BaseModel.__init__`.
