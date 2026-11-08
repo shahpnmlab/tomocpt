@@ -130,7 +130,7 @@ def apply_recipe(train: dict) -> dict:
 
 
 def _train_arm(work, stage_dir, fil_classes, part_classes, particles_star, settings, val_stems=None,
-               use_centerlines=False, band_max_vox=None):
+               use_centerlines=False, band_max_vox=None, snapshot_chunks=0):
     from pathlib import Path
 
     from benchmarks.common import _find_checkpoint, _run_cli, _train_section, _write_config
@@ -160,6 +160,8 @@ def _train_arm(work, stage_dir, fil_classes, part_classes, particles_star, setti
         train["val_stems"] = ",".join(val_stems)
     if band_max_vox is not None:
         train["scale"] = {"band_max_vox": float(band_max_vox)}
+    if snapshot_chunks:
+        train["snapshot_chunks"] = int(snapshot_chunks)
     cfg = {"shared": {"training_data_dir": str(work / "training_data"), "chunks_dir": str(work / "chunks")},
            "prepData": prep, "train": train,
            "infer": {"predictions_dir": str(work / "predictions"),
@@ -334,6 +336,9 @@ def main(argv=None):
     ap.add_argument("--band_max_vox", type=float, default=None,
                     help="Upper edge of the size band (default: the config default, 32). 37 puts a 250 A microtubule "
                          "and 70 A actin on one level at 6.8 A/px")
+    ap.add_argument("--snapshot_chunks", type=int, default=0,
+                    help="train.snapshot_chunks: chunks per class and split saved as volumes every epoch for "
+                         "scripts/train_dashboard.py (2 is about 1.8 MB per epoch); 0 = off")
     ap.add_argument("--max_runs", type=int, default=None)
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--tiny", action="store_true", help="feature_size 12 (smoke runs)")
@@ -386,7 +391,8 @@ def main(argv=None):
         f_cls, p_cls = spec[arm]
         t0 = time.time()
         ckpt = _train_arm(out / arm, out / "stage" / "train", f_cls, p_cls, a.particles_star, settings, val_stems,
-                          use_centerlines=bool(a.centerlines), band_max_vox=a.band_max_vox)
+                          use_centerlines=bool(a.centerlines), band_max_vox=a.band_max_vox,
+                          snapshot_chunks=a.snapshot_chunks)
         res = {"checkpoint": str(ckpt), "train_seconds": time.time() - t0}
         views = out / arm / "views"
         _draw("training panels", dump_training_images, out / arm / "model", views / "training")

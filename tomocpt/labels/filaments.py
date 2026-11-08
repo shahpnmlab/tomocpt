@@ -210,15 +210,17 @@ def _consistent_signs(t: np.ndarray) -> np.ndarray:
     return t
 
 
-def fit_filament_spline(polyline, apix: float, smoothing_ang: float, spacing_ang: float
-                        ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+def fit_filament_spline(polyline, apix: float, smoothing_ang: float, spacing_ang: float,
+                        merge_short_end: bool = False) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
     """Cubic smoothing spline through a polyline, sampled at equal arc length.
 
     The polyline (``x, y, z`` native voxels) is converted to A and fitted with
     ``scipy.interpolate.splprep`` (``k = min(3, n - 1)``, ``s = n * smoothing_ang**2``, i.e. an
     RMS deviation of about ``smoothing_ang`` A). Points are placed every ``spacing_ang`` A of arc
     length (dense numerical integration), from the first point; the end point is appended when
-    it lies beyond the last sample.
+    it lies beyond the last sample. With ``merge_short_end``, an end point less than half a
+    spacing beyond the last sample replaces that sample (no near-duplicate end point; the last
+    gap is then 0.5 to 1.5 spacings and the curve still reaches its end).
 
     Returns ``(points [K, 3] x, y, z native voxels, unit tangents [K, 3] with one consistent
     direction, arc_length_ang [K] from the first point)``.
@@ -256,7 +258,10 @@ def fit_filament_spline(polyline, apix: float, smoothing_ang: float, spacing_ang
     nst = int(math.floor(L / spacing + 1e-9))
     arc = np.arange(nst + 1, dtype=np.float64) * spacing
     if L - arc[-1] > 1e-6 * spacing:
-        arc = np.append(arc, L)
+        if merge_short_end and len(arc) >= 2 and L - arc[-1] < 0.5 * spacing:
+            arc[-1] = L
+        else:
+            arc = np.append(arc, L)
     u = np.interp(arc, sd, uu)
     pts = np.stack(splev(u, tck), axis=1)
     der = np.stack(splev(u, tck, der=1), axis=1)
@@ -767,7 +772,7 @@ def _trace_and_fit(prob_map, threshold, apix, diameter_ang, min_length_ang, spac
     polys = _region_polylines(region, apix, diameter_ang, min_length_ang)
     out = []
     for p in polys:
-        pts, tng, arc = fit_filament_spline(p, apix, smoothing_ang, spacing_ang)
+        pts, tng, arc = fit_filament_spline(p, apix, smoothing_ang, spacing_ang, merge_short_end=True)
         if len(pts) < 2 or arc[-1] < float(min_length_ang):
             continue
         out.append((pts, tng, arc))
