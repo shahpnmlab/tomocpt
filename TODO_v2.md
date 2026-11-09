@@ -168,7 +168,7 @@ Filaments are less tested than particles (Gate 6 passed on synthetic data plus a
       (`STEPS=ssl experiments/run_benchmarks.sh`, fresh `OUT`).
 
 ## 5. Scaling smoke test at ~130 classes
-- [ ] 5.1 Memory and step time with C≈134 (logits B×C×64³, per-class Hessian loop); softmax over
+- [ ] 5.1 (memory / step-time part moved into Gate 8a, 9 Nov 2026) Memory and step time with C≈134 (logits B×C×64³, per-class Hessian loop); softmax over
       particles only vs particles+filaments; with the 3b recipe and, if adopted, the offset head and
       centroid weight.
 
@@ -184,5 +184,11 @@ Filaments are less tested than particles (Gate 6 passed on synthetic data plus a
       draft for human review (open questions in spec Section 12). Synthetic scoping numbers: Swin checkpointing
       off 1.20x at B=16 (12.9 -> 25.9 GB); batched Hessian 3.4x at C=134 (no gain at C<=6); CPU augmentation
       1.3-2.2 s/sample at C=134; whole-model torch.compile did not finish a first step in 15 min.
+- [x] 8.1b Human answers to the spec's open questions (9 Nov 2026, spec Section 12): order 8a, 8b, 8e.1, 8c,
+      8e.2, 8f; E0 default flips allowed; one CZII CV for all of 8c (|dF4| <= 0.01, class <= 0.03); fixed
+      seeded random validation set; float16 volumes, float32 targets; `[gpu]` extra in principle; speed
+      report-only; TODO 5.1 memory part in 8a. INVIOLABLE: all work on `v2-feat/perf`
+      (`../tomocpt-perf`); nothing committed to `v2-dev` until everything works to spec.
 - [ ] 8.2 Implementation on `v2-feat/perf` (own worktree), training first; goldens regenerated per
-      change after equivalence tests against the old code.
+      change after equivalence tests against the old code. Merge into `v2-dev` only at the end, with the
+      human's go-ahead.
