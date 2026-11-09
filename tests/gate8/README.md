@@ -69,3 +69,12 @@ checkpointing stays on by default (memory; set off in the recipes). Amended test
 | Dropout only in training | `..._dropout_is_applied_in_training_only` |
 | G8b-C6 every parameter gets a gradient (attention dropout on, contrastive + offset heads); bias tables non-zero | `..._fused_attention_every_parameter_gets_a_gradient` |
 All fail on the code before 8b.4 (`tomocpt.networks.attention` does not exist).
+Ruling (after freezing, before accepting): the CPU gradient comparison is per tensor (max |diff| <= 1e-5
+max |g|, absolute sum 1e-4), not a flat `atol 1e-5`: gradients reach ~1e2 and differ by fp32
+summation order (measured worst 5.4e-6 of the tensor maximum).
+Decision (9 Nov 2026, after the full suite): the fused path runs on CUDA only. On the CPU,
+`SDPAWindowAttention` calls MONAI's eager `forward`, so every CPU golden stays bit-identical (the CPU
+fused path moved outputs by up to 5.3e-6 and failed 10 bit-exact golden tests; it gives no useful
+speed). The CPU equivalence tests above now compare eager with eager; the fused numerics are covered
+on the GPU by `test_g8b_attention_gpu.py` (float32: output `atol 1e-5`, gradients per tensor
+`1e-5 max|g|`; added, not a frozen test changed) and the bf16 test.

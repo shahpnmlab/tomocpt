@@ -57,8 +57,13 @@ def test_G8b_C4_cpu_fp32_output_and_grads_equal_eager(shifted):
         grads.append({"x": xi.grad, **{k: p.grad.clone() for k, p in m.named_parameters()}})
         m.zero_grad()
     torch.testing.assert_close(outs[1], outs[0], atol=1e-5, rtol=0)
+    # Per tensor (ruling 9 Nov 2026, as the DDP check): gradients reach ~1e2 and differ by fp32
+    # summation order, so the bound scales with the tensor: max |diff| <= 1e-5 max |g|, abs-sum 1e-4.
     for k in grads[0]:
-        torch.testing.assert_close(grads[1][k], grads[0][k], atol=1e-5, rtol=1e-4, msg=k)
+        a, f = grads[0][k], grads[1][k]
+        scale = float(a.abs().max())
+        assert float((f - a).abs().max()) <= 1e-5 * scale + 1e-7, k
+        assert abs(float(f.abs().sum() - a.abs().sum())) <= 1e-4 * float(a.abs().sum()) + 1e-7, k
 
 
 def test_G8b_C4_tiny_model_forward_equals_eager_and_checkpoints_interchange():
