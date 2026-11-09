@@ -20,8 +20,27 @@ is written.
 was tried and lost (0.771 vs 0.792): RAdam + EMA stays the default optimiser, profile with it.
 TODO items 4 (SSL re-evaluation), 5 (~130-class smoke test) and 6 (DS-10490) are **deferred until
 after Gate 8**, not dropped. Goal in the human's words: squeeze as much as possible out of a
-**single-GPU box** (RTX A6000, 48 GB): optimise single-GPU training and predict first; multi-GPU
-(DDP) must keep working but is not a target. Consider folding the memory / step-time part of item
+**single-GPU box** (RTX A6000, 48 GB), measured here first.
+
+**Multi-GPU (human decision 9 Nov 2026): also a target, but no multi-GPU box is available yet.**
+Design every change for DDP too (no unused parameters, sampler and crop seeds per rank and epoch,
+no rank-0-only work that stalls the others: calibration, snapshots, image logging; gradient
+bucketing / `static_graph` where it applies; multi-GPU predict through the existing Dask workers).
+Check correctness here with 2 processes on the gloo backend (NCCL refuses two ranks on one GPU)
+and compare against the single-process result. Mark every multi-GPU speed claim as unmeasured,
+and list the measurements to run once a box is available.
+
+**Measuring speed (human decision 9 Nov 2026): no full training run per change**, or Gate 8 never
+ends. Per change:
+- speed: a fixed micro-benchmark, a few hundred steps after warm-up on fixed data and seed
+  (steps/s, data wait, peak memory), the same script for before and after;
+- equivalence: outputs, loss and gradients on a few fixed batches against the old code, with
+  stated tolerances, plus a short run (a few epochs, or a few hundred steps) whose loss curve must
+  overlay the baseline's.
+Full training runs only for changes that alter the training distribution (on-the-fly sampling,
+library upgrades), and then one acceptance run per group of such changes at the end of a
+sub-step, not one per change. Changes that are exact (checkpointing off, batched Hessian) need no
+full run. Consider folding the memory / step-time part of item
 5.1 (C ≈ 134) into the 8a profile, since the per-class loops scale with C.
 
 Measured on filament runs (DS-10490, 20 training tomograms, one level at 6.8 A/px, batch 16,
