@@ -226,10 +226,15 @@ human decision, recorded in `gate_status.json`, with the goldens handled as in 3
 **Pass criteria.**
 - **G8a-C1** `step.py` on synthetic data (C=2, B=2, tiny model, CPU, 5 steps) writes a JSON with
   `steps_per_s`, `ms_forward`, `ms_loss`, `ms_backward`, `ms_optimizer`, `ms_data_wait`,
-  `peak_mem_bytes`, `commit`, `config_hash`; two runs give the same loss sequence (CPU, fixed seed).
-- **G8a-C2** `compare_goldens.py` reports zero difference for a golden compared with itself and the
-  exact max difference for a perturbed copy.
-- **G8a-C3** Repository unchanged except `benchmarks/perf/**`, `tests/gate8/**`, reports.
+  `peak_mem_bytes`, `commit`, `config_hash` and `losses` (one float per timed step); two runs give the
+  same loss sequence (CPU, fixed seed); the CLI (`python -m benchmarks.perf.step ... --out x.json`)
+  writes the same keys.
+- **G8a-C2** `compare_goldens.compare(old, new)` (`.json` or `.npz`) returns `{"max_abs", "max_rel",
+  "keys": {name: {"max_abs", "max_rel"}}, "missing", "added", "mismatched"}` (JSON flattened to
+  `a/b/0` paths; `mismatched` = non-numeric values or shapes that differ). A golden against itself:
+  all zero, empty lists; a perturbed copy: the exact max difference at the perturbed key.
+- **G8a-C3** (orchestrator check, not pytest) Repository unchanged except `benchmarks/perf/**`,
+  `tests/gate8/**`, the spec, reports and state.
 - Baseline report written (human-reviewed, not a test); on the A6000, `step.py` run-to-run spread
   of `steps_per_s` ≤ 3 %.
 
@@ -558,7 +563,8 @@ Gate 5 golden. Each upgrade: run the old goldens first and record which fail and
   `tomocpt.predict.multiclass.grid_locations(shape, patch, overlap) -> LongTensor [N, 6]`
 - `tomocpt.gpu_backend.{has_cupy, edt, label, find_objects, binary_fill_holes, map_coordinates}`
 - `tomocpt.defaultConfigs.otf_config.OnTheFlyConfig`
-- `benchmarks.perf.step.run_step_benchmark(config, data, classes, batch, steps, warmup, seed) -> dict`,
+- `benchmarks.perf.step.run_step_benchmark(config, data, classes, batch, steps, warmup, seed, **options) -> dict`
+  (`config`: a `MainConfig`, a YAML path or `None`; options: `overrides`, `device`, `logger`),
   `benchmarks.perf.compare_goldens.compare(old_path, new_path) -> dict`
 
 ## 7. Test plan notes for TA
