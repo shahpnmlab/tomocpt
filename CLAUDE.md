@@ -33,6 +33,12 @@ Precedence when two sources disagree:
   Hydra-style dot overrides work (`optimizer.lr=1e-4`). CLI options are spelled with
   underscores, as the field names (`--config_file`, `--output_path`, `--resume_from`);
   hyphenated spellings are rejected. Booleans also get a `--no-<field>` form.
+  **Slim CLI (human decision 9 Nov 2026):** only the everyday fields in
+  `configManager/cli_options.CLI_FLAGS` (plus required fields) are flags; every other field is
+  set in the YAML or as a typed `key=value` override (`configManager.parse_value`: `true/false`,
+  `none`, Enums, Paths, tuples). Old long flags of other fields are rewritten to `key=value` with a
+  deprecation warning by `ConfigurableApp.run`. New config fields are **not** flags unless the human
+  adds them to `CLI_FLAGS`.
 - A global singleton `mainConfig` exists. Legacy code reads it from many places
   (for example `dataManager/transforms.py` reads `mainConfig.prepData` and
   `mainConfig.train`).
