@@ -59,3 +59,13 @@ checkpointing stays on by default (memory; set off in the recipes). Amended test
 `test_G8b_C1_new_fields_and_defaults`, `test_G8b_C1_run_passes_loader_flags`,
 `test_G8b_C3_model_passes_hessian_block`, `test_G8b_C6_*` (no longer sets the removed field),
 `test_g8_ddp_gloo.py` option set "8b".
+
+## 8b.4 fused window attention (on by default; no config field)
+| Criterion | Test |
+|---|---|
+| G8b-C4 same state-dict keys / shapes; checkpoints interchange both ways (strict) | `test_g8b_attention.py::test_G8b_C4_state_dict_*`, `..._tiny_model_forward_equals_eager_and_checkpoints_interchange` |
+| G8b-C4 CPU fp32: output `atol 1e-5`, gradients (input and every parameter) `atol 1e-5 rtol 1e-4`, shifted and unshifted | `..._cpu_fp32_output_and_grads_equal_eager` |
+| G8b-C4 GPU bf16: `atol 2e-2`, cosine >= 0.9999 (slow) | `..._gpu_bf16_close_to_eager` |
+| Dropout only in training | `..._dropout_is_applied_in_training_only` |
+| G8b-C6 every parameter gets a gradient (attention dropout on, contrastive + offset heads); bias tables non-zero | `..._fused_attention_every_parameter_gets_a_gradient` |
+All fail on the code before 8b.4 (`tomocpt.networks.attention` does not exist).
