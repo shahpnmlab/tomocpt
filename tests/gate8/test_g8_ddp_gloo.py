@@ -16,8 +16,7 @@ import torch
 WORKER = Path(__file__).with_name("ddp_gloo_worker.py")
 OPTIONS = {
     "defaults": [],
-    "8b": ["network.SwinUNETR.use_checkpoint=False", "particles.loss_checkpoint=False",
-           "particles.hessian_block=0"],
+    "8b": ["network.SwinUNETR.use_checkpoint=False"],
 }
 
 

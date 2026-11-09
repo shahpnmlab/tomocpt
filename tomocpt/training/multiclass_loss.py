@@ -13,6 +13,17 @@ from torch.utils.checkpoint import checkpoint as torch_checkpoint
 
 HESSIAN_REFERENCE_D_VOX = 20.0  # diameter (voxels) at which the Hessian scale is 1
 HESSIAN_WEIGHT = 10.0
+#: Gate 8b: memory the Hessian term may use per call, and its measured cost per voxel of one
+#: (sample, class) pair (fp32, value term included: ~34 MB per 64^3 pair).
+HESSIAN_BLOCK_BYTES = 4 * 2 ** 30
+HESSIAN_BYTES_PER_VOXEL = 136
+
+
+def auto_hessian_block(n_samples: int, n_voxels: int, budget_bytes: int = HESSIAN_BLOCK_BYTES) -> int:
+    """Classes per Hessian call so that one call stays within ``budget_bytes`` (at least 1).
+    B = 16 at 64^3: up to 7 classes in one call."""
+    per_class = max(1, int(n_samples) * int(n_voxels) * HESSIAN_BYTES_PER_VOXEL)
+    return max(1, int(budget_bytes) // per_class)
 CLASS_HEADS = ("sigmoid", "softmax")
 
 

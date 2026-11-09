@@ -94,8 +94,7 @@ def _chunks_datamodule(cfg):
         workers_for_data=cfg.n_cpus_for_dataloading, augmentation=cfg.augmentation,
         pipeline_version=cfg.data_pipeline_version, scale_cfg=cfg.scale,
         chunk_sampling=cfg.chunk_sampling, repeat_factor_threshold=cfg.repeat_factor_threshold,
-        **({"pin_memory": cfg.pin_memory, "prefetch_factor": cfg.prefetch_factor}
-           if hasattr(cfg, "pin_memory") else {}))  # Gate 8b fields, as training/run.py
+        pin_memory=bool(cfg.use_gpus))  # as training/run.py
     data.setup()
     return data
 

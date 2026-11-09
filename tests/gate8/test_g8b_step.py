@@ -33,10 +33,12 @@ GRAD_SUM_RTOL = 1e-4
 def test_G8b_C1_new_fields_and_defaults():
     from tomocpt.mainConfig import MainConfig
 
+    # Human decision (9 Nov 2026): speed-ups are defaults, not new CLI options.
     cfg = MainConfig()
-    assert cfg.train.particles.hessian_block == 1
-    assert cfg.train.pin_memory is False
-    assert cfg.train.prefetch_factor is None
+    for section, name in (("particles", "hessian_block"), (None, "pin_memory"), (None, "prefetch_factor")):
+        obj = cfg.train if section is None else getattr(cfg.train, section)
+        assert not hasattr(obj, name), f"{name} must not be a config field"
+    assert cfg.train.particles.loss_checkpoint is False
 
 
 def test_G8b_C1_loss_default_is_the_class_loop():
@@ -215,13 +217,16 @@ def test_G8b_C3_model_passes_hessian_block(tmp_path, monkeypatch):
 
     monkeypatch.setattr(pm, "multiclass_picking_loss", spy)
     cfg = H6.v2_config_with_filaments(tmp_path, ((1, "a", 120.0), (2, "b", 200.0)), ())
-    cfg.train.particles.hessian_block = 0
     with applied_main_config(cfg):
         model = pm.BasePickingModel(lr=1e-3, train_continue=None)
         B = 2
         batch = {"class_available": torch.ones(B, 2, dtype=torch.bool), "class_d_vox": torch.full((B, 2), 20.0)}
         model.multiclass_loss(torch.rand(B, 2, 16, 16, 16), torch.rand(B, 2, 16, 16, 16), batch)
-    assert seen["hessian_block"] == 0
+    from tomocpt.training.multiclass_loss import auto_hessian_block
+
+    assert seen["hessian_block"] == auto_hessian_block(2, 16 ** 3)
+    assert auto_hessian_block(16, 64 ** 3) >= 6  # CZII (B = 16, C = 6): one call
+    assert auto_hessian_block(16, 64 ** 3) < 134  # C = 134: blocks
 
 
 @pytest.mark.slow
@@ -272,8 +277,7 @@ def test_G8b_C1_run_passes_loader_flags(tmp_path, monkeypatch):
     import tomocpt.training.run as run
 
     src = inspect.getsource(run)
-    assert "pin_memory=config.pin_memory" in src
-    assert "prefetch_factor=config.prefetch_factor" in src
+    assert "pin_memory=bool(config.use_gpus)" in src
 
 
 def test_G8b_ema_update_is_bit_identical_to_the_tensor_loop():
@@ -318,8 +322,6 @@ def test_G8b_C6_options_on_every_parameter_gets_a_gradient(tmp_path, case):
     head, cond = g7.CASES[case]
     cfg = H7.disc_config(tmp_path, g7.PARTICLES, g7.FILAMENTS, class_head=head, cond=cond, contrastive_weight=0.1)
     cfg.train.network.SwinUNETR.use_checkpoint = False
-    cfg.train.particles.loss_checkpoint = False
-    cfg.train.particles.hessian_block = 0
     cfg.train.particles.offset_weight = 1.0
     with applied_main_config(cfg):
         torch.manual_seed(0)

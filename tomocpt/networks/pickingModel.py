@@ -5,7 +5,7 @@ from torch import nn
 from tomocpt.configManager.configManager import safe_getattr
 from tomocpt.networks.baseModel import BaseModel
 from tomocpt.training.losses import gradient3d_loss
-from tomocpt.training.multiclass_loss import (CLASS_HEADS, class_probabilities, multiclass_picking_loss,
+from tomocpt.training.multiclass_loss import (CLASS_HEADS, auto_hessian_block, class_probabilities, multiclass_picking_loss,
                                               renormalise_targets)
 from tomocpt.logger import get_logger
 
@@ -340,15 +340,14 @@ class BasePickingModel(BaseModel):
     def multiclass_loss(self, y_pred, y, batch):
         """Pipeline-v2 loss (CLAUDE.md Section 5.4) for a v2 batch."""
         particles = safe_getattr(self.hparams.config.train, "particles", None)
-        use_checkpoint = bool(safe_getattr(particles, "loss_checkpoint", True)) if particles is not None else True
+        use_checkpoint = bool(safe_getattr(particles, "loss_checkpoint", False)) if particles is not None else False
         kw = {}
         if self.value_loss() == "focal":
             # soft focal penalty on particle channels, Huber on filament channels (1 Nov 2026)
             kw = dict(value_loss="focal", focal_channels=[not f for f in self._is_filament()],
                       focal_gamma=float(self._disc("focal_alpha", 2.0)))
-        block = int(safe_getattr(particles, "hessian_block", 1)) if particles is not None else 1
-        if block != 1:
-            kw["hessian_block"] = block  # Gate 8b
+        # Gate 8b: classes per Hessian call chosen from memory (CZII: all at once; C = 134: blocks)
+        kw["hessian_block"] = auto_hessian_block(y_pred.shape[0], y_pred[0, 0].numel())
         core = float(self._particles("core_weight", 0.0) or 0.0)
         if core:
             kw.update(core_weight=core, core_power=float(self._particles("core_power", 4.0)),

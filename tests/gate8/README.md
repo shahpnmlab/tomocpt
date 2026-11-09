@@ -50,3 +50,12 @@ Rulings made while writing (before freezing):
 
 On the 8a code: C1, C3 and the no-sync test fail (new behaviour); C2, EMA, C6 and C7 pass
 (they pin today's behaviour).
+
+### Amendment (human decision 9 Nov 2026: "all speed up changes shouldn't be opt-ins"; CLI too big)
+No new CLI options in Gate 8. `train.particles.hessian_block`, `train.pin_memory`, `train.prefetch_factor`
+removed: the model picks the block with `multiclass_loss.auto_hessian_block` (4 GiB per call), batches
+are pinned whenever training uses a GPU, `particles.loss_checkpoint` defaults to `False`. Swin
+checkpointing stays on by default (memory; set off in the recipes). Amended tests:
+`test_G8b_C1_new_fields_and_defaults`, `test_G8b_C1_run_passes_loader_flags`,
+`test_G8b_C3_model_passes_hessian_block`, `test_G8b_C6_*` (no longer sets the removed field),
+`test_g8_ddp_gloo.py` option set "8b".
