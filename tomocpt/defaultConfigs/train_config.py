@@ -276,6 +276,12 @@ class TrainConfig:
     repeat_factor_threshold: Annotated[
         float, typer.Option(help="Threshold t of repeat-factor sampling: r_c = max(1, sqrt(t / f_c))")
     ] = 0.1
+    pin_memory: Annotated[
+        bool, typer.Option(help="Gate 8b: page-locked training batches (faster host-to-GPU copy)")
+    ] = False
+    prefetch_factor: Annotated[
+        Optional[int], typer.Option(help="Gate 8b: batches loaded in advance per data worker; None = torch default (2)")
+    ] = None
     cv_folds: Annotated[
         int, typer.Option(help="k-fold training by tomogram (pipeline v2): number of folds; 0 = off (random split)")
     ] = 0

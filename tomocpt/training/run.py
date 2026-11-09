@@ -72,6 +72,8 @@ def train(config: DictConfig = None):
             scale_cfg=config.scale,
             chunk_sampling=config.chunk_sampling,
             repeat_factor_threshold=config.repeat_factor_threshold,
+            pin_memory=config.pin_memory,
+            prefetch_factor=config.prefetch_factor,
         )
     data.setup()
 
