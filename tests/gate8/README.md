@@ -78,3 +78,9 @@ fused path moved outputs by up to 5.3e-6 and failed 10 bit-exact golden tests; i
 speed). The CPU equivalence tests above now compare eager with eager; the fused numerics are covered
 on the GPU by `test_g8b_attention_gpu.py` (float32: output `atol 1e-5`, gradients per tensor
 `1e-5 max|g|`; added, not a frozen test changed) and the bf16 test.
+
+## 8e.1 peak finding (E0)
+| Criterion | Test |
+|---|---|
+| G8e-C1 `peak_local_max_torch` identical peaks and order to the 8a version (`legacy_peaks.py`, frozen copy of e88922c) on maps with plateaus, quantised ties, borders, thousands of candidates, no candidates; CPU and GPU (slow) | `test_g8e1_peaks.py` |
+Pass on the 8a code (they pin behaviour).
