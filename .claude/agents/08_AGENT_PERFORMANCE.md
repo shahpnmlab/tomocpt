@@ -467,12 +467,10 @@ batch (sums and SHA), store manifest.
 
 ### 8e — Predict, calibration and prepare_data
 **8e.1 Exact predict speed-ups (E0/E1, first after 8b: cheap and independent of training).**
-- **Accumulator device (8a finding 1, `benchmarks/perf/BASELINE_20261109.md`):** `infer.accumulate_device=auto`
-  (`predict/multiclass.py:_accumulator_device`) falls back to CPU accumulation from the second
-  tomogram of a run on (13 → 5 batches/s; forcing `cuda` makes CZII predict 2.3× faster). Count the
-  caching allocator's reserved-but-free memory as free (`memory_reserved - memory_allocated`) or
-  release it before deciding; same decision on the first and later tomograms. E1 (CPU vs GPU float32
-  accumulation order); test: the device chosen for tomogram 2 equals tomogram 1's, maps within `atol 1e-6`.
+- **Accumulator device** (done first, 9 Nov 2026): `infer.accumulate_device=auto` counts the caching
+  allocator's reserved-but-free memory (`memory_reserved - memory_allocated`) as free. The 8a "falls
+  back to CPU, 2.3x" finding was a cProfile artefact and is withdrawn (`BASELINE_20261109.md`); the
+  change is kept as a robustness fix (no speed-up measured). Tests `tests/gate8/test_g8e1_accumulator.py`.
 - `peak_local_max_torch` (`predict/helpers.py:192`): move the greedy suppression loop to the CPU on
   the (small) candidate list — copy candidates and values once, run the same loop on numpy, then the
   same plateau-centroid rule — no per-candidate host sync. **E0: identical picks**, same order.

@@ -169,6 +169,9 @@ def _accumulator_device(setting: str, compute_device: torch.device, n_maps: int,
     n_vox = int(np.prod([int(s) for s in shape]))
     needed = n_vox * (n_maps * torch.tensor([], dtype=dtype).element_size() + 4)
     free, _ = torch.cuda.mem_get_info(compute_device)
+    # Memory held by PyTorch's caching allocator but not in use (e.g. the previous tomogram's
+    # buffers) is reusable; the driver reports it as used (Gate 8e.1).
+    free += max(0, torch.cuda.memory_reserved(compute_device) - torch.cuda.memory_allocated(compute_device))
     return compute_device if needed < AUTO_DEVICE_MEMORY_FRACTION * free else torch.device("cpu")
 
 
