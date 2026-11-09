@@ -1,0 +1,70 @@
+{
+ "gate_id": "8b",
+ "agent_name": "08_AGENT_PERFORMANCE (orchestrator as TA and implementer, usage-frugal)",
+ "status": "PASSED",
+ "base_ref": "v2-feat/perf (INVIOLABLE: nothing committed to v2-dev)",
+ "human_decisions": [
+  "9 Nov 2026: speed-ups are defaults, not opt-in; no new CLI options",
+  "9 Nov 2026: slim CLI merged into v2-feat/perf (branch v2-feat/cli-slim deleted)"
+ ],
+ "kept": {
+  "8b.1": "Swin checkpointing off stays a recipe setting (default on: memory)",
+  "8b.2": "auto Hessian block (4 GiB budget), loss_checkpoint default False, no host syncs in the loss (cached diff kernel)",
+  "8b.3": "pinned batches whenever training uses a GPU; EMA via _foreach (bit-identical)",
+  "8b.4": "fused window attention on CUDA (memory-efficient SDPA, head dim padded to 16); CPU keeps eager attention"
+ },
+ "dropped": {
+  "8b.3 panels": "no measurable cost",
+  "8b.5 regional compile": "9-23 min compile per process, crashes with checkpointing (RESULTS_8b5.md)",
+  "8b.6 channels-last": "0.81-0.84x step"
+ },
+ "metrics": {
+  "czii_step_ms": {
+   "8a": 1214,
+   "defaults": 818,
+   "ckpt_off": 753
+  },
+  "fil_step_ms": {
+   "8a": 1096,
+   "defaults": 769,
+   "ckpt_off": 697
+  },
+  "czii_peak_gb": {
+   "8a": 13.1,
+   "defaults": 9.9,
+   "ckpt_off": 17.4
+  },
+  "c134_b4_step_ms": {
+   "8a": 1449,
+   "8b2": 642
+  },
+  "fil_epoch_train_min": {
+   "8a": 19.4,
+   "defaults": 13.6,
+   "ckpt_off": 12.3
+  }
+ },
+ "goldens": "none changed (CPU attention stays eager; loss block bit-identical on CPU goldens)",
+ "pytest_fast": {
+  "command": "pytest tests -m 'not slow'",
+  "passed": 1079,
+  "skipped": 27,
+  "failed": 0
+ },
+ "pytest_slow": {
+  "command": "pytest tests/gate8 -m slow",
+  "passed": "all (DDP gloo, no-sync, attention GPU bf16/fp32)"
+ },
+ "test_rulings": [
+  "C2 single CPU thread (bias-table grad not reproducible multi-threaded)",
+  "DDP and attention gradient bounds per tensor (fp32 summation order)",
+  "help parsed at wide terminal (CLI tests)",
+  "8b tests amended for the no-opt-in decision"
+ ],
+ "results_docs": [
+  "benchmarks/perf/RESULTS_8b_part1.md",
+  "benchmarks/perf/RESULTS_8b4.md",
+  "benchmarks/perf/RESULTS_8b5.md"
+ ],
+ "notes_for_next_agent": "8e.1 next: GPU patch grid for predict (CPU-bound 13-22 batches/s), NMS loop to CPU numpy (35% of CZII calibration), filament threshold tracing in parallel (34%). Never time with cProfile on."
+}

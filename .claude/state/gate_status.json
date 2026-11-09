@@ -2,7 +2,7 @@
  "base_ref": "v2-gate-0-base",
  "base_commit": "ce6f7b0ce856f19556266e7ad3143bfb66cdb7e2",
  "base_note": "first commit of branch v2-dev (released main + fix/v1-patches + plan); set by the orchestrator",
- "current_gate": "8a",
+ "current_gate": "8e.1",
  "gpu_available": true,
  "gates": {
   "1": {
@@ -517,6 +517,22 @@
     "Runs from the perf worktree use `python -m tomocpt.main` (the `tomocpt` console script imports the editable install of the v2-dev tree).",
     "9 Nov 2026: 8a done on v2-feat/perf. Fast suite 923 passed / 27 skipped (11:46); gate8 5/5; frozen hashes intact; changed paths only benchmarks/perf/**, tests/gate8/**, spec, TODO, reports, state (G8a-C3). Baseline benchmarks/perf/BASELINE_20261109.md. Finding: infer.accumulate_device=auto falls back to CPU from the 2nd tomogram (predict 2.3x slower), queued as first 8e.1 item."
    ]
+  },
+  "8b": {
+   "status": "PASSED",
+   "commit_tests": [
+    "763ed19",
+    "f138134"
+   ],
+   "test_sha256": {
+    "tests/gate8/test_g8_ddp_gloo.py": "744152087de36e36832178f67faf06524a07a96499c6a8476f4d642bde3f48c2",
+    "tests/gate8/test_g8a_harness.py": "93bdf480be4eacaed0d93bf9cc84af1b11d4b632ae065deef7d7f76fa7515c22",
+    "tests/gate8/test_g8b_attention.py": "c03f390bbecd33bf5f6ea8919f7e889e6d20048621c5d80343ce2855414eb5c8",
+    "tests/gate8/test_g8b_attention_gpu.py": "3031a5fa1479884fd087b5f47d22911297eb514af768124038371db42c0de28c",
+    "tests/gate8/test_g8b_step.py": "cdeb209094ec2cff5d4cbe5e502aae062616f3fa2f2b2424ea5cd25115ab1e18",
+    "tests/gate8/test_g8e1_accumulator.py": "42b7cf1ca547c361982848fc9852901eab3a6d9367e9c5dcaccb939ddd082983"
+   },
+   "notes": "speed-ups default (human decision 9 Nov 2026); 8b.5/8b.6 dropped with numbers"
   }
  }
 }
