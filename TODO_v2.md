@@ -155,9 +155,10 @@ Filaments are less tested than particles (Gate 6 passed on synthetic data plus a
       (tiny was 17 min/epoch for 4 train tomograms).
       Result (7 Nov 2026, `benchmarks/out/filaments_3c1_templates_20261107`, code `bd569f6`, stopped at epoch 44, best epoch 34, 4.9 h): microtubule F1 0.995 (20 of 20 traced); actin F1 0.617 (P 0.613, R 0.620; `sample_6` 0.760, `sample_7` 0.455). Scores are agreement with the template traces, on the tomograms that also picked the threshold. Actin is limited by the map, not the tracer: median probability along true centrelines 0.36 / 0.19 against a background 99.9th percentile near 0.46; a length filter gives at most +0.03 on `sample_6` and lowers `sample_7`. Actin validation loss rises after about epoch 32 while training loss keeps falling.
 - [x] 3c.1b Actin signal: 20 training tomograms and one level (`--band_max_vox 37`): actin F1 0.617 -> 0.782 (`sample_7` 0.455 -> 0.662), microtubule 0.9995; walls fixed, membranes remain (HANDOFF_filaments 5b). Not tried: more training tomograms (DS-10490 beyond `sample_1`-`sample_7` shrinks the final-boss test split), 96^3 box or lower `band_max_vox`, training tube diameter nearer the 50 A mask than 70 A.
-- [ ] 3c.2 Same with the Gate 7 losses and membrane negative masks
+- [x] 3c.2 Same with the Gate 7 losses and membrane negative masks
       (`data/filaments/{10477,10490,10513}/masks/membrane/`), with the 3b recipe (exact coordinates,
       early stopping / schedule-free).
+      Result (9 Nov 2026, `benchmarks/out/filaments_3c2_membrane_contrastive_20261108`, code `70fb99a`, contrastive 0.1, RAdam+EMA, 17.1 h): actin F1 0.782 -> 0.810 (P 0.846, R 0.780; `sample_7` 0.662 -> 0.714), microtubule 0.9995; false actin near membranes 19-27% -> 0%. Left: short isolated fragments (HANDOFF_filaments 5b).
 - [ ] 3c.3 Visual check of traced filaments (missed / false / broken traces) as for the CZII particles.
 
 ## 4. SSL v2 re-evaluation on CZII (Gate 5b parked)

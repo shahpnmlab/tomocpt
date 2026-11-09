@@ -127,6 +127,26 @@ Gains cannot be split between more tomograms and the single level. Validation lo
 - Membranes: 19% (`sample_6`), 27% (`sample_7`) of false actin length lies near a membrane or wall (now all membrane); vesicles are visible in the actin map (`views/held_out/*_both_classes.png`). Membrane negatives (3c.2) are the next lever.
 - Extraction (CPU, `_trace_and_fit`, 40 A spacing): 0.4-1.9 s per class and tomogram. On points within tolerance of a true line: offset median 1.0-1.4 voxels (6.7-9.5 A); axis angle median 1.8-4.4 deg, 95th percentile 6.3-11.7 deg except `sample_7` actin 24.3 (8% over 20 deg). Matched point fraction: microtubule 0.99-1.00, actin 0.86 / 0.71. The last spacing of a trace can be 0.7-2.7 A (near-duplicate end point): fix pending. tilt/psi convert back to the tangent exactly; rot and polarity are not determined.
 
+### Result of 3c.2 (9 Nov 2026)
+`benchmarks/out/filaments_3c2_membrane_contrastive_20261108` (code `70fb99a`): 3c.1b plus `--negative_masks membrane
+--contrastive_weight 0.1` (Gate 7 contrastive loss, membrane masks as negatives; value term stays Huber). Early stop at
+epoch 50 (relative stopping), best epoch 50, LR halved once, 17.1 h (20 min/epoch against 19).
+| Class | Threshold | Precision | Recall | F1 | `sample_6` F1 | `sample_7` F1 | Traced / true |
+|---|---|---|---|---|---|---|---|
+| microtubule | 0.8 | 0.999 | 1.000 | 0.9995 | 0.998 | 1.000 | 20 / 20 |
+| actin | 0.3 | 0.846 (0.817) | 0.780 (0.749) | **0.810** (0.782) | 0.900 (0.889) | **0.714** (0.662) | 152 / 104 (164) |
+Brackets: 3c.1b. Precision and recall both rise. Validation loss: actin 0.0764 (0.0768), microtubule 0.0159 (0.0157).
+- Membranes: false actin near a membrane (<= 5 voxels) 0% on both tomograms (19%, 27% in 3c.1b); P(actin) > 0.3 on
+  membrane voxels 0.00-0.07% (0.67-0.78%). Microtubule walls stay clean (0%). Vesicles are gone from the actin map
+  (`views/held_out/*_both_classes.png`).
+- What is left: false traces are short curved fragments far from any labelled actin (median 48 voxels, 330 A; 15% within
+  15 voxels); misses are stretches of long filaments inside bundles and out of the slab. Whether the fragments are
+  unlabelled actin is for 3c.3 (visual check).
+- Extraction (end-point fix in): spacing 20-60 A (median 40); offset median 0.9-1.4 voxels (6.2-9.4 A); axis angle median
+  1.5-4.3 deg, `sample_7` actin p95 22.3 deg (6% over 20 deg); matched point fraction microtubule 0.99-1.00, actin
+  0.87 / 0.77 (0.86 / 0.71).
+- Recipe: adopt membrane negatives + contrastive 0.1 for filament runs where membrane masks exist.
+
 ## 6. Known traps
 - Frozen tests: disputes go to `.claude/reports/gate_0N_test_dispute.md`; never edit a frozen file.
 - Unpickled checkpoint configs lack new fields: use `safe_getattr` before `BaseModel.__init__`.
