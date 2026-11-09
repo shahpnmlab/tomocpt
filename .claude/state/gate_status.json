@@ -503,7 +503,7 @@
    }
   },
   "8a": {
-   "status": "IN_PROGRESS",
+   "status": "PASSED",
    "agent": "08_AGENT_PERFORMANCE (orchestrator acting as TA and implementer, usage-frugal)",
    "attempts": 1,
    "test_hashes": {
@@ -514,7 +514,8 @@
    "path_exceptions": [],
    "notes": [
     "Human answers to the spec (9 Nov 2026) in 08_AGENT_PERFORMANCE.md Section 12. INVIOLABLE: all Gate 8 work on v2-feat/perf (../tomocpt-perf); nothing committed to v2-dev until everything works to spec.",
-    "Runs from the perf worktree use `python -m tomocpt.main` (the `tomocpt` console script imports the editable install of the v2-dev tree)."
+    "Runs from the perf worktree use `python -m tomocpt.main` (the `tomocpt` console script imports the editable install of the v2-dev tree).",
+    "9 Nov 2026: 8a done on v2-feat/perf. Fast suite 923 passed / 27 skipped (11:46); gate8 5/5; frozen hashes intact; changed paths only benchmarks/perf/**, tests/gate8/**, spec, TODO, reports, state (G8a-C3). Baseline benchmarks/perf/BASELINE_20261109.md. Finding: infer.accumulate_device=auto falls back to CPU from the 2nd tomogram (predict 2.3x slower), queued as first 8e.1 item."
    ]
   }
  }

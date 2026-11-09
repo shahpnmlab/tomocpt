@@ -1,0 +1,122 @@
+{
+ "gate_id": "8a",
+ "agent_name": "08_AGENT_PERFORMANCE (orchestrator acting as TA and implementer, usage-frugal)",
+ "status": "PASSED",
+ "base_ref": "v2-dev b8042e7; branch v2-feat/perf (INVIOLABLE: nothing committed to v2-dev)",
+ "files_created": [
+  "benchmarks/perf/__init__.py",
+  "benchmarks/perf/common.py",
+  "benchmarks/perf/step.py",
+  "benchmarks/perf/profile_model.py",
+  "benchmarks/perf/loader.py",
+  "benchmarks/perf/pipeline.py",
+  "benchmarks/perf/compare_goldens.py",
+  "benchmarks/perf/run_baseline.sh",
+  "benchmarks/perf/run_pipeline.sh",
+  "benchmarks/perf/BASELINE_20261109.md",
+  "tests/gate8/__init__.py",
+  "tests/gate8/conftest.py",
+  "tests/gate8/test_g8a_harness.py",
+  "tests/gate8/README.md"
+ ],
+ "files_modified": [
+  ".claude/agents/08_AGENT_PERFORMANCE.md (human answers; G8a-C1/C2 details; 8e.1 accumulator finding)",
+  "TODO_v2.md",
+  ".claude/state/gate_status.json"
+ ],
+ "exported_symbols": {
+  "benchmarks.perf.step": [
+   "run_step_benchmark"
+  ],
+  "benchmarks.perf.compare_goldens": [
+   "compare"
+  ],
+  "benchmarks.perf.loader": [
+   "run_loader_benchmark"
+  ],
+  "benchmarks.perf.pipeline": [
+   "time_predict",
+   "time_calibration",
+   "time_chunking",
+   "timed_functions"
+  ],
+  "benchmarks.perf.profile_model": [
+   "profile_network"
+  ]
+ },
+ "config_fields_added": [],
+ "legacy_equivalence": {
+  "tomocpt/ unchanged": "no file under tomocpt/, tests/golden/ or earlier tests changed"
+ },
+ "metrics": {
+  "czii_step_ms": 1218,
+  "czii_step_phases_ms": {
+   "forward": 294,
+   "loss": 82,
+   "backward": 790,
+   "optimizer": 10,
+   "data_wait": 40
+  },
+  "czii_peak_gb": 13.1,
+  "filament_step_ms": 1098,
+  "filament_step_phases_ms": {
+   "forward": 295,
+   "loss": 47,
+   "backward": 724,
+   "optimizer": 11,
+   "data_wait": 20
+  },
+  "c134_b16_step_ms": {
+   "sigmoid": 5629,
+   "softmax": 7279
+  },
+  "c134_b16_peak_gb": {
+   "sigmoid": 22.7,
+   "softmax": 23.6
+  },
+  "loader_samples_per_s_8_workers": {
+   "czii": 56,
+   "filaments": 34
+  },
+  "predict_s_per_tomogram": {
+   "czii": 159,
+   "czii_accumulate_cuda": 69,
+   "filaments": 98
+  },
+  "calibration_s_per_tomogram": {
+   "czii": 208,
+   "filaments": 123
+  },
+  "calibration_hotspots_s": {
+   "czii_peak_local_max_torch": 83,
+   "filament_threshold_tracing": 53
+  },
+  "czii_chunking": {
+   "wall_s": 65,
+   "chunks": 8957,
+   "bytes": 8705626873
+  }
+ },
+ "pytest_fast": {
+  "command": "pytest tests -m 'not slow'",
+  "exit_code": 0,
+  "passed": 923,
+  "skipped": 27,
+  "deselected": 18
+ },
+ "pytest_slow": {
+  "command": "none in 8a",
+  "ran": false,
+  "reason": "8a has no slow criteria"
+ },
+ "benchmarks": {
+  "baseline": "benchmarks/perf/BASELINE_20261109.md; raw JSON benchmarks/out/perf_baseline_20261109/ (git-ignored)"
+ },
+ "known_limitations": [
+  "Phase timers synchronise the GPU at every hook boundary (consistent before/after, slightly pessimistic wall time).",
+  "The kernel table of profile_model mixes aten ops and CUDA kernels (shares overlap); use it for ranking only.",
+  "Runs from the perf worktree must use `python -m` (the `tomocpt` console script imports the editable install of the v2-dev tree).",
+  "Filament predict measured 98 s per validation tomogram vs 23.7 s quoted in the handoff: not yet explained."
+ ],
+ "notes_for_next_agent": "8b next. Finding 1 (accumulate_device=auto falls back to CPU after the first tomogram; 2.3x predict) is the cheapest large win and belongs to 8e.1; the human approved the order 8a, 8b, 8e.1, so it waits unless the human pulls it forward."
+}
