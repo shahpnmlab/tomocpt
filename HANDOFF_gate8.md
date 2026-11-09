@@ -15,6 +15,24 @@ is written.
 
 ## 1. Preconditions and timing (human decision, 2 Nov 2026)
 
+**Update 9 Nov 2026 (human decision): Gate 8 starts now.** Gate 7 and filament mode are closed
+(3c.2: membrane negatives + contrastive 0.1, actin F1 0.810, microtubule 0.9995). Schedule-free (3b.3)
+was tried and lost (0.771 vs 0.792): RAdam + EMA stays the default optimiser, profile with it.
+TODO items 4 (SSL re-evaluation), 5 (~130-class smoke test) and 6 (DS-10490) are **deferred until
+after Gate 8**, not dropped. Goal in the human's words: squeeze as much as possible out of a
+**single-GPU box** (RTX A6000, 48 GB): optimise single-GPU training and predict first; multi-GPU
+(DDP) must keep working but is not a target. Consider folding the memory / step-time part of item
+5.1 (C ≈ 134) into the 8a profile, since the per-class loops scale with C.
+
+Measured on filament runs (DS-10490, 20 training tomograms, one level at 6.8 A/px, batch 16,
+1059 steps per epoch, 18.4 GB GPU): 19 min per epoch with the 3c.1b recipe, 20 min with the Gate 7
+contrastive loss (+5 %); early stop near epoch 50, 16.8-17.1 h per run. Predict 23.7 s per
+600x600x~120 tomogram for both classes; tracing 0.4-1.9 s per class (CPU); post-fit calibration
+traces every threshold 0.1-0.9 per filament class. `training/snapshots.py` (dashboard snapshots)
+adds a predict pass of a few chunks per epoch when `snapshot_chunks > 0`.
+
+The text below is the original plan of 2 Nov.
+
 - **Gate 8 work starts only after all training and predict code has been validated**: Gate 7
   closed (CZII CV arms, filament benchmark with membranes), and the remaining validation items of
   `TODO_v2.md` (SSL re-evaluation, ~130-class scaling smoke test, DS-10490, schedule-free optimiser

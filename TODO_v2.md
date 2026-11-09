@@ -159,7 +159,9 @@ Filaments are less tested than particles (Gate 6 passed on synthetic data plus a
       (`data/filaments/{10477,10490,10513}/masks/membrane/`), with the 3b recipe (exact coordinates,
       early stopping / schedule-free).
       Result (9 Nov 2026, `benchmarks/out/filaments_3c2_membrane_contrastive_20261108`, code `70fb99a`, contrastive 0.1, RAdam+EMA, 17.1 h): actin F1 0.782 -> 0.810 (P 0.846, R 0.780; `sample_7` 0.662 -> 0.714), microtubule 0.9995; false actin near membranes 19-27% -> 0%. Left: short isolated fragments (HANDOFF_filaments 5b).
-- [ ] 3c.3 Visual check of traced filaments (missed / false / broken traces) as for the CZII particles.
+- [x] 3c.3 Visual check of traced filaments (missed / false / broken traces) as for the CZII particles.
+      Human verdict (9 Nov 2026, 3c.2 run): the short curved actin traces away from labelled actin are false positives, not
+      unlabelled actin; misses are stretches of long filaments in bundles. Precision lever for later, not a label problem.
 
 ## 4. SSL v2 re-evaluation on CZII (Gate 5b parked)
 - [ ] 4.1 kNN / linear probe of dense features on CZII particles; fine-tuning arms
@@ -177,7 +179,7 @@ Filaments are less tested than particles (Gate 6 passed on synthetic data plus a
 ## 7. Schedule-free optimiser
 - Moved into item 3b.3 (human decision 4 Nov 2026).
 
-## 8. Gate 8 — performance (only after 3–6 are validated; human decision 2 Nov 2026)
+## 8. Gate 8 — performance (human decision 9 Nov 2026: next, before 4–6, which are deferred; single-GPU box first)
 - [ ] 8.1 Codebase scan + spec `.claude/agents/08_AGENT_PERFORMANCE.md` (handoff: `HANDOFF_gate8.md`).
 - [ ] 8.2 Implementation on `v2-feat/perf` (own worktree), training first; goldens regenerated per
       change after equivalence tests against the old code.
