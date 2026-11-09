@@ -14,3 +14,13 @@ Spec: `.claude/agents/08_AGENT_PERFORMANCE.md`. Written and frozen by the orches
 
 All 8a tests fail on `v2-dev` (b8042e7): `benchmarks.perf` does not exist there (new behaviour).
 Runtime on the development machine (CPU, tiny model): ~35 s.
+
+## 8e.1 accumulator device (pulled forward before 8b, human decision 9 Nov 2026)
+| Criterion | Test |
+|---|---|
+| `auto` counts the allocator cache (`memory_reserved - memory_allocated`) as free | `test_g8e1_accumulator.py::test_G8e1_auto_counts_cached_memory_as_free` |
+| `cpu` / `cuda` / no-GPU settings unchanged | `test_g8e1_accumulator.py::test_G8e1_explicit_settings_unchanged` |
+| Same decision after tomogram 1 filled the cache (slow, GPU) | `test_g8e1_accumulator.py::test_G8e1_same_decision_after_cache_fill` |
+| CPU vs GPU accumulation, maps `atol 1e-6`, with and without TTA (slow, GPU) | `test_g8e1_accumulator.py::test_G8e1_cpu_vs_gpu_accumulation_maps` |
+
+On the 8a code the first and third fail (the decision ignores the cache); the others pass (unchanged behaviour).
