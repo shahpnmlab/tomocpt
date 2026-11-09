@@ -134,7 +134,7 @@ class Run:
         ims = {e.step: e for e in self.acc.Images(tag)}
         older = [s for s in ims if s <= epoch]
         e = ims[max(older)] if older else ims[min(ims)]
-        return np.asarray(Image.open(io.BytesIO(e.encoded_image_string)).convert("L"))
+        return np.asarray(Image.open(io.BytesIO(e.encoded_image_string)).convert("RGB"))  # gray or turbo panels
 
 
 # -------------------------------------------------------------------------------- rendering
@@ -158,6 +158,18 @@ class Renderer:
 
 def gray(a: np.ndarray) -> np.ndarray:
     return np.repeat(a[..., None], 3, axis=-1)
+
+
+TURBO = None
+
+
+def turbo(a: np.ndarray) -> np.ndarray:
+    """uint8 values (0-255 = probability 0-1) in matplotlib's turbo, fixed scale."""
+    global TURBO
+    if TURBO is None:
+        from matplotlib import colormaps
+        TURBO = (colormaps["turbo"](np.arange(256))[:, :3] * 255).round().astype(np.uint8)
+    return TURBO[a]
 
 
 def overlay(inp: np.ndarray, pred: np.ndarray, target: np.ndarray) -> np.ndarray:
@@ -345,9 +357,9 @@ class Dashboard(QtWidgets.QMainWindow):
             cls, axis, z = self.cls.currentIndex(), self.axis.currentIndex(), self.slice.value()
             inp, tgt = take(c["input"][k], axis, z), take(c["target"][k, cls], axis, z)
             prd = take(self.run.pred(ep)[k, cls], axis, z)
-            rgb = hstack([gray(inp), gray(tgt), gray(prd), overlay(inp, prd, tgt)])
+            rgb = hstack([gray(inp), turbo(tgt), turbo(prd), overlay(inp, prd, tgt)])
         else:
-            rgb = gray(self.run.tb_panel(self.item.currentText(), ep))
+            rgb = self.run.tb_panel(self.item.currentText(), ep)
         out = self.renderer.render(rgb)
         h, w = out.shape[:2]
         self._img = out  # QImage does not own the buffer

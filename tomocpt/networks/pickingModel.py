@@ -31,6 +31,25 @@ def best_slice_panel(x, y, y_pred, c: int):
     return torch.cat([tiles[0], gap, tiles[1], gap, tiles[2]], dim=1).unsqueeze(0).cpu()
 
 
+def _turbo_lut() -> torch.Tensor:
+    """``[256, 3]`` float32 RGB of matplotlib's turbo colour map."""
+    from matplotlib import colormaps
+    return torch.from_numpy(colormaps["turbo"](range(256))[:, :3]).float()
+
+
+def colour_panel(panel: torch.Tensor) -> torch.Tensor:
+    """``[3, H, 3 W + 2]`` RGB of a :func:`best_slice_panel`: the input stays gray, target and
+    prediction are drawn in turbo on a fixed [0, 1] scale (a weak prediction stays dark blue)."""
+    p = panel[0].float().clamp(0, 1)
+    w = (p.shape[1] - 2) // 3
+    rgb = p.unsqueeze(0).repeat(3, 1, 1)  # gray everywhere, white gaps
+    lut = _turbo_lut()
+    for start in (w + 1, 2 * w + 2):
+        tile = p[:, start:start + w]
+        rgb[:, :, start:start + w] = lut[(tile * 255).round().long()].permute(2, 0, 1)
+    return rgb
+
+
 def parse_class_weights(text: str) -> dict:
     """Parse ``train.particles.class_weights`` (``"1:1.0,2:2.0"``) into ``{class number: weight}``."""
     weights = {}
@@ -455,7 +474,7 @@ class BasePickingModel(BaseModel):
                     continue
                 panel = best_slice_panel(x, y, y_pred, c)
                 if panel is not None:
-                    experiment.add_image(f"{prefix}/{name}", panel, global_step=self.current_epoch)
+                    experiment.add_image(f"{prefix}/{name}", colour_panel(panel), global_step=self.current_epoch)
                     done.add(c)
 
     def _log_images(self, x, y, y_pred, prefix):
