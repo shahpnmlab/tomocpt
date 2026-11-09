@@ -57,7 +57,9 @@ def _app(seen, argv=("tomocpt",), monkeypatch=None):
 
 
 def _help_options(app, cmd):
-    out = CliRunner().invoke(app.app, [cmd, "--help"], terminal_width=200).output
+    # Rich truncates option names to the terminal width; give it room (ruling 9 Nov 2026).
+    out = CliRunner().invoke(app.app, [cmd, "--help"], terminal_width=250,
+                             env={"COLUMNS": "250", "TERMINAL_WIDTH": "250"}).output
     opts = set()
     for line in out.splitlines():
         for tok in line.replace("│", " ").split():
