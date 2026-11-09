@@ -16,3 +16,12 @@ Decision: dropped. 9-23 min of compile per training process (each CV fold is a n
 ~180 ms per step only pays after ~3000-7700 steps; with checkpointing on it crashes; no reliable
 automatic rule exists and opt-in flags are not wanted (human decision 9 Nov 2026). Revisit in 8f
 if a torch upgrade compiles the Swin blocks much faster.
+
+# Gate 8b.6 (channels-last 3-D convolutions): dropped, 9 Nov 2026
+Same probe, `model.to(memory_format=torch.channels_last_3d)` and a channels-last input:
+| Swin checkpointing | eager (NCDHW) | channels-last |
+|---|---|---|
+| off | 802 ms, 26.0 GB | **985 ms (0.81×)**, 27.2 GB |
+| on | 975 ms, 13.0 GB | **1156 ms (0.84×)**, 13.0 GB |
+Slower: the Swin encoder works on token layouts (permutes / window partitions), so a channels-last
+input adds conversions instead of removing the cudnn layout copies. Dropped.
