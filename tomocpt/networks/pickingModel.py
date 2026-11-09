@@ -346,6 +346,9 @@ class BasePickingModel(BaseModel):
             # soft focal penalty on particle channels, Huber on filament channels (1 Nov 2026)
             kw = dict(value_loss="focal", focal_channels=[not f for f in self._is_filament()],
                       focal_gamma=float(self._disc("focal_alpha", 2.0)))
+        block = int(safe_getattr(particles, "hessian_block", 1)) if particles is not None else 1
+        if block != 1:
+            kw["hessian_block"] = block  # Gate 8b
         core = float(self._particles("core_weight", 0.0) or 0.0)
         if core:
             kw.update(core_weight=core, core_power=float(self._particles("core_power", 4.0)),
