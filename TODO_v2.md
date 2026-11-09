@@ -180,6 +180,9 @@ Filaments are less tested than particles (Gate 6 passed on synthetic data plus a
 - Moved into item 3b.3 (human decision 4 Nov 2026).
 
 ## 8. Gate 8 — performance (human decision 9 Nov 2026: next, before 4–6, which are deferred; single-GPU box first)
-- [ ] 8.1 Codebase scan + spec `.claude/agents/08_AGENT_PERFORMANCE.md` (handoff: `HANDOFF_gate8.md`).
+- [x] 8.1 Codebase scan + spec `.claude/agents/08_AGENT_PERFORMANCE.md` (handoff: `HANDOFF_gate8.md`), 9 Nov 2026;
+      draft for human review (open questions in spec Section 12). Synthetic scoping numbers: Swin checkpointing
+      off 1.20x at B=16 (12.9 -> 25.9 GB); batched Hessian 3.4x at C=134 (no gain at C<=6); CPU augmentation
+      1.3-2.2 s/sample at C=134; whole-model torch.compile did not finish a first step in 15 min.
 - [ ] 8.2 Implementation on `v2-feat/perf` (own worktree), training first; goldens regenerated per
       change after equivalence tests against the old code.
