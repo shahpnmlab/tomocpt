@@ -218,6 +218,29 @@ class OnTheFlyDataset(VolumeDatsetIO):
         return torch.from_numpy(m.astype(np.float32))[None]
 
 
+class CropDescriptorDataset(torch.utils.data.Dataset):
+    """GPU path (``augment_device=cuda``): a crop key ``(store, z, y, x)`` -> its descriptor and
+    per-sample metadata; :class:`~tomocpt.dataManager.gpu_augment.GpuAugment` does the rest."""
+
+    def __init__(self, stores: Sequence[TomogramStore], train: bool):
+        self.stores = list(stores)
+        self.train = bool(train)
+
+    def __len__(self):
+        return sum(len(crop_candidates(s)) for s in self.stores)
+
+    def __getitem__(self, key) -> dict:
+        si, z, y, x = (int(k) for k in key)
+        meta = self.stores[si].meta
+        return {"store_index": torch.tensor(si, dtype=torch.int64),
+                "corner": torch.tensor([z, y, x], dtype=torch.int64),
+                "otf_train": torch.tensor(self.train),
+                "class_available": torch.tensor([bool(a) for a in meta.class_available], dtype=torch.bool),
+                "class_d_vox": torch.tensor(meta.class_d_vox, dtype=torch.float32),
+                "apix_work": torch.tensor([float(meta.apix_work)], dtype=torch.float32),
+                "dataset_id": torch.tensor(int(meta.dataset_id), dtype=torch.int64)}
+
+
 class OnTheFlyData(Data):
     """LightningDataModule of ``train.sampling=on_the_fly`` (pipeline v2, picking)."""
 
@@ -232,8 +255,14 @@ class OnTheFlyData(Data):
         self.otf = otf if otf is not None else OnTheFlyConfig()
         if self.pipeline_version != 2:
             raise ValueError("train.sampling=on_the_fly needs train.data_pipeline_version=2")
-        if _enum_value(self.otf.augment_device) != "cpu":
-            raise ValueError("train.otf.augment_device='cuda' is Gate 8c.2 (not available yet); use 'cpu'")
+        self.augment_device = str(_enum_value(self.otf.augment_device))
+        if self.augment_device not in ("cpu", "cuda"):
+            raise ValueError(f"train.otf.augment_device must be 'cpu' or 'cuda', got '{self.augment_device}'")
+        if self.augment_device == "cuda":
+            from tomocpt.dataManager.gpu_augment import check_gpu_augmentation
+
+            check_gpu_augmentation(self.augmentation)
+        self.gpu_train = self.gpu_val = None
 
     def _setup_v2(self, layout: dict):
         from tomocpt.dataManager.dataloading import build_training_transforms
@@ -254,10 +283,21 @@ class OnTheFlyData(Data):
         if not self.stores_train:
             raise FileNotFoundError(f"No tomogram store in {self._get_split_dir('train')}")
         common = dict(n_classes=n_classes, band_max=float(self.scale_cfg.band_max_vox), chunk_size=self.chunk_size)
-        self.dataset_training = OnTheFlyDataset(
-            self.stores_train, transform=build_training_transforms(self.augmentation),
-            zoom_aug_max=float(self.scale_cfg.zoom_aug_max), **common)
-        self.dataset_val = OnTheFlyDataset(self.stores_val, transform=None, zoom_aug_max=1.0, **common)
+        if self.augment_device == "cuda":
+            from tomocpt.dataManager.gpu_augment import GpuAugment
+
+            dev = str(_enum_value(self.otf.device))
+            self.dataset_training = CropDescriptorDataset(self.stores_train, train=True)
+            self.dataset_val = CropDescriptorDataset(self.stores_val, train=False)
+            self.gpu_train = GpuAugment(self.stores_train, augmentation=self.augmentation, device=dev, train=True,
+                                        zoom_aug_max=float(self.scale_cfg.zoom_aug_max), **common)
+            self.gpu_val = GpuAugment(self.stores_val, augmentation=self.augmentation, device=dev, train=False,
+                                      **common)
+        else:
+            self.dataset_training = OnTheFlyDataset(
+                self.stores_train, transform=build_training_transforms(self.augmentation),
+                zoom_aug_max=float(self.scale_cfg.zoom_aug_max), **common)
+            self.dataset_val = OnTheFlyDataset(self.stores_val, transform=None, zoom_aug_max=1.0, **common)
         kw = dict(n_classes=n_classes, chunk_sampling=_enum_value(self.chunk_sampling),
                   repeat_factor_threshold=self.repeat_factor_threshold,
                   negative_mask_weight=float(self.otf.negative_mask_weight))
@@ -293,3 +333,10 @@ class OnTheFlyData(Data):
 
     def val_dataloader(self):
         return self._loader(self.dataset_val, self.val_sampler())
+
+    def on_after_batch_transfer(self, batch, dataloader_idx: int):
+        """GPU path: crop descriptors -> the training batch, on the batch's device."""
+        if isinstance(batch, dict) and "store_index" in batch and self.gpu_train is not None:
+            train = bool(batch["otf_train"].reshape(-1)[0])
+            return (self.gpu_train if train else self.gpu_val)(batch)
+        return batch
