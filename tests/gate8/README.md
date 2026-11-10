@@ -87,3 +87,31 @@ Pass on the 8a code (they pin behaviour).
 | 8e.1 `_prune_refined_peaks_gpu` identical kept peaks and order to the 8a version (`legacy_prune.py`); clusters, boundary-distance pairs, equal scores; CPU and GPU (slow) | `test_g8e1_prune.py` |
 | G8e-C3 filament threshold scores identical serial vs parallel workers (2, 4, auto) | `test_g8e1_filament_scores.py` |
 | G8e-C2 `grid_locations` equals TorchIO locations (odd shapes, overlaps 0/16/30/32; 31 replaced: TorchIO rejects odd overlaps and predict makes them even); GPU patch grid maps and offsets bit-identical to the TorchIO path (TTA, offsets, float16 accumulation; slow) | `test_g8e1_patch_grid.py` |
+
+## 8c.1 tomogram store and on-the-fly crop sampler (CPU augmentation unchanged)
+Fixture: four phantom tomograms (three at 10 Å/px; one at 6 Å/px, resampled to 6.25 Å/px and padded on z),
+chunked and stored from the same inputs in-process (`g8c_helpers.py`); a sparse set (alpha 100) for
+the sampler statistics.
+
+| Criterion | Test |
+|---|---|
+| G8c-C1 defaults `sampling=chunks`, `OnTheFlyConfig` defaults; chunk manifest unchanged (store adds only `storage`, `volume_dtype`, `alpha_drop_empty`); storage mismatch refused by `Data`, `OnTheFlyData` and `_prepare_data_if_needed` | `test_g8c1_otf.py::test_G8c_C1_*` (plus the whole suite unchanged) |
+| G8c-C2 store = chunker arrays (float32 `atol 0`, float16 = `astype(float16)` and ≤ 1.5e-3), metas, points identical; one entry per tomogram and level, no chunk files; negative masks identical; CV pool written once, folds are symlinks | `test_g8c1_otf.py::test_G8c_C2_*` |
+| G8c-C3 crop samples (no transform) = chunk samples: volume `atol 0` / 1.5e-3, target float32 `atol 1e-6`, every other key equal | `test_g8c1_otf.py::test_G8c_C3_crops_equal_chunk_samples` |
+| G8c-C4 same seed same crops; epoch / rank / seed change the stream; jitter inside the volume; sampler length and epochs; empty fraction and per-class frequency (repeat factors) within 3 σ over 10⁴ draws | `test_g8c1_otf.py::test_G8c_C4_*` |
+| G8c-C5 fixed validation set across epochs and runs; other `val_seed` differs; validation tomograms only; no augmentation; split over ranks by index, union = list | `test_g8c1_otf.py::test_G8c_C5_*` |
+| G8c-C8 gloo, 2 ranks: each rank's stream = `draw_crops(seed, epoch, rank)`, ranks and epochs differ; 2-epoch fit, one checkpoint (slow, CPU, ~30 s) | `test_g8c1_ddp_gloo.py` (worker `ddp_gloo_otf_worker.py`) |
+
+Rulings made while writing (before freezing):
+* "Every candidate kept" (C3) is checked on the chunks the chunker kept (a subset of the candidates);
+  jitter off is the dataset keyed by the chunk corner.
+* C4 statistics use a sparse fixture: in the dense one every candidate holds both classes (vacuous).
+  The repeat-factor test uses `t = 0.5` (with `t = 0.1` no class is rare enough there to get `r > 1`).
+* Class frequencies for the repeat factors are counted with the keep probabilities of the candidates
+  (expected chunk counts), the grid baseline's definition in expectation.
+* C2 negative mask: the store packs bits along x (`np.packbits(mask, axis=-1)`) so a crop unpacks only
+  its own bytes; equality is checked on the unpacked crops.
+* Filament segments (`filaments.npy`, `segments_in_box`) reuse the chunker's `segments_near_box`; no
+  filament fixture here (the C3 sample equality covers the shared `_getitem_v2` path).
+
+On the 8e.1 code every 8c.1 test fails (no `tomostore` / `otf` modules, no `storage` argument).
