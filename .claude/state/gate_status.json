@@ -2,7 +2,7 @@
  "base_ref": "v2-gate-0-base",
  "base_commit": "ce6f7b0ce856f19556266e7ad3143bfb66cdb7e2",
  "base_note": "first commit of branch v2-dev (released main + fix/v1-patches + plan); set by the orchestrator",
- "current_gate": "8e.1",
+ "current_gate": "8c",
  "gpu_available": true,
  "gates": {
   "1": {
@@ -533,6 +533,16 @@
     "tests/gate8/test_g8e1_accumulator.py": "42b7cf1ca547c361982848fc9852901eab3a6d9367e9c5dcaccb939ddd082983"
    },
    "notes": "speed-ups default (human decision 9 Nov 2026); 8b.5/8b.6 dropped with numbers"
+  },
+  "8e.1": {
+   "status": "PASSED",
+   "test_sha256": {
+    "tests/gate8/test_g8e1_accumulator.py": "42b7cf1ca547c361982848fc9852901eab3a6d9367e9c5dcaccb939ddd082983",
+    "tests/gate8/test_g8e1_filament_scores.py": "0122a0543c286aa0917d20f77db046377ce663aef22e2075ff45db3ca4d975a8",
+    "tests/gate8/test_g8e1_patch_grid.py": "55bd3a85f79a6848b49207c6ba7fd864c63df8da7c56405f8f86ea6f7b7a6b8c",
+    "tests/gate8/test_g8e1_peaks.py": "88bf55fb2fa4da99eac075d61fa70aa444775e6dcaad15ce8c320235a1f095e7",
+    "tests/gate8/test_g8e1_prune.py": "dbebe3368336cc21c99da0facd1a212228292e80b9baaa3e9707c0ea664da185"
+   }
   }
  }
 }

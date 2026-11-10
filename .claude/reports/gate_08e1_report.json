@@ -1,0 +1,45 @@
+{
+ "gate_id": "8e.1",
+ "status": "PASSED",
+ "base_ref": "v2-feat/perf",
+ "changes": [
+  "peak finding: CPU greedy passes in torch (identical)",
+  "parallel filament threshold tracing (identical)",
+  "GPU patch grid on CUDA (bit-identical maps)",
+  "accumulate_device=auto counts allocator cache"
+ ],
+ "metrics": {
+  "czii_predict_s_per_tomo": {
+   "8a": 68,
+   "now": 27
+  },
+  "fil_predict_s_per_tomo": {
+   "8a": 42,
+   "now": 18
+  },
+  "czii_calibration_s": {
+   "8a": 231,
+   "now": 65
+  },
+  "fil_calibration_s": {
+   "8a": 126,
+   "now": 52
+  }
+ },
+ "goldens": "none changed",
+ "config_fields_added": [],
+ "pytest_fast": {
+  "passed": 1118,
+  "skipped": 27,
+  "failed": 0
+ },
+ "pytest_slow_gate8": {
+  "passed": 32
+ },
+ "test_rulings": [
+  "patch-grid overlap 31 -> 30 (TorchIO rejects odd overlaps)",
+  "filament scoring: maps < 4M voxels stay in-process (keeps the Gate 6b spy test valid)"
+ ],
+ "results_doc": "benchmarks/perf/RESULTS_8e1.md",
+ "notes_for_next_agent": "8c next (on-the-fly crops, GPU data path and augmentation; E2, one CZII CV acceptance run). Larger predictions_batch_size is a human decision."
+}
