@@ -93,34 +93,79 @@ def calibrate_thresholds(
     return out
 
 
+#: State shared with forked tracing workers (set just before the pool starts; Gate 8e.1).
+_TRACE_STATE: Dict[str, Any] = {}
+
+
+def _filament_threshold_row(thr: float) -> np.ndarray:
+    """Scores of one threshold (``_TRACE_STATE`` holds the map and settings)."""
+    from tomocpt.labels import filaments as LF
+    from tomocpt.metrics import _covered_length
+
+    st = _TRACE_STATE
+    prob, apix, tol, step, true = st["prob"], st["apix"], st["tol"], st["step"], st["true"]
+    pred = []
+    if float(np.mean(prob > float(thr))) <= FILAMENT_MAX_REGION_FRAC:
+        fits = LF._trace_and_fit(prob, float(thr), apix, st["diameter"], st["min_length"], st["spacing"],
+                                 st["smoothing"])
+        pred = [np.asarray(pts, dtype=np.float64) for pts, _, _ in fits]
+    near_p, len_p = _covered_length(pred, true, tol, step)
+    near_t = _covered_length(true, pred, tol, step)[0] if pred else st["near_t_empty"]
+    return np.array((near_p * apix, len_p * apix, near_t * apix, st["len_t"] * apix, len(true)), dtype=np.float64)
+
+
+#: Maps smaller than this (voxels) are traced in this process: forking costs more than it saves.
+PARALLEL_TRACE_MIN_VOXELS = 4_000_000
+
+
+def _trace_workers(n_thresholds: int, workers: Optional[int], n_voxels: int) -> int:
+    if workers is not None:
+        return max(1, int(workers))
+    if not hasattr(os, "fork") or n_voxels < PARALLEL_TRACE_MIN_VOXELS:
+        return 1
+    return max(1, min(int(n_thresholds), (os.cpu_count() or 2) // 2, 16))
+
+
 def filament_threshold_scores(prob, true_polylines, diameter_ang: float, apix: float, infer_cfg,
-                              grid: Sequence[float]) -> np.ndarray:
+                              grid: Sequence[float], workers: Optional[int] = None) -> np.ndarray:
     """Scores of one filament channel of one tomogram at each threshold of ``grid``: ``[G, 5]``
     (see ``N_FILAMENT_COLUMNS``; lengths in A, so tomograms of different voxel sizes pool).
 
     ``prob``: ``[D, H, W]`` probability map in native voxels; ``true_polylines``: ``x, y, z``
     native voxels. Each threshold is traced with the infer settings, so the score is that of what
-    ``predict`` would write."""
-    from tomocpt.labels import filaments as LF
+    ``predict`` would write. ``workers`` (Gate 8e.1): thresholds traced in parallel forked
+    processes (``None`` = automatic, ``1`` = in this process); the scores are identical."""
     from tomocpt.metrics import _covered_length
 
     prob = np.asarray(prob, dtype=np.float32)
     apix = float(apix)
     tol = FILAMENT_TOLERANCE_FRAC * float(diameter_ang) / apix
     true = [np.asarray(p, dtype=np.float64).reshape(-1, 3) for p in true_polylines if len(p)]
-    out = np.zeros((len(grid), N_FILAMENT_COLUMNS), dtype=np.float64)
     step = 0.25
     near_t_empty, len_t = _covered_length(true, [], tol, step)
-    for i, thr in enumerate(grid):
-        pred = []
-        if float(np.mean(prob > float(thr))) <= FILAMENT_MAX_REGION_FRAC:
-            fits = LF._trace_and_fit(prob, float(thr), apix, float(diameter_ang),
-                                     float(infer_cfg.filament_min_length_ang), float(infer_cfg.filament_spacing_ang),
-                                     float(infer_cfg.filament_smoothing_ang))
-            pred = [np.asarray(pts, dtype=np.float64) for pts, _, _ in fits]
-        near_p, len_p = _covered_length(pred, true, tol, step)
-        near_t = _covered_length(true, pred, tol, step)[0] if pred else near_t_empty
-        out[i] = (near_p * apix, len_p * apix, near_t * apix, len_t * apix, len(true))
+    _TRACE_STATE.clear()
+    _TRACE_STATE.update(prob=prob, apix=apix, tol=tol, step=step, true=true, near_t_empty=near_t_empty,
+                        len_t=len_t, diameter=float(diameter_ang),
+                        min_length=float(infer_cfg.filament_min_length_ang),
+                        spacing=float(infer_cfg.filament_spacing_ang),
+                        smoothing=float(infer_cfg.filament_smoothing_ang))
+    thresholds = [float(t) for t in grid]
+    n_workers = _trace_workers(len(thresholds), workers, prob.size)
+    try:
+        if n_workers <= 1 or len(thresholds) <= 1:
+            rows = [_filament_threshold_row(t) for t in thresholds]
+        else:
+            import multiprocessing as mp
+            from concurrent.futures import ProcessPoolExecutor
+
+            # fork: the workers share the map copy-on-write; they touch no CUDA state.
+            with ProcessPoolExecutor(max_workers=n_workers, mp_context=mp.get_context("fork")) as pool:
+                rows = list(pool.map(_filament_threshold_row, thresholds))
+    finally:
+        _TRACE_STATE.clear()
+    out = np.zeros((len(thresholds), N_FILAMENT_COLUMNS), dtype=np.float64)
+    for i, r in enumerate(rows):
+        out[i] = r
     return out
 
 

@@ -53,7 +53,14 @@ def timed_functions(pairs=TIMED):
     """Replace each function by a timing wrapper; yields ``{name: {"s", "calls"}}``."""
     acc = defaultdict(lambda: {"s": 0.0, "calls": 0})
     saved = []
-    sync = torch.cuda.synchronize if torch.cuda.is_available() else (lambda: None)
+    import os
+
+    parent = os.getpid()
+
+    def sync():
+        # never touch CUDA in a forked worker (parallel filament tracing, Gate 8e.1)
+        if torch.cuda.is_available() and os.getpid() == parent:
+            torch.cuda.synchronize()
     for mod_name, attr in pairs:
         try:
             mod = importlib.import_module(mod_name)
