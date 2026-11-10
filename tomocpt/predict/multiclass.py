@@ -175,6 +175,49 @@ def _accumulator_device(setting: str, compute_device: torch.device, n_maps: int,
     return compute_device if needed < AUTO_DEVICE_MEMORY_FRACTION * free else torch.device("cpu")
 
 
+#: Gate 8e.1: on CUDA, slice the patches from the volume on the GPU (same locations, order and
+#: batches as TorchIO's GridSampler, so the same maps); CPU keeps TorchIO.
+_GPU_PATCH_GRID = True
+
+
+def grid_locations(shape: Sequence[int], patch_size: int, overlap: int) -> np.ndarray:
+    """TorchIO ``GridSampler`` patch locations ``[N, 6]`` (``i0, j0, k0, i1, j1, k1``), same order:
+    per axis ``range(0, size - patch + 1, patch - overlap)`` plus the last position flush with the
+    end, every combination, unique and sorted."""
+    per_axis = []
+    for size in (int(s) for s in shape):
+        idx = list(range(0, size + 1 - int(patch_size), int(patch_size) - int(overlap)))
+        if idx[-1] != size - int(patch_size):
+            idx.append(size - int(patch_size))
+        per_axis.append(idx)
+    ini = np.unique(np.array(np.meshgrid(*per_axis)).reshape(3, -1).T, axis=0)
+    locs = np.hstack((ini, ini + int(patch_size)))
+    return np.array(sorted(locs.tolist()))
+
+
+def _patch_batches(vol: torch.Tensor, patch: int, overlap: int, batch_size: int, device: torch.device):
+    """``(x [B, 1, p, p, p] on device, locations [B, 6] ints)`` per batch, in TorchIO's order."""
+    if _GPU_PATCH_GRID and device.type == "cuda":
+        # same dtype as TorchIO's ScalarImage tensor
+        v = tio.ScalarImage(tensor=vol[:1, :1, :1].unsqueeze(0)).data.dtype
+        vol_dev = vol.to(device=device, dtype=v)
+        locs = grid_locations(tuple(vol.shape), patch, overlap)
+        for s0 in range(0, len(locs), int(batch_size)):
+            chunk = locs[s0:s0 + int(batch_size)]
+            x = torch.stack([vol_dev[i0:i1, j0:j1, k0:k1] for i0, j0, k0, i1, j1, k1 in chunk.tolist()])
+            yield x.unsqueeze(1), chunk.tolist()
+        return
+    sampler = tio.GridSampler(tio.Subject(volume=tio.ScalarImage(tensor=vol.unsqueeze(0))),
+                              patch_size=patch, patch_overlap=overlap)
+    loader = DataLoader(sampler, batch_size=batch_size, num_workers=0)
+    for batch in loader:
+        yield batch["volume"][tio.DATA].to(device), [[int(v) for v in loc] for loc in batch[tio.LOCATION]]
+
+
+def _n_patches(shape: Sequence[int], patch: int, overlap: int) -> int:
+    return len(grid_locations(shape, patch, overlap))
+
+
 def _hann_window(patch_size: int) -> torch.Tensor:
     """TorchIO's Hann window (``GridAggregator``), clamped to :data:`HANN_MIN_WEIGHT`."""
     w1 = torch.hann_window(patch_size + 2, periodic=False)[1:-1]
@@ -200,19 +243,17 @@ def _predict_level(model, padded: torch.Tensor, classes: List[int], apix_work: f
     maps, offs = [], []
     for k, flip in enumerate(flips):
         vol = padded if flip is None else torch.flip(padded, dims=(flip,))
-        sampler = tio.GridSampler(tio.Subject(volume=tio.ScalarImage(tensor=vol.unsqueeze(0))),
-                                  patch_size=patch, patch_overlap=overlap)
-        loader = DataLoader(sampler, batch_size=infer_config.predictions_batch_size, num_workers=0)
+        bs = int(infer_config.predictions_batch_size)
+        n_batches = -(-_n_patches(tuple(vol.shape), patch, overlap) // bs)
         acc = torch.zeros((len(classes),) + tuple(vol.shape), dtype=dtype, device=acc_device)
         acc_off = torch.zeros((3,) + tuple(vol.shape), dtype=torch.float32, device=acc_device) if with_offsets else None
         weight = torch.zeros(tuple(vol.shape), dtype=torch.float32, device=acc_device)
         if pbar is not None:
             tta = f" [TTA {k + 1}/{len(flips)}]" if len(flips) > 1 else ""
-            pbar.reset(total=len(loader))
+            pbar.reset(total=n_batches)
             pbar.set_description(f"{desc} @ {apix_work:.2f} A/px{tta}")
         with torch.inference_mode():
-            for batch in loader:
-                x = batch["volume"][tio.DATA].to(device)
+            for x, locations in _patch_batches(vol, patch, overlap, bs, device):
                 with torch.amp.autocast(device_type=device.type, enabled=infer_config.use_cuda):
                     if with_offsets:
                         probs, off = model.predict_step_with_offsets(x, apix=float(apix_work), classes=classes)
@@ -220,8 +261,8 @@ def _predict_level(model, padded: torch.Tensor, classes: List[int], apix_work: f
                     else:
                         probs = model.predict_step(x, 0, apix=float(apix_work), classes=classes)
                 probs = probs[:, classes].float().to(acc_device)
-                for i, (p, loc) in enumerate(zip(probs, batch[tio.LOCATION])):
-                    i0, j0, k0, i1, j1, k1 = (int(v) for v in loc)
+                for i, (p, loc) in enumerate(zip(probs, locations)):
+                    i0, j0, k0, i1, j1, k1 = loc
                     acc[:, i0:i1, j0:j1, k0:k1] += (p * hann).to(dtype)
                     if with_offsets:
                         acc_off[:, i0:i1, j0:j1, k0:k1] += off[i] * hann

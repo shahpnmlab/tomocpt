@@ -15,7 +15,7 @@ CUDA = torch.cuda.is_available()
 
 
 @pytest.mark.parametrize("shape", [(64, 64, 64), (70, 81, 64), (65, 129, 200), (100, 64, 97)])
-@pytest.mark.parametrize("overlap", [0, 16, 32, 31])
+@pytest.mark.parametrize("overlap", [0, 16, 32, 30])  # TorchIO rejects odd overlaps (ruling)
 def test_G8e_C2_locations_equal_torchio(shape, overlap):
     from tomocpt.predict.multiclass import grid_locations
 
