@@ -1,8 +1,8 @@
 """Gate 8g (human request 10 Nov 2026): learning rate and EMA decay follow the effective batch size.
 
-``train.optimizer.lr_scaling``: ``none`` (opt-in phase default) | ``sqrt`` (Adam-family rule;
+``train.lr_scaling``: ``none`` (opt-in phase default) | ``sqrt`` (Adam-family rule;
 Krizhevsky 2014, Malladi et al. 2022) | ``linear`` (Goyal et al. 2017, SGD). The reference is the
-recipe's tuning point, ``train.optimizer.lr_reference_batch`` (16). With ``k = effective batch /
+recipe's tuning point, ``train.lr_reference_batch`` (16). With ``k = effective batch /
 reference`` (effective = ``batch_size x devices``): ``lr -> lr * sqrt(k)`` or ``lr * k``, and
 ``ema_decay -> ema_decay ** k`` (Busbridge et al. 2023), so the EMA spans the same number of
 samples. ``k = 1`` changes nothing, bit for bit. Epochs are not changed (Goyal: same epochs).
@@ -42,10 +42,11 @@ def test_G8g_C2_scale_factor():
 
 
 def test_G8g_C3_defaults():
-    from tomocpt.defaultConfigs.train_config import OptimizerConfig
+    from tomocpt.defaultConfigs.train_config import OptimizerConfig, TrainConfig
 
-    o = OptimizerConfig()
-    assert o.lr_scaling == "none" and o.lr_reference_batch == 16 and o.lr == 4e-4
+    t = TrainConfig()
+    assert t.lr_scaling == "none" and t.lr_reference_batch == 16 and OptimizerConfig().lr == 4e-4
+    assert not hasattr(OptimizerConfig(), "lr_scaling")  # optimizer fields are passed to the optimizer
 
 
 def _callbacks_ema(mc, model):
@@ -66,7 +67,7 @@ def test_G8g_C4_training_uses_the_scaled_values(tmp_path, monkeypatch, rule, bat
 
     monkeypatch.setattr(S, "training_devices", lambda config: devices)
     cfg = H4.v2_cfg(tmp_path, weight_averaging="ema", ema_decay=0.999, batch_size=batch)
-    cfg.train.optimizer.lr_scaling = rule
+    cfg.train.lr_scaling = rule
     k = batch * devices / 16
     want_lr = {"none": 4e-4, "sqrt": 4e-4 * math.sqrt(k), "linear": 4e-4 * k}[rule]
     want_ema = 0.999 if rule == "none" else 0.999 ** k

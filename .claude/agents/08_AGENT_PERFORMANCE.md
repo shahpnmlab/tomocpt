@@ -646,9 +646,10 @@ cost. Invariant 8 list updated with any approved pin.
    everything works to spec within the margins (Section 3.1).
 
 ### 8g - learning rate and EMA decay follow the effective batch size (human request 10 Nov 2026)
-`train.optimizer.lr_scaling: none | sqrt | linear = none` (opt-in while tested; meant to become
+`train.lr_scaling: none | sqrt | linear = none` (opt-in while tested; meant to become
 `sqrt` by default in production, a human decision after the GPU check), and
-`train.optimizer.lr_reference_batch: int = 16` (the batch the recipe's lr was tuned at). Not CLI flags.
+`train.lr_reference_batch: int = 16` (the batch the recipe's lr was tuned at). Not CLI flags; in `train`, not `train.optimizer`, whose
+fields are passed to the optimizer constructor.
 - `k = batch_size x devices / lr_reference_batch` (effective batch; DDP counts every GPU).
 - `sqrt`: `lr * sqrt(k)` (Krizhevsky 2014; Malladi et al. 2022, the rule for Adam-family optimisers
   such as RAdam). `linear`: `lr * k` (Goyal et al. 2017; derived for SGD, with warm-up).
