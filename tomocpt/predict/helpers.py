@@ -262,54 +262,49 @@ def peak_local_max_torch(
         end_of_candidate = tie_ends[tie_of_candidate].tolist()
         is_tied = (tie_counts > 1)[tie_of_candidate].tolist()
 
-    suppress_grid = torch.zeros_like(image, dtype=torch.bool)
+    # Greedy suppression on the CPU (Gate 8e.1): the candidate list is small, and on the GPU every
+    # step of this loop waits for the device. Same loop and order, so the same peaks.
+    cand = candidates.cpu()
+    cand_list = cand.tolist()
+    suppress_grid = torch.zeros(tuple(image.shape), dtype=torch.bool)
     final_peaks = []
-    dist = min_distance
-    z, y, x = torch.meshgrid(
-        torch.arange(-dist, dist + 1, device=device),
-        torch.arange(-dist, dist + 1, device=device),
-        torch.arange(-dist, dist + 1, device=device),
-        indexing="ij",
-    )
+    dist = int(min_distance)
+    r = torch.arange(-dist, dist + 1)
+    z, y, x = torch.meshgrid(r, r, r, indexing="ij")
     suppress_mask = (z**2 + y**2 + x**2) <= dist**2
+    D, H, W = (int(s) for s in image.shape)
 
-    for i in range(candidates.shape[0]):
-        coord = candidates[i]
-        if suppress_grid[coord[0], coord[1], coord[2]]:
+    for i, (cz, cy, cx) in enumerate(cand_list):
+        if suppress_grid[cz, cy, cx]:
             continue
         if any_ties and is_tied[i]:
             # Replace this arbitrary plateau member with the centroid of the
             # tied voxels belonging to the same particle. Restricting to the
             # suppression radius keeps two equally saturated particles apart.
+            # On the image's device: the GPU mean rounds .5 cases differently from the CPU one,
+            # and the picks must stay identical.
             tied = candidates[start_of_candidate[i] : end_of_candidate[i]]
+            coord = candidates[i]
             # Two passes: the arbitrary starting member can sit on the rim of the
             # plateau, where the inclusion sphere clips off the far side and
             # biases the centroid towards that rim.
             for _ in range(2):
                 same_blob = ((tied - coord) ** 2).sum(dim=1) <= dist**2
                 coord = tied[same_blob].float().mean(dim=0).round().long()
-        final_peaks.append(coord)
-        z_min, z_max = max(0, coord[0] - dist), min(image.shape[0], coord[0] + dist + 1)
-        y_min, y_max = max(0, coord[1] - dist), min(image.shape[1], coord[1] + dist + 1)
-        x_min, x_max = max(0, coord[2] - dist), min(image.shape[2], coord[2] + dist + 1)
-        mask_z_min, mask_z_max = dist - (coord[0] - z_min), dist + (
-            z_max - coord[0] - 1
-        )
-        mask_y_min, mask_y_max = dist - (coord[1] - y_min), dist + (
-            y_max - coord[1] - 1
-        )
-        mask_x_min, mask_x_max = dist - (coord[2] - x_min), dist + (
-            x_max - coord[2] - 1
-        )
+            cz, cy, cx = coord.tolist()
+        final_peaks.append((cz, cy, cx))
+        z_min, z_max = max(0, cz - dist), min(D, cz + dist + 1)
+        y_min, y_max = max(0, cy - dist), min(H, cy + dist + 1)
+        x_min, x_max = max(0, cx - dist), min(W, cx + dist + 1)
         suppress_grid[z_min:z_max, y_min:y_max, x_min:x_max] |= suppress_mask[
-            mask_z_min : mask_z_max + 1,
-            mask_y_min : mask_y_max + 1,
-            mask_x_min : mask_x_max + 1,
+            dist - (cz - z_min) : dist + (z_max - cz),
+            dist - (cy - y_min) : dist + (y_max - cy),
+            dist - (cx - x_min) : dist + (x_max - cx),
         ]
 
     if not final_peaks:
         return torch.empty((0, 3), device=device, dtype=torch.long)
-    return torch.stack(final_peaks)
+    return torch.tensor(final_peaks, dtype=torch.long, device=device)
 
 
 def _prune_refined_peaks_gpu(
@@ -342,27 +337,26 @@ def _prune_refined_peaks_gpu(
     sorted_coords = coords[sorted_indices]
     sorted_scores = scores[sorted_indices]
 
-    # Mask to track which peaks to keep
-    keep_mask = torch.ones(sorted_coords.shape[0], dtype=torch.bool, device=device)
-
-    for i in range(sorted_coords.shape[0]):
-        # If this peak has already been suppressed by a higher-scoring one, skip it
-        if not keep_mask[i]:
-            continue
-
-        # This is a good peak. Now, suppress any subsequent, lower-scoring peaks that are too close.
-        # Calculate squared distances to all subsequent peaks.
-        distances_sq = torch.sum(
-            (sorted_coords[i + 1 :] - sorted_coords[i]) ** 2, dim=1
-        )
-
-        # Find which of the *subsequent* peaks are too close
-        too_close_mask = distances_sq < min_distance_sq
-
-        # Update the 'keep_mask' for the subsequent peaks.
-        # A peak is marked as False if it's too close to the current 'good' peak.
-        if too_close_mask.any():
-            keep_mask[i + 1 :][too_close_mask] = False
+    # Gate 8e.1: the "too close" pairs are found on the device in row blocks (same distance
+    # formula, so the same decisions); only the greedy pass runs on the CPU, without a device
+    # sync per peak.
+    n = sorted_coords.shape[0]
+    block = max(1, min(n, (64 * 2 ** 20) // max(1, 4 * n)))
+    neighbours = [[] for _ in range(n)]
+    for r0 in range(0, n, block):
+        r1 = min(n, r0 + block)
+        d2 = torch.sum((sorted_coords[None, :, :] - sorted_coords[r0:r1, None, :]) ** 2, dim=2)
+        close = d2 < min_distance_sq
+        rows = torch.arange(r0, r1, device=device)[:, None]
+        close &= torch.arange(n, device=device)[None, :] > rows  # only subsequent (lower-ranked) peaks
+        for a, b in close.nonzero().cpu().tolist():
+            neighbours[r0 + a].append(b)
+    keep = [True] * n
+    for i in range(n):
+        if keep[i]:
+            for k in neighbours[i]:
+                keep[k] = False
+    keep_mask = torch.tensor(keep, dtype=torch.bool, device=device)
 
     final_coords = sorted_coords[keep_mask]
     final_scores = sorted_scores[keep_mask]
