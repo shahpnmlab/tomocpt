@@ -92,6 +92,13 @@ def _prepare_data_if_needed(config: DictConfig):
                     f"{class_table_to_json(recorded)}. Fix prepData.class_diameters / class_names, or "
                     f"delete {chunking_name_done} to rebuild the chunks."
                 )
+            found_storage = str(layout.get("storage", "chunks"))
+            if found_storage != _requested_storage(config):
+                raise ValueError(
+                    f"storage mismatch: {config.chunks_dir} holds "
+                    f"{'a tomogram store' if found_storage == 'tomogram' else 'chunk files'} but train.sampling="
+                    f"{safe_getattr(config, 'sampling', 'chunks')}. Delete {chunking_name_done} to rebuild, or "
+                    "change train.sampling.")
             _check_layout_val_stems(layout, val_stems, chunking_name_done)
             requested = {"folds": cv[0], "fold": cv[1]} if cv is not None else None
             if layout.get("cv") != requested:
@@ -144,7 +151,11 @@ def _prepare_data_if_needed(config: DictConfig):
             label_border_policy=mainConfig.prepData.label_border_policy,
             cv=cv,
             val_stems=val_stems,
+            storage=_requested_storage(config),
+            volume_dtype=str(safe_getattr(safe_getattr(config, "otf", None), "volume_dtype", "float16")),
         )
+    elif _requested_storage(config) != "chunks":
+        raise ValueError("train.sampling=on_the_fly needs train.data_pipeline_version=2")
     do_chunking(
         tomos_df,
         chunkedDataDir=config.chunks_dir,
@@ -156,6 +167,15 @@ def _prepare_data_if_needed(config: DictConfig):
         **chunk_kwargs,
     )
     logging.info("Data preparation complete.")
+
+
+def _requested_storage(config) -> str:
+    """Storage the train config asks for: ``chunks`` (chunk files) or ``tomogram`` (Gate 8c store)."""
+    sampling = str(getattr(safe_getattr(config, "sampling", "chunks"), "value",
+                           safe_getattr(config, "sampling", "chunks")) or "chunks")
+    if sampling not in ("chunks", "on_the_fly"):
+        raise ValueError(f"train.sampling must be 'chunks' or 'on_the_fly', got '{sampling}'")
+    return "tomogram" if sampling == "on_the_fly" else "chunks"
 
 
 def _requested_val_stems(config) -> Optional[List[str]]:

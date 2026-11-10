@@ -18,12 +18,24 @@ def _stages(ds, n: int, seed: int) -> dict:
     from tomocpt.labels.helpers import render_targets
 
     rng = np.random.default_rng(seed)
-    idx = rng.choice(len(ds), size=min(n, len(ds)), replace=False)
+    otf_keys = None
+    if hasattr(ds, "stores"):  # Gate 8c on-the-fly dataset: keys are crops (store, z, y, x)
+        from tomocpt.dataManager.otf import candidate_weights, draw_crops
+
+        index, w, _ = candidate_weights(ds.stores, int(ds.n_classes))
+        otf_keys = draw_crops(index, w, n, seed, 0, 0, 1, True, ds.stores[0].chunk_stride,
+                              [s.shape for s in ds.stores], ds.chunk_size)
+        idx = np.arange(len(otf_keys))
+    else:
+        idx = rng.choice(len(ds), size=min(n, len(ds)), replace=False)
     acc = {"read_volume_target": [], "read_segments_mask": [], "render_targets": [], "render_tubes": [],
            "transform": [], "getitem_total": []}
     torch.manual_seed(seed)
     for i in idx:
         t0 = time.perf_counter()
+        if otf_keys is not None:
+            ds._key = tuple(int(v) for v in otf_keys[i])
+            i = 0
         vol, points, dense, meta = ds._load_v2(int(i))
         t1 = time.perf_counter()
         segs = ds._load_segments(ds.filepath_tuples[i][1])
@@ -43,7 +55,7 @@ def _stages(ds, n: int, seed: int) -> dict:
                                target_data=tio.LabelMap(tensor=torch.from_numpy(np.ascontiguousarray(target))))
             ds.transform(subj)
         t5 = time.perf_counter()
-        ds[int(i)]
+        ds[ds._key if otf_keys is not None else int(i)]
         t6 = time.perf_counter()
         for k, v in zip(acc, (t1 - t0, t2 - t1, t3 - t2, t4 - t3, t5 - t4, t6 - t5)):
             acc[k].append(v * 1e3)

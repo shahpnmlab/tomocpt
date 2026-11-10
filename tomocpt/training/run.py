@@ -62,7 +62,12 @@ def train(config: DictConfig = None):
                            workers_for_data=config.n_cpus_for_dataloading, ssl_cfg=ssl_cfg,
                            persistent_workers=config.use_gpus)
     else:
-        data = Data(
+        data_cls, extra = Data, {}
+        if str(getattr(config, "sampling", "chunks")) == "on_the_fly":  # Gate 8c
+            from tomocpt.dataManager.otf import OnTheFlyData
+
+            data_cls, extra = OnTheFlyData, {"otf": config.otf}
+        data = data_cls(
             data_dir=config.chunks_dir,
             return_labels=(config.mode == "picking"),
             batch_size=config.batch_size,
@@ -73,6 +78,7 @@ def train(config: DictConfig = None):
             chunk_sampling=config.chunk_sampling,
             repeat_factor_threshold=config.repeat_factor_threshold,
             pin_memory=bool(config.use_gpus),  # Gate 8b: always with a GPU
+            **extra,
         )
     data.setup()
 

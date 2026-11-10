@@ -518,6 +518,9 @@ class Data(pl.LightningDataModule):
 
         if not self.hparams.return_labels:
             raise ValueError("data_pipeline_version=2 supports picking (labelled) chunks only")
+        if layout.get("storage", "chunks") != "chunks":  # invariant 4 (Gate 8c)
+            raise ValueError(f"storage mismatch: {self.hparams.data_dir} holds a tomogram store "
+                             "(train.sampling=on_the_fly) but train.sampling=chunks was requested.")
         self.class_table = class_table_from_json(layout["class_table"])
         n_classes = len(self.class_table)
         storage = str(layout.get("target_storage", "points"))

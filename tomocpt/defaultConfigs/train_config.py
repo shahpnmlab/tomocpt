@@ -11,6 +11,7 @@ from tomocpt.defaultConfigs.scale_config import ScaleConfig
 from tomocpt.defaultConfigs.particles_config import ParticlesConfig
 from tomocpt.defaultConfigs.ssl_config import SSLConfig
 from tomocpt.defaultConfigs.discriminative_config import DiscriminativeConfig
+from tomocpt.defaultConfigs.otf_config import OnTheFlyConfig
 
 
 class TrainingModes(str, Enum):
@@ -276,6 +277,13 @@ class TrainConfig:
     repeat_factor_threshold: Annotated[
         float, typer.Option(help="Threshold t of repeat-factor sampling: r_c = max(1, sqrt(t / f_c))")
     ] = 0.1
+    sampling: Annotated[
+        str, typer.Option(help="Where training crops come from (pipeline v2): 'chunks' (chunk files) or "
+                               "'on_the_fly' (crops drawn from one array per tomogram, Gate 8c)")
+    ] = "chunks"
+    otf: Annotated[
+        OnTheFlyConfig, typer.Option(help="On-the-fly crop sampling (train.sampling=on_the_fly)")
+    ] = field(default_factory=OnTheFlyConfig)
     cv_folds: Annotated[
         int, typer.Option(help="k-fold training by tomogram (pipeline v2): number of folds; 0 = off (random split)")
     ] = 0

@@ -89,12 +89,17 @@ def _synthetic_datamodule(n_samples: int, d_vox, batch: int, seed: int):
 def _chunks_datamodule(cfg):
     from tomocpt.dataManager.dataloading import Data
 
-    data = Data(
+    data_cls, extra = Data, {}
+    if str(getattr(cfg, "sampling", "chunks")) == "on_the_fly":  # Gate 8c, as training/run.py
+        from tomocpt.dataManager.otf import OnTheFlyData
+
+        data_cls, extra = OnTheFlyData, {"otf": cfg.otf}
+    data = data_cls(
         data_dir=cfg.chunks_dir, return_labels=(cfg.mode == "picking"), batch_size=cfg.batch_size,
         workers_for_data=cfg.n_cpus_for_dataloading, augmentation=cfg.augmentation,
         pipeline_version=cfg.data_pipeline_version, scale_cfg=cfg.scale,
         chunk_sampling=cfg.chunk_sampling, repeat_factor_threshold=cfg.repeat_factor_threshold,
-        pin_memory=bool(cfg.use_gpus))  # as training/run.py
+        pin_memory=bool(cfg.use_gpus), **extra)  # as training/run.py
     data.setup()
     return data
 

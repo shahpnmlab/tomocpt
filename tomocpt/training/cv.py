@@ -82,6 +82,11 @@ def _pool_request(config) -> dict:
         chunk_stride=int(getattr(config, "CHUNK_STRIDE", None) or mainConfig.train.CHUNK_STRIDE),
         label_border_policy=policy,
     )
+    from tomocpt.training.helpers import _requested_storage
+
+    storage = _requested_storage(config)
+    if storage != "chunks":  # Gate 8c: a tomogram store pool
+        kwargs.update(storage=storage, volume_dtype=str(config.otf.volume_dtype))
     settings = {
         "band": [float(scale.band_min_vox), float(scale.band_max_vox)],
         "resample": str(getattr(scale.resample, "value", scale.resample)),
@@ -91,6 +96,8 @@ def _pool_request(config) -> dict:
         "chunk_size": kwargs["chunk_size"], "chunk_stride": kwargs["chunk_stride"], "seed": kwargs["seed"],
         "class_table": class_table_to_json(class_table_from_json(class_table_to_json(table))),
         "alpha_drop_empty": kwargs["alpha_drop_empty"],
+        "storage": "tomogram" if storage != "chunks" else None,
+        "volume_dtype": kwargs.get("volume_dtype"),
     }
     return dict(kwargs=kwargs, settings=settings)
 
