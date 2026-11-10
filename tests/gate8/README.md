@@ -86,3 +86,4 @@ on the GPU by `test_g8b_attention_gpu.py` (float32: output `atol 1e-5`, gradient
 Pass on the 8a code (they pin behaviour).
 | 8e.1 `_prune_refined_peaks_gpu` identical kept peaks and order to the 8a version (`legacy_prune.py`); clusters, boundary-distance pairs, equal scores; CPU and GPU (slow) | `test_g8e1_prune.py` |
 | G8e-C3 filament threshold scores identical serial vs parallel workers (2, 4, auto) | `test_g8e1_filament_scores.py` |
+| G8e-C2 `grid_locations` equals TorchIO locations (odd shapes, overlaps 0/16/31/32); GPU patch grid maps and offsets bit-identical to the TorchIO path (TTA, offsets, float16 accumulation; slow) | `test_g8e1_patch_grid.py` |
