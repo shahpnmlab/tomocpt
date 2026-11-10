@@ -115,3 +115,33 @@ Rulings made while writing (before freezing):
   filament fixture here (the C3 sample equality covers the shared `_getitem_v2` path).
 
 On the 8e.1 code every 8c.1 test fails (no `tomostore` / `otf` modules, no `storage` argument).
+
+## 8c.2 GPU augmentation and target rendering (`test_g8c2_gpu_augment.py`, `g8c2_helpers.py`)
+
+Libraries for the standard parts (human direction 10 Nov 2026: use GPU libraries, hand-write only
+the non-standard ones): Kornia `RandomAffine3D` (rotation and per-axis scale parameters and
+matrices), Kornia `filter3d` + `get_gaussian_kernel3d` (blur), TorchIO's own
+`RandomElasticDeformation.get_params` (elastic control grid). Hand-written: the single
+`grid_sample` read from the whole tomogram, the cubic B-spline upsampling of the control grid,
+contrast inversion, the torch renderers, and (later) the Fourier / missing-wedge port.
+
+Rulings:
+- The code is device agnostic; the tests run on CPU tensors, and `test_G8c2_cuda_matches_cpu`
+  repeats a case on the GPU when one is present.
+- Map convention (pinned by `g8c2_helpers.map_points`): output voxel `j` reads
+  `corner + c + A (j + e(j) - c) + t`, `c = (n - 1) / 2`; points go to
+  `c + A^-1 (p - corner - c - t)` and `d_vox` scales by `|det A|^(-1/3)`.
+- Padding outside the tomogram is its median, and the reference is
+  `scipy.ndimage.map_coordinates(mode="grid-constant")`: plain `constant` does not interpolate
+  across the edge, so it is not a padding model.
+- The fixture is one hand-made store entry (`write_store_entry`): well-separated particles, some
+  at or past the border, straight filaments, a negative mask, median != 0.
+- Constant elastic field: the input is checked exactly against `map_coordinates`. The target is a
+  linear warp of the render, so a sharp peak at a half-voxel shift is off by 0.29; the bound is
+  0.35, and the opposite-sign shift must be 2.5 times further off (measured 0.95).
+- Elastic statistics: 32^3 crops, 8-voxel interior, 1000 draws each; TorchIO's field is measured
+  by warping coordinate images.
+- The Fourier degradation and the optional intensity / TorchIO stand-in transforms are not
+  ported: with `augment_device=cuda` they raise `ValueError` naming `augment_device`. The spec
+  lists the optional intensity transforms as on the GPU; no recipe turns them on, so they wait for
+  a port with the Fourier one (ruling for the human).
