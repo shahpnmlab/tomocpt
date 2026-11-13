@@ -11,7 +11,7 @@ import torch
 _SS = 0.33 / 2.0  # small / large Gaussian widths as fractions of R (Section 1.3)
 _SL = 0.66 / 2.0
 _POINT_BUDGET = 1 << 24   # window voxels per scatter (particles)
-_TUBE_BUDGET = 1 << 22    # segment x voxel pairs per pass (tubes)
+_TUBE_BUDGET = 1 << 23    # window voxels per pass (tubes)
 
 
 def _profile_unit(u: torch.Tensor) -> torch.Tensor:
@@ -83,32 +83,59 @@ def render_tubes_torch(segments: torch.Tensor, out_shape_zyx: Sequence[int], n_c
                        batch_index: Optional[torch.Tensor] = None, batch_size: Optional[int] = None) -> torch.Tensor:
     """Soft tube targets ``[C, *shape]`` (``[B, C, *shape]``) from ``segments [M, 8]`` =
     ``z0, y0, x0, z1, y1, x1, class_index, d_vox``: the profile of the distance to the nearest
-    segment of the channel divided by its ``R`` (round caps), in bounds only."""
+    segment of the channel divided by its ``R`` (round caps), in bounds only.
+
+    Each segment is evaluated only in its box (segment bounds +/- ``R``, clipped to the output), the
+    only voxels where the profile is non-zero, and the values are max-combined: the profile does not
+    increase with the distance, so the max over segments is the profile of the nearest one."""
     shape = tuple(int(s) for s in out_shape_zyx)
     C = int(n_classes)
     B = int(batch_size) if batch_index is not None else 1
     segs, R, bi, ci = _prepare(segments, 8, 6, 7, C, batch_index)
     device = segments.device
     out = torch.zeros((B, C) + shape, dtype=torch.float32, device=device)
-    if not len(segs):
-        return out if batch_index is not None else out[0]
-    keys = bi * C + ci
-    uniq, slot = torch.unique(keys, return_inverse=True)
-    n_vox = shape[0] * shape[1] * shape[2]
-    umin = torch.full((len(uniq), n_vox), float("inf"), dtype=torch.float32, device=device)
-    grid = torch.stack(torch.meshgrid(*(torch.arange(s, device=device, dtype=torch.float32) for s in shape),
-                                      indexing="ij"), dim=-1).reshape(-1, 3)
-    per = max(1, _TUBE_BUDGET // n_vox)
-    for s0 in range(0, len(segs), per):
-        g = segs[s0:s0 + per]
-        a = g[:, 0:3].to(torch.float32)
-        ab = (g[:, 3:6] - g[:, 0:3]).to(torch.float32)
-        L2 = (ab * ab).sum(1)
-        w = grid[None] - a[:, None]                                            # [m, V, 3]
-        t = ((w * ab[:, None]).sum(-1) / torch.where(L2 > 0, L2, torch.ones_like(L2))[:, None]).clamp(0.0, 1.0)
-        t = torch.where(L2[:, None] > 0, t, torch.zeros_like(t))
-        dv = w - t[..., None] * ab[:, None]
-        u = torch.sqrt((dv * dv).sum(-1)) / R[s0:s0 + per].to(torch.float32)[:, None]
-        umin.scatter_reduce_(0, slot[s0:s0 + per, None].expand_as(u), u, reduce="amin", include_self=True)
-    out.view(B * C, n_vox)[uniq] = _profile_unit(umin)
+    if len(segs):
+        p0, p1 = segs[:, 0:3], segs[:, 3:6]
+        top = torch.tensor(shape, dtype=torch.float64, device=device) - 1
+        lo = torch.ceil(torch.minimum(p0, p1) - R[:, None]).clamp_min(0)
+        hi = torch.minimum(torch.floor(torch.maximum(p0, p1) + R[:, None]), top)
+        ext = hi - lo + 1
+        keep = (ext > 0).all(1)
+        segs, R, bi, ci, lo = segs[keep], R[keep], bi[keep], ci[keep], lo[keep]
+        if len(segs):
+            w_all = ext[keep].amax(1).long()
+            order = torch.argsort(w_all)
+            segs, R, bi, ci, lo = segs[order], R[order], bi[order], ci[order], lo[order]
+            widths = w_all[order].tolist()
+            flat = out.view(-1)
+            start = 0
+            while start < len(segs):
+                end = start + 1
+                while end < len(segs) and (end + 1 - start) * widths[end] ** 3 <= _TUBE_BUDGET:
+                    end += 1
+                _tube_window(flat, segs[start:end], R[start:end], bi[start:end], ci[start:end], lo[start:end],
+                             widths[end - 1], shape, C)
+                start = end
     return out if batch_index is not None else out[0]
+
+
+def _tube_window(flat, s, R, bi, ci, lo, w, shape, C):
+    device = s.device
+    g = lo[:, :, None] + torch.arange(w, device=device, dtype=torch.float64)    # [n, 3, w] voxel indices
+    rel = (g - s[:, 0:3, None]).to(torch.float32)                                # voxel - p0
+    ab = (s[:, 3:6] - s[:, 0:3]).to(torch.float32)
+    L2 = (ab * ab).sum(1)
+    wz, wy, wx = rel[:, 0, :, None, None], rel[:, 1, None, :, None], rel[:, 2, None, None, :]
+    az, ay, ax = (ab[:, a, None, None, None] for a in range(3))
+    t = (wz * az + wy * ay + wx * ax) / torch.where(L2 > 0, L2, torch.ones_like(L2))[:, None, None, None]
+    t = torch.where(L2[:, None, None, None] > 0, t.clamp(0.0, 1.0), torch.zeros_like(t))
+    d2 = (wz - t * az) ** 2 + (wy - t * ay) ** 2 + (wx - t * ax) ** 2
+    v = _profile_unit(torch.sqrt(d2) / R.to(torch.float32)[:, None, None, None])
+    gi = g.long()
+    ok = [gi[:, a] < shape[a] for a in range(3)]
+    inb = ok[0][:, :, None, None] & ok[1][:, None, :, None] & ok[2][:, None, None, :]
+    base = (bi * C + ci)[:, None, None, None]
+    idx = ((base * shape[0] + gi[:, 0, :, None, None]) * shape[1] + gi[:, 1, None, :, None]) * shape[2] \
+        + gi[:, 2, None, None, :]
+    sel = inb & (v > 0)
+    flat.scatter_reduce_(0, idx[sel], v[sel], reduce="amax", include_self=True)
