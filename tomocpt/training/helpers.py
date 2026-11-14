@@ -413,7 +413,9 @@ def _init_contrastive_head_from_ssl(model, state_dict) -> bool:
 
 def _create_model(config: DictConfig):
     """Factory function to create the appropriate model based on the config."""
-    lr = config.optimizer.lr
+    from tomocpt.training.hparam_scaling import config_lr
+
+    lr = config_lr(config)  # Gate 8g: = optimizer.lr unless lr_scaling is on
     model = None
     checkpointer = ModelCheckpoint(monitor="val_loss", filename="weights", verbose=True)
 
@@ -559,9 +561,10 @@ def _setup_callbacks(
     elif averaging in ("ema", "swa_plateau"):
         # Gate 4f: average validated and saved, no fixed start epoch
         from tomocpt.training.averaging import WeightAveraging
+        from tomocpt.training.hparam_scaling import config_ema_decay
 
         callbacks.append(WeightAveraging(
-            averaging, ema_decay=float(safe_getattr(config, "ema_decay", 0.999)),
+            averaging, ema_decay=config_ema_decay(config, float(safe_getattr(config, "ema_decay", 0.999))),
             plateau_patience=int(safe_getattr(config, "swa_plateau_patience", 5)),
             plateau_rel_delta=float(safe_getattr(config, "swa_plateau_rel_delta", 1e-3))))
     callbacks.append(LRVerificationCallback())

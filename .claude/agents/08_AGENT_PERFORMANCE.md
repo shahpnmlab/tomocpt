@@ -644,3 +644,20 @@ cost. Invariant 8 list updated with any approved pin.
 8. **TODO 5.1:** memory / step-time part folded into 8a; the accuracy part stays in TODO 5.
 9. **INVIOLABLE:** all changes on a separate branch (`v2-feat/perf`); no commits to `v2-dev` unless
    everything works to spec within the margins (Section 3.1).
+
+### 8g - learning rate and EMA decay follow the effective batch size (human request 10 Nov 2026)
+`train.lr_scaling: none | sqrt | linear = none` (opt-in while tested; meant to become
+`sqrt` by default in production, a human decision after the GPU check), and
+`train.lr_reference_batch: int = 16` (the batch the recipe's lr was tuned at). Not CLI flags; in `train`, not `train.optimizer`, whose
+fields are passed to the optimizer constructor.
+- `k = batch_size x devices / lr_reference_batch` (effective batch; DDP counts every GPU).
+- `sqrt`: `lr * sqrt(k)` (Krizhevsky 2014; Malladi et al. 2022, the rule for Adam-family optimisers
+  such as RAdam). `linear`: `lr * k` (Goyal et al. 2017; derived for SGD, with warm-up).
+- EMA (`weight_averaging=ema`): `ema_decay ** k` (Busbridge et al. 2023), the same averaging window
+  in samples. SWA's `swa_lrs = 0.1 * lr` follows the scaled lr.
+- Epochs unchanged (Goyal keeps epochs; matching step counts would cost k times the compute).
+  Early stopping and patience are in epochs and need no change.
+- `k = 1` reproduces the unscaled run bit for bit (invariant 1 at the default batch 16).
+- Not ported from the illustrative script: batch size from a target lr (no use case), epoch
+  scaling. **G8g-C1..C4** in `tests/gate8/test_g8g_lr_scaling.py`. GPU check (later, the GPU is
+  busy with the 8c CVs): batch 16 vs 32 and 64 with `sqrt`, loss against samples seen.
