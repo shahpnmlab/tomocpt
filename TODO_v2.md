@@ -87,13 +87,16 @@ LR recipe; expectation: clears +0.02 over 0.741 by training longer.
       coordinates: baseline 0.741, focal 0.727, contrastive 0.729 (apo-ferritin most affected).
 - [ ] 3b.1a IMOD coordinate convention (human to test separately, 4 Nov 2026): are IMOD voxel centres at
       integer or x.5 coordinates? Gate 4d uses IMOD and STAR coordinates as stored (no shift); STAR is the main input.
-- [ ] 3b.1b Annotation offset (finding 5 Nov 2026, open): on all 7 CZII tomograms and 6 classes, picks sit
+- [~] 3b.1b Annotation offset (finding 5 Nov 2026, open): on all 7 CZII tomograms and 6 classes, picks sit
       (-0.4, -0.45, -1.4) native voxels (x, y, z) from the exact labels (Gate 7 OOF and 3b pilots alike); synthetic
       blobs through the full predict path are recovered within 0.025 voxel, so the offset is in the labels. Random
       flips reverse any label offset, so the model centres on the image and the targets are blurred by +-offset.
       Human ruling: the fix must be general, not a CZII-specific shift. Undecided (dropping flips declined for now).
       3b pilots fold 0 (exact coords): schedule-free 0.771, RAdam+EMA 0.745 vs Gate 7 both 0.792 (weighted F4,
       2 tomograms; beta-galactosidase alone varies by +-0.05, so fold 0 cannot rank recipes).
+      PARKED 14 Nov 2026 (human): oracle fold 0 with labels shifted onto the image (benchmarks/out/offset_oracle_20261114)
+      gave higher, narrower peaks in every class (apo-ferritin centre 0.46 -> 0.69) and weighted F4 0.783 -> 0.818
+      (single fold, noisy). General fix if needed later: per-dataset label registration for target rendering only.
 - [x] 3b.2 (Gate 4e: `train.early_stop_min_delta`, `train.early_stop_patience`) Configurable early stopping: `train.early_stop_min_delta` (legacy 0.005, absolute) and
       patience; run with 1e-4 so the plateau LR halving and SWA (epoch 48 of 60) can act.
 - [x] 3b.2a (Gate 4g: `train.lr_plateau_match_early_stop`, `train.lr_plateau_patience`; human decision 5 Nov 2026)
