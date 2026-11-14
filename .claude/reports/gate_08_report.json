@@ -1,0 +1,98 @@
+{
+ "gate_id": 8,
+ "agent_name": "08_AGENT_PERFORMANCE",
+ "status": "READY_FOR_REVIEW",
+ "base_ref": "v2-dev (b8042e7)",
+ "branch": "v2-feat/perf",
+ "sub_gates": {
+  "8a": "PASSED (harness, profiles)",
+  "8b": "PASSED (step: fused attention, loss options, pin_memory)",
+  "8e.1": "PASSED (exact predict/calibration speed-ups)",
+  "8c": "PASSED (on-the-fly crops, GPU augmentation; defaults auto)",
+  "8d": "PASSED (parallel CV folds per GPU, automatic)",
+  "8g": "MERGED, opt-in train.lr_scaling, no GPU validation (human ruling 14 Nov 2026)",
+  "8e.2": "DROPPED (human ruling 14 Nov 2026)",
+  "8f": "DROPPED (human ruling 14 Nov 2026)"
+ },
+ "metrics": {
+  "czii_step_ms": {
+   "8a": 1214,
+   "8b_defaults": 818,
+   "swin_ckpt_off": 753
+  },
+  "filament_step_ms": {
+   "8a": 1096,
+   "8b_defaults": 769,
+   "swin_ckpt_off": 697,
+   "8c_windowed_tubes": 801
+  },
+  "czii_predict_s_per_tomo": {
+   "8a": 68,
+   "now": 27
+  },
+  "fil_predict_s_per_tomo": {
+   "8a": 42,
+   "now": 18
+  },
+  "czii_calibration_s": {
+   "8a": 231,
+   "now": 65
+  },
+  "fil_calibration_s": {
+   "8a": 126,
+   "now": 52
+  },
+  "czii_5fold_cv_wall_h": {
+   "chunks": 38.4,
+   "on_the_fly": 29.9
+  },
+  "czii_5fold_oof_weighted_f4": {
+   "chunks": 0.748,
+   "on_the_fly": 0.763
+  },
+  "ds10490_actin_f1": {
+   "reference": 0.81,
+   "on_the_fly": 0.836
+  }
+ },
+ "defaults_changed": [
+  "train.sampling=auto",
+  "train.otf.augment_device=auto",
+  "Swin checkpointing off when memory allows (use_checkpoint=True means auto)",
+  "CV folds run one per visible GPU"
+ ],
+ "config_fields_added": [
+  "train.sampling",
+  "train.otf.*",
+  "train.lr_scaling",
+  "train.lr_reference_batch"
+ ],
+ "dropped": {
+  "8f_upgrade_probe": "torch 2.15.0+cu132 / MONAI 1.6.1 / Kornia 0.9.0 / TorchIO 1.2.1 / Lightning 2.6.6 / numpy 2.5: step 816 -> 796 ms (defaults), 752 -> 733 ms (Swin ckpt off), ~1.025x; regional torch.compile still 22-24 min; MONAI >= 1.5 removed img_size (network_config.build_model would need to drop it); state_dict keys identical. Python stays 3.12; pyproject requires-python '>=3.8' is stale.",
+  "8e.2": "dropped by the human"
+ },
+ "open_decisions": {
+  "infer.predictions_batch_size": "kept (human, 14 Nov 2026)"
+ },
+ "pytest_fast": {
+  "command": "pytest tests -m 'not slow'",
+  "result": {
+   "passed": 1193,
+   "skipped": 27,
+   "failed": 0
+  }
+ },
+ "pytest_slow": {
+  "command": "pytest tests/gate8 -m slow",
+  "result": {
+   "passed": 33,
+   "failed": 0
+  }
+ },
+ "known_limitations": [
+  "multi-GPU (DDP and parallel folds) designed and gloo-tested, unmeasured on GPUs",
+  "filament data wait 6.7 % (bar 5 % set on particles)",
+  "8g lr_scaling not validated on GPU"
+ ],
+ "notes_for_next_agent": "Needs human approval for CLAUDE.md sections 6/7 (rows below) and the merge go-ahead into v2-dev."
+}

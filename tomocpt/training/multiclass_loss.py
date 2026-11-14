@@ -7,13 +7,23 @@ masked out. With one class, every pair available and ``class_d_vox = 20`` it equ
 """
 from typing import Optional, Sequence, Union
 
-import kornia
 import torch
 from torch import nn
 from torch.utils.checkpoint import checkpoint as torch_checkpoint
 
 HESSIAN_REFERENCE_D_VOX = 20.0  # diameter (voxels) at which the Hessian scale is 1
 HESSIAN_WEIGHT = 10.0
+#: Gate 8b: memory the Hessian term may use per call, and its measured cost per voxel of one
+#: (sample, class) pair (fp32, value term included: ~34 MB per 64^3 pair).
+HESSIAN_BLOCK_BYTES = 4 * 2 ** 30
+HESSIAN_BYTES_PER_VOXEL = 136
+
+
+def auto_hessian_block(n_samples: int, n_voxels: int, budget_bytes: int = HESSIAN_BLOCK_BYTES) -> int:
+    """Classes per Hessian call so that one call stays within ``budget_bytes`` (at least 1).
+    B = 16 at 64^3: up to 7 classes in one call."""
+    per_class = max(1, int(n_samples) * int(n_voxels) * HESSIAN_BYTES_PER_VOXEL)
+    return max(1, int(budget_bytes) // per_class)
 CLASS_HEADS = ("sigmoid", "softmax")
 
 
@@ -53,15 +63,54 @@ def renormalise_targets(y_true: torch.Tensor) -> torch.Tensor:
     return y_true / y_true.sum(dim=1, keepdim=True).clamp(min=1)
 
 
-def _hessian_term(y_pred_c: torch.Tensor, y_true_c: torch.Tensor, scale: torch.Tensor) -> torch.Tensor:
-    """Mean over voxels of ``sum_6 huber(s H(y_pred), s H(y_true))`` for one class.
+#: Non-zero entries (channel, z, y, x, value) of Kornia's ``get_diff_kernel3d_2nd_order`` (xx, yy, zz,
+#: xy, xz, yz), Kornia 0.7.4.
+_DIFF2_TAPS = (
+    (0, 1, 1, 0, 1.0), (0, 1, 1, 1, -2.0), (0, 1, 1, 2, 1.0),
+    (1, 1, 0, 1, 1.0), (1, 1, 1, 1, -2.0), (1, 1, 2, 1, 1.0),
+    (2, 0, 1, 1, 1.0), (2, 1, 1, 1, -2.0), (2, 2, 1, 1, 1.0),
+    (3, 1, 0, 0, 1.0), (3, 1, 0, 2, -1.0), (3, 1, 2, 0, -1.0), (3, 1, 2, 2, 1.0),
+    (4, 0, 0, 1, 1.0), (4, 0, 2, 1, -1.0), (4, 2, 0, 1, -1.0), (4, 2, 2, 1, 1.0),
+    (5, 0, 1, 0, 1.0), (5, 0, 1, 2, -1.0), (5, 2, 1, 0, -1.0), (5, 2, 1, 2, 1.0),
+)
+_KERNEL_CACHE = {}
 
-    ``y_pred_c``, ``y_true_c``: ``[B, 1, D, H, W]``; ``scale``: ``[B]``. Returns ``[B]``."""
-    h_pred = kornia.filters.spatial_gradient3d(y_pred_c, mode="diff", order=2)  # [B,1,6,D,H,W]
-    h_true = kornia.filters.spatial_gradient3d(y_true_c, mode="diff", order=2)
-    s = scale.view(-1, 1, 1, 1, 1, 1)
+
+def _diff2_kernel(device, dtype) -> torch.Tensor:
+    """Kornia's 2nd-order diff kernel ``[6, 1, 3, 3, 3]``, built on ``device`` by scalar fills (no
+    host-to-device copy, so no host sync; Gate 8b) and cached per device and dtype."""
+    key = (str(device), dtype)
+    k = _KERNEL_CACHE.get(key)
+    if k is None:
+        k = torch.zeros((6, 1, 3, 3, 3), device=device, dtype=dtype)
+        for c, z, y, x, v in _DIFF2_TAPS:
+            k[c, 0, z, y, x].fill_(v)
+        _KERNEL_CACHE[key] = k
+    return k
+
+
+def _hessian3d(v: torch.Tensor) -> torch.Tensor:
+    """``kornia.filters.spatial_gradient3d(v, mode="diff", order=2)``, same operations (replicate pad,
+    flipped grouped conv3d) with a cached kernel. ``[B, C, D, H, W] -> [B, C, 6, D, H, W]``."""
+    b, c, d, h, w = v.shape
+    kernel = _diff2_kernel(v.device, v.dtype)
+    kernel_flip = kernel.repeat(c, 1, 1, 1, 1).flip(-3)
+    x = nn.functional.pad(v, [1] * 6, "replicate")
+    return nn.functional.conv3d(x, kernel_flip, padding=0, groups=c).view(b, c, 6, d, h, w)
+
+
+def _hessian_term(y_pred_c: torch.Tensor, y_true_c: torch.Tensor, scale: torch.Tensor) -> torch.Tensor:
+    """Mean over voxels of ``sum_6 huber(s H(y_pred), s H(y_true))`` per class.
+
+    ``y_pred_c``, ``y_true_c``: ``[B, k, D, H, W]`` (a block of ``k`` classes); ``scale``: ``[B, k]``
+    (or ``[B]`` for ``k = 1``). Returns ``[B, k]``. The target Hessian needs no graph."""
+    B, k = y_pred_c.shape[:2]
+    h_pred = _hessian3d(y_pred_c)  # [B,k,6,D,H,W]
+    with torch.no_grad():
+        h_true = _hessian3d(y_true_c)
+    s = scale.reshape(B, k, 1, 1, 1, 1)
     h = nn.functional.huber_loss(s * h_pred, s * h_true, reduction="none").sum(2)
-    return h.flatten(1).mean(1)
+    return h.flatten(2).mean(2)
 
 
 def _other_class_target(y_true: torch.Tensor, available: torch.Tensor) -> torch.Tensor:
@@ -118,6 +167,7 @@ def multiclass_picking_loss(
     core_weight: float = 0.0,
     core_power: float = 4.0,
     core_channels: Optional[Sequence[bool]] = None,
+    hessian_block: int = 1,
 ) -> torch.Tensor:
     """Pipeline-v2 picking loss.
 
@@ -140,6 +190,9 @@ def multiclass_picking_loss(
         core_weight, core_power, core_channels: centroid weight (Gate 4f): on the channels where
             ``core_channels`` is True (default all; the model passes its particle channels) the value
             weight ``w`` becomes ``w * (1 + core_weight * y^core_power)``. 0 = off (bit-identical).
+        hessian_block: classes per Hessian call (Gate 8b): 1 = one class at a time (default), ``k``
+            = blocks of ``k`` channels, 0 = all channels in one call. Same maths (the Hessian is
+            per channel); peak memory grows with the block. Checkpointing, if on, wraps each block.
 
     Returns the mean over available ``(b, c)`` pairs (0 if none is available). Every output
     channel is part of the graph, so DDP sees a gradient (possibly zero) for every parameter.
@@ -169,14 +222,16 @@ def multiclass_picking_loss(
 
     scale = (class_d_vox.to(device=y_pred.device, dtype=y_pred.dtype).view(B, C) / HESSIAN_REFERENCE_D_VOX) ** 2
     use_checkpoint = checkpoint and torch.is_grad_enabled()
+    block = C if int(hessian_block) <= 0 else min(int(hessian_block), C)
     hessian_terms = []
-    for c in range(C):
-        args = (y_pred[:, c:c + 1], y_true[:, c:c + 1], scale[:, c])
+    for c0 in range(0, C, block):
+        c1 = min(c0 + block, C)
+        args = (y_pred[:, c0:c1], y_true[:, c0:c1], scale[:, c0:c1])
         if use_checkpoint:
             hessian_terms.append(torch_checkpoint(_hessian_term, *args, use_reentrant=False))
         else:
             hessian_terms.append(_hessian_term(*args))
-    per_pair = value_term + HESSIAN_WEIGHT * torch.stack(hessian_terms, dim=1)  # [B, C]
+    per_pair = value_term + HESSIAN_WEIGHT * torch.cat(hessian_terms, dim=1)  # [B, C]
 
     if class_weights is not None:
         cw = torch.as_tensor(class_weights, device=per_pair.device, dtype=per_pair.dtype).view(1, C)
@@ -186,8 +241,8 @@ def multiclass_picking_loss(
     per_pair = torch.where(available, per_pair, torch.zeros_like(per_pair))
     loss = per_pair.sum() / available.sum().clamp(min=1)
 
-    # DDP: a class unavailable in the whole batch still gets a (zero) gradient path
+    # DDP: a class unavailable in the whole batch still gets a (zero) gradient path. Always added
+    # (an exact zero), so there is no host sync on ``unavailable`` (Gate 8b).
     unavailable = ~available.any(dim=0)
-    if bool(unavailable.any()):
-        loss = loss + 0 * y_pred[:, unavailable].sum()
-    return loss
+    per_channel = y_pred.sum(dim=(0, *range(2, y_pred.ndim)))  # [C]
+    return loss + 0 * torch.where(unavailable, per_channel, torch.zeros_like(per_channel)).sum()

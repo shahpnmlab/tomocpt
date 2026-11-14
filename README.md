@@ -141,21 +141,26 @@ This is an advanced fine-tuning technique where a "student" model learns from a 
 tomocpt train \
   --config_file my_config.yaml \
   --fine_tune_from /path/to/teacher/weights.ckpt \
-  --use_distillation True \
-  --distill_weight 0.5
+  use_distillation=true distill_weight=0.5
 ```
 - `--fine_tune_from`: Path to the teacher model's weights.
-- `--use_distillation`: Must be set to `True`.
-- `--distill_weight`: Balances learning from new labels vs. learning from the teacher.
+- `use_distillation=true`: turns distillation on.
+- `distill_weight`: Balances learning from new labels vs. learning from the teacher.
 
-### Hydra-style Parameter Overrides
+### Flags, the config file and `key=value` overrides
 
-You can always override any parameter from your config file directly on the command line using dot notation:
+Only everyday settings are command-line flags (`tomocpt train --help` lists them). Every other
+setting lives in the YAML config (`tomocpt init` writes all of them with their defaults) or is set
+with a `key=value` override after the flags, using dots for nested sections:
 
 ```bash
-# Override learning rate and precision
-tomocpt train --config_file my_config.yaml optimizer.lr=0.0001 network.TORCH_FLOAT_PRECISION=16
+tomocpt train --config_file my_config.yaml optimizer.lr=0.0001 particles.class_head=softmax \
+    augmentation.flip_p=0.5 val_stems=TS_6_6,TS_86_3
 ```
+- Booleans: `true` / `false`; `none` clears an optional setting.
+- The keys are the field names of the command's section (`train`, `infer`, `prepData`) in the YAML.
+- Old long flags of settings that are no longer flags (e.g. `--augmentation.flip_p 0.5`) still work
+  for now; they print a warning with the `key=value` to use instead.
 
 ## 4. Run Prediction
 
@@ -302,7 +307,7 @@ One command trains one model per fold of tomograms, calibrates the per-class thr
 pooled out-of-fold (OOF) predictions, builds the fold ensemble and writes a CV report:
 ```bash
 tomocpt train --config_file config.yaml --cv_folds 5 --cv_all_folds \
-    --cv_class_weights "beta-amylase:0,beta-galactosidase:2,thyroglobulin:2"   # weights optional
+    cv_class_weights="beta-amylase:0,beta-galactosidase:2,thyroglobulin:2"   # weights optional
 tomocpt predict --config_file config.yaml --weights <model_dir>/<experiment_name>/ensemble.json \
     --tomogram_dir tomos/ --predictions_dir out/
 ```

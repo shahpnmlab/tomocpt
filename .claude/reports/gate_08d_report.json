@@ -1,0 +1,23 @@
+{
+ "gate_id": "8d",
+ "agent_name": "08_AGENT_PERFORMANCE",
+ "status": "PASSED",
+ "base_ref": "v2-feat/perf",
+ "changes": [
+  "training.cv: fold processes run concurrently, one per visible GPU (CUDA_VISIBLE_DEVICES), automatic; no train.cv_parallel_folds field (no new CLI knobs, human rule); one GPU = sequential as before",
+  "verified: filament-only calibration runs no particle path (peaks_from_class_maps skips filament rows); OOF picks reused (G4c-C3)"
+ ],
+ "config_fields_added": [],
+ "pass_criteria": {
+  "G8d-C1": "test_G8d_C1_filament_only_skips_particle_path (spies on peak finding, true-particle reads, peak profiles; same filament record as a mixed model)",
+  "G8d-C2": "stubbed fold processes: identical fold configs parallel vs sequential, two folds in flight, GPU pinning; no real tiny-training comparison run (folds are independent processes with identical configs and seeds)"
+ },
+ "known_limitations": [
+  "multi-GPU fold scaling unmeasured (one GPU on the development machine)",
+  "with >= 2 GPUs each fold now trains on one GPU (batch per fold = batch_size) instead of DDP over all GPUs"
+ ],
+ "pytest_fast": {
+  "command": "pytest tests/gate8 tests/gate4c -m 'not slow'",
+  "passed": "229 (gate8) / 37 (gate4c+8d)"
+ }
+}

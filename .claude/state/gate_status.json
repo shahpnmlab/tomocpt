@@ -2,7 +2,7 @@
   "base_ref": "v2-gate-0-base",
   "base_commit": "ce6f7b0ce856f19556266e7ad3143bfb66cdb7e2",
   "base_note": "first commit of branch v2-dev (released main + fix/v1-patches + plan); set by the orchestrator",
-  "current_gate": "4g",
+  "current_gate": "8c",
   "gpu_available": true,
   "gates": {
     "1": {
@@ -500,6 +500,67 @@
         "tests/gate6c/test_g6c_join_gaps.py": "27127778d1b166fd5c8dcabf732081bf9765847d830c92ecf51c6f9d95bfe707",
         "tests/gate6c/test_g6c_junction_cap.py": "0639a80e82968afbcc832f262d45aeed962a8b2cdc1570b7bb88d939cf4e368f",
         "tests/gate6c/test_g6c_panels_speed.py": "6d5f09b53634f24e0b3351bc8ade1d61449b6b61f682956e82261e2ca01ca0e6"
+      }
+    },
+    "8a": {
+      "status": "PASSED",
+      "agent": "08_AGENT_PERFORMANCE (orchestrator acting as TA and implementer, usage-frugal)",
+      "attempts": 1,
+      "test_hashes": {
+        "tests/gate8/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "tests/gate8/conftest.py": "ec6b04fa9a00d562900337d7307a1397540389390e7f0a80704e5363f6e580bc",
+        "tests/gate8/test_g8a_harness.py": "93bdf480be4eacaed0d93bf9cc84af1b11d4b632ae065deef7d7f76fa7515c22"
+      },
+      "path_exceptions": [],
+      "notes": [
+        "Human answers to the spec (9 Nov 2026) in 08_AGENT_PERFORMANCE.md Section 12. INVIOLABLE: all Gate 8 work on v2-feat/perf (../tomocpt-perf); nothing committed to v2-dev until everything works to spec.",
+        "Runs from the perf worktree use `python -m tomocpt.main` (the `tomocpt` console script imports the editable install of the v2-dev tree).",
+        "9 Nov 2026: 8a done on v2-feat/perf. Fast suite 923 passed / 27 skipped (11:46); gate8 5/5; frozen hashes intact; changed paths only benchmarks/perf/**, tests/gate8/**, spec, TODO, reports, state (G8a-C3). Baseline benchmarks/perf/BASELINE_20261109.md. Finding: infer.accumulate_device=auto falls back to CPU from the 2nd tomogram (predict 2.3x slower), queued as first 8e.1 item."
+      ]
+    },
+    "8b": {
+      "status": "PASSED",
+      "commit_tests": [
+        "763ed19",
+        "f138134"
+      ],
+      "test_sha256": {
+        "tests/gate8/test_g8_ddp_gloo.py": "744152087de36e36832178f67faf06524a07a96499c6a8476f4d642bde3f48c2",
+        "tests/gate8/test_g8a_harness.py": "93bdf480be4eacaed0d93bf9cc84af1b11d4b632ae065deef7d7f76fa7515c22",
+        "tests/gate8/test_g8b_attention.py": "c03f390bbecd33bf5f6ea8919f7e889e6d20048621c5d80343ce2855414eb5c8",
+        "tests/gate8/test_g8b_attention_gpu.py": "3031a5fa1479884fd087b5f47d22911297eb514af768124038371db42c0de28c",
+        "tests/gate8/test_g8b_step.py": "cdeb209094ec2cff5d4cbe5e502aae062616f3fa2f2b2424ea5cd25115ab1e18",
+        "tests/gate8/test_g8e1_accumulator.py": "42b7cf1ca547c361982848fc9852901eab3a6d9367e9c5dcaccb939ddd082983"
+      },
+      "notes": "speed-ups default (human decision 9 Nov 2026); 8b.5/8b.6 dropped with numbers"
+    },
+    "8e.1": {
+      "status": "PASSED",
+      "test_sha256": {
+        "tests/gate8/test_g8e1_accumulator.py": "42b7cf1ca547c361982848fc9852901eab3a6d9367e9c5dcaccb939ddd082983",
+        "tests/gate8/test_g8e1_filament_scores.py": "0122a0543c286aa0917d20f77db046377ce663aef22e2075ff45db3ca4d975a8",
+        "tests/gate8/test_g8e1_patch_grid.py": "55bd3a85f79a6848b49207c6ba7fd864c63df8da7c56405f8f86ea6f7b7a6b8c",
+        "tests/gate8/test_g8e1_peaks.py": "88bf55fb2fa4da99eac075d61fa70aa444775e6dcaad15ce8c320235a1f095e7",
+        "tests/gate8/test_g8e1_prune.py": "dbebe3368336cc21c99da0facd1a212228292e80b9baaa3e9707c0ea664da185"
+      }
+    },
+    "8c": {
+      "status": "PASSED",
+      "test_sha256": {
+        "tests/gate8/g8c2_helpers.py": "34e93d460927148b4bb2568e37b17dda911d5b11496c4f6f7e63f467f5090cd4",
+        "tests/gate8/g8c_helpers.py": "9b0b0e8a727859bfd72212a1b0e75a4f300ff411402a1bbe36da97ed2bc329e5",
+        "tests/gate8/test_g8c1_ddp_gloo.py": "654769a3d6e2940a1769aabb38b18b9d8ea7bcfa4d3571a2a2caec5b6ba1fee2",
+        "tests/gate8/test_g8c1_otf.py": "d8106b1abfef169403dfb44bbd4204bef178477b8587c315396e427619c782d0",
+        "tests/gate8/test_g8c2_gpu_augment.py": "fa63d584c3611fbfe019a4b215ea5e9d815e65e89b59ee3b2de2756867df4a52",
+        "tests/gate8/test_g8c_auto_defaults.py": "26802b5155424bd0b586d8fb35e203c794cd1ab95e35a2a6ac084249ba6907fe",
+        "tests/gate8/test_g8c_snapshots_otf.py": "c7c6e87f3ac400855f89a56c1e4be85beb27f3be2276a2310cade1556e48f2a6"
+      },
+      "notes": "test_G8c_C1_defaults_are_chunks re-frozen with sampling/augment_device 'auto' (human ruling 14 Nov 2026, gate_08c_test_dispute.md)"
+    },
+    "8d": {
+      "status": "PASSED",
+      "test_sha256": {
+        "tests/gate8/test_g8d_cv.py": "06354d952242b3d190cf75570b04b4bc9c4d2712e63a575bbe267da906aed651"
       }
     }
   }

@@ -288,8 +288,13 @@ def do_chunking(tomosDf: pd.DataFrame, chunkedDataDir: str, desired_particle_pix
                 class_table: Optional[list] = None, seed: int = 42,
                 alpha_drop_empty: Optional[float] = None, chunk_size: Optional[int] = None,
                 chunk_stride: Optional[int] = None, label_border_policy: str = "skip",
-                cv: Optional[Tuple[int, int]] = None, val_stems: Optional[List[str]] = None):
+                cv: Optional[Tuple[int, int]] = None, val_stems: Optional[List[str]] = None,
+                storage: str = "chunks", volume_dtype: str = "float16"):
     """Chunk the tomograms of ``tomosDf`` into ``chunkedDataDir/{train,val}``.
+
+    ``storage="tomogram"`` (pipeline v2, Gate 8c ``train.sampling=on_the_fly``) writes the
+    tomogram store instead of chunk files (``dataManager.tomostore``; ``volume_dtype`` of the
+    stored arrays).
 
     Defaults run the pipeline v1 code path unchanged. ``pipeline_version=2`` runs pipeline
     v2 (band scale policy, multi-class points; see :func:`_do_chunking_v2`) and needs
@@ -315,7 +320,9 @@ def do_chunking(tomosDf: pd.DataFrame, chunkedDataDir: str, desired_particle_pix
             scale_cfg=scale_cfg if scale_cfg is not None else ScaleConfig(),
             class_table=class_table, seed=seed, alpha_drop_empty=alpha_drop_empty,
             chunk_size=chunk_size, chunk_stride=chunk_stride, label_border_policy=label_border_policy, cv=cv,
-            val_stems=val_stems)
+            val_stems=val_stems, storage_kind=storage, volume_dtype=volume_dtype)
+    if storage != "chunks":
+        raise ValueError("on-the-fly sampling (a tomogram store) needs train.data_pipeline_version=2")
     if val_stems:
         raise ValueError("train.val_stems needs train.data_pipeline_version=2")
     if cv is not None:
@@ -695,6 +702,24 @@ def process_single_tomo_task_v2(task: Dict[str, Any]) -> Dict[str, Any]:
                 drop_p = float(np.clip(1.0 - alpha * f1 / f0, 0.0, 1.0)) if f0 > 0 else 0.0
                 drop_rng = np.random.default_rng(_stable_seed(seed, name, li, k, "drop"))
 
+                meta = ChunkMeta(
+                    tomo_name=tomo_path, dataset_id=int(task["dataset_id"]), level=li, scale_index=k,
+                    apix_native=apix_native, apix_work=float(apix_work),
+                    class_available=[bool(a) for a in available],
+                    class_d_vox=[float(d / apix_work) for d in diam],
+                    pipeline_version=2, resample=resample)
+                if task.get("storage") == "tomogram":
+                    # Gate 8c: the padded array and its geometry, once (the crops are drawn in training).
+                    from tomocpt.dataManager.tomostore import write_store_entry
+
+                    out_dir = Path(task["outpath"]) / f"{name}__L{li}s{k}"
+                    write_store_entry(out_dir, padded.numpy(), pts32, segs32, neg_padded, meta,
+                                      drop_p=drop_p, chunk_size=chunk_size, chunk_stride=chunk_stride,
+                                      volume_dtype=str(task.get("volume_dtype", "float16")))
+                    dirs.append(str(out_dir))
+                    n_written += 1
+                    continue
+
                 dense = render_targets(pts32, shape, n_classes, "clip") if storage == "dense" else None
                 if dense is not None and len(segs32):
                     from tomocpt.labels.filaments import render_tubes
@@ -755,12 +780,7 @@ def process_single_tomo_task_v2(task: Dict[str, Any]) -> Dict[str, Any]:
                     for f in futures:
                         f.result()
                 if n_here:
-                    write_chunk_meta(out_dir, ChunkMeta(
-                        tomo_name=tomo_path, dataset_id=int(task["dataset_id"]), level=li, scale_index=k,
-                        apix_native=apix_native, apix_work=float(apix_work),
-                        class_available=[bool(a) for a in available],
-                        class_d_vox=[float(d / apix_work) for d in diam],
-                        pipeline_version=2, resample=resample))
+                    write_chunk_meta(out_dir, meta)
                     dirs.append(str(out_dir))
                     n_written += n_here
         return {"tomo": tomo_path, "n_chunks": n_written, "dirs": dirs, "error": None}
@@ -804,7 +824,8 @@ def _do_chunking_v2(tomosDf: pd.DataFrame, chunkedDataDir: str, n_cpus: int, req
                     train_val_level: CrossValidationLevelSplit, use_gpus: bool, scale_cfg: ScaleConfig,
                     class_table: Optional[list], seed: int, alpha_drop_empty: float, chunk_size: int,
                     chunk_stride: int, label_border_policy: str, cv: Optional[Tuple[int, int]] = None,
-                    pool: bool = False, val_stems: Optional[List[str]] = None):
+                    pool: bool = False, val_stems: Optional[List[str]] = None, storage_kind: str = "chunks",
+                    volume_dtype: str = "float16"):
     """Pipeline v2 chunking (spec T2.3). Output: ``<split>/<dir name>__L{level}s{k}/`` with
     ``volumes/``, ``points/`` (or dense ``labels_supervised/``) and ``chunk_meta.json``; the
     manifest ``chunk_layout.json`` (v1 keys plus ``pipeline_version: 2``, the band, the class
@@ -825,6 +846,16 @@ def _do_chunking_v2(tomosDf: pd.DataFrame, chunkedDataDir: str, n_cpus: int, req
     resample = str(getattr(scale_cfg.resample, "value", scale_cfg.resample))
     table = class_table_from_json(class_table)
     table_json = class_table_to_json(table)
+    storage_mode = str(getattr(storage_kind, "value", storage_kind))
+    if storage_mode not in ("chunks", "tomogram"):
+        raise ValueError(f"storage must be 'chunks' or 'tomogram', got '{storage_kind}'")
+    if storage_mode == "tomogram":
+        if storage != "points":
+            raise ValueError("on-the-fly sampling (tomogram store) needs scale.target_storage='points'")
+        if train_val_level == CrossValidationLevelSplit.cubes:
+            raise ValueError("on-the-fly sampling splits by tomogram; train_on='chunks' is not supported")
+        if str(volume_dtype) not in ("float16", "float32"):
+            raise ValueError(f"otf.volume_dtype must be 'float16' or 'float32', got '{volume_dtype}'")
 
     merged = _merge_rows_v2(tomosDf, table)
     chunk_dir_names = assign_chunk_dir_names(merged)
@@ -875,6 +906,7 @@ def _do_chunking_v2(tomosDf: pd.DataFrame, chunkedDataDir: str, n_cpus: int, req
                 "resample": resample, "target_storage": storage, "label_border_policy": policy,
                 "chunk_size": chunk_size, "chunk_stride": chunk_stride, "alpha_drop_empty": alpha_drop_empty,
                 "seed": int(seed), "use_cuda": n_gpus > 0,
+                "storage": storage_mode, "volume_dtype": str(volume_dtype),
             })
     logging.info(f"Pipeline v2: chunking {len(all_tasks)} tomograms "
                  f"({len(df_train)} train, {0 if df_val is None else len(df_val)} validation).")
@@ -899,6 +931,7 @@ def _do_chunking_v2(tomosDf: pd.DataFrame, chunkedDataDir: str, n_cpus: int, req
         dirs_by_name: Dict[str, List[str]] = {task["chunk_dir_name"]: dirs_of_tomo.get(str(task["tomogram_path"]), [])
                                               for task in all_tasks}
         layout.update(kind="pool", alpha_drop_empty=float(alpha_drop_empty), pool_dirs=dirs_by_name)
+        layout.update(_store_layout_keys(storage_mode, volume_dtype, alpha_drop_empty))
         write_chunk_layout(chunkedDataDir, layout)
     else:
         val_tomograms = _v2_val_tomograms(df_val, chunk_dir_names, chunkedDataDir)
@@ -906,11 +939,19 @@ def _do_chunking_v2(tomosDf: pd.DataFrame, chunkedDataDir: str, n_cpus: int, req
                             chunk_stride, seed, table_json, val_tomograms, cv)
         if split_layout == "fixed":
             layout["val_stems"] = sorted(df_val["tomogram_path"].map(lambda p: Path(str(p)).stem).unique().tolist())
+        layout.update(_store_layout_keys(storage_mode, volume_dtype, alpha_drop_empty))
         write_chunk_layout(chunkedDataDir, layout)
     with open(get_chunking_name_done(chunkedDataDir, require_labels), "w") as f:
         f.write("done")
     logging.info(f"Pipeline v2 chunking finished: {sum(r['n_chunks'] for r in results)} chunks in "
                  f"{train_outDir} and {val_outDir}")
+
+
+def _store_layout_keys(storage_mode: str, volume_dtype: str, alpha_drop_empty: float) -> dict:
+    """Manifest keys of a tomogram store (Gate 8c); none for chunk files (``storage`` absent = chunks)."""
+    if storage_mode != "tomogram":
+        return {}
+    return {"storage": "tomogram", "volume_dtype": str(volume_dtype), "alpha_drop_empty": float(alpha_drop_empty)}
 
 
 def _v2_val_tomograms(df_val, chunk_dir_names, chunkedDataDir) -> List[dict]:
@@ -970,12 +1011,12 @@ def _v2_layout(dir_names_layout, split_layout, scale_cfg, resample, storage, pol
 
 #: Pool manifest keys that must match a new request (else the pool is refused).
 POOL_SETTINGS = ("band", "resample", "scales_per_level", "target_storage", "label_border_policy", "chunk_size",
-                 "chunk_stride", "seed", "class_table", "alpha_drop_empty")
+                 "chunk_stride", "seed", "class_table", "alpha_drop_empty", "storage", "volume_dtype")
 
 
 def chunk_pool_v2(tomosDf: pd.DataFrame, pool_dir, n_cpus: int, use_gpus: bool, scale_cfg: ScaleConfig,
                   class_table: list, seed: int, alpha_drop_empty: float, chunk_size: int, chunk_stride: int,
-                  label_border_policy: str) -> dict:
+                  label_border_policy: str, storage: str = "chunks", volume_dtype: str = "float16") -> dict:
     """Chunks every tomogram once into ``<pool_dir>/train/<dir>/`` (pipeline v2, no split) and
     writes the pool manifest (``"kind": "pool"``, the v2 settings, ``pool_dirs``: chunk directories
     per tomogram) and the done file last. Pipeline-v2 chunks of a tomogram do not depend on the
@@ -987,7 +1028,8 @@ def chunk_pool_v2(tomosDf: pd.DataFrame, pool_dir, n_cpus: int, use_gpus: bool, 
                     train_val_level=CrossValidationLevelSplit.tomos, use_gpus=use_gpus, scale_cfg=scale_cfg,
                     class_table=class_table, seed=seed, alpha_drop_empty=float(alpha_drop_empty),
                     chunk_size=int(chunk_size), chunk_stride=int(chunk_stride),
-                    label_border_policy=label_border_policy, cv=None, pool=True)
+                    label_border_policy=label_border_policy, cv=None, pool=True, storage_kind=storage,
+                    volume_dtype=volume_dtype)
     return read_chunk_layout(pool_dir)
 
 
@@ -1034,6 +1076,8 @@ def link_fold_chunks(pool_dir, fold_dir, tomosDf: pd.DataFrame, folds: int, fold
     layout = _v2_layout(dir_names_layout, "folds", _Scale, pool["resample"], pool["target_storage"],
                         pool["label_border_policy"], pool["chunk_size"], pool["chunk_stride"], pool["seed"],
                         pool["class_table"], val_tomograms, (int(folds), int(fold)))
+    layout.update(_store_layout_keys(str(pool.get("storage") or "chunks"), pool.get("volume_dtype"),
+                                     pool["alpha_drop_empty"]))
     write_chunk_layout(fold_dir, layout)
     with open(get_chunking_name_done(str(fold_dir), True), "w") as f:
         f.write("done")

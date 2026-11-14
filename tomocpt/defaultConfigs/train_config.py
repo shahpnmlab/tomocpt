@@ -11,6 +11,7 @@ from tomocpt.defaultConfigs.scale_config import ScaleConfig
 from tomocpt.defaultConfigs.particles_config import ParticlesConfig
 from tomocpt.defaultConfigs.ssl_config import SSLConfig
 from tomocpt.defaultConfigs.discriminative_config import DiscriminativeConfig
+from tomocpt.defaultConfigs.otf_config import OnTheFlyConfig
 
 
 class TrainingModes(str, Enum):
@@ -276,6 +277,14 @@ class TrainConfig:
     repeat_factor_threshold: Annotated[
         float, typer.Option(help="Threshold t of repeat-factor sampling: r_c = max(1, sqrt(t / f_c))")
     ] = 0.1
+    sampling: Annotated[
+        str, typer.Option(help="Where training crops come from: 'auto' (on_the_fly for pipeline v2 picking "
+                               "unless chunks_dir already holds chunk files; chunks otherwise), 'chunks' (chunk "
+                               "files) or 'on_the_fly' (crops drawn from one array per tomogram, Gate 8c)")
+    ] = "auto"
+    otf: Annotated[
+        OnTheFlyConfig, typer.Option(help="On-the-fly crop sampling (train.sampling=on_the_fly)")
+    ] = field(default_factory=OnTheFlyConfig)
     cv_folds: Annotated[
         int, typer.Option(help="k-fold training by tomogram (pipeline v2): number of folds; 0 = off (random split)")
     ] = 0
@@ -319,6 +328,14 @@ class TrainConfig:
                                "plateau SWA validate and save the averaged weights")
     ] = "swa"
     ema_decay: Annotated[float, typer.Option(help="Maximum EMA decay (weight_averaging=ema)")] = 0.999
+    # Gate 8g: lr (and EMA decay) follow the effective batch (batch_size x devices); not CLI flags
+    lr_scaling: Annotated[
+        str, typer.Option(help="Scale lr with the effective batch: 'none', 'sqrt' (Adam-family rule) or 'linear' "
+                               "(SGD rule); EMA decay becomes decay**k")
+    ] = "none"
+    lr_reference_batch: Annotated[
+        int, typer.Option(help="Effective batch size at which lr was tuned (lr_scaling reference)")
+    ] = 16
     snapshot_chunks: Annotated[
         int, typer.Option(help="Pipeline v2: chunks per class and split (train, val) predicted after every validation "
                                "and saved as volumes in <log_dir>/snapshots for scripts/train_dashboard.py; 0 = off")

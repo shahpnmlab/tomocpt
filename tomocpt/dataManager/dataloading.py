@@ -465,14 +465,18 @@ class Data(pl.LightningDataModule):
                  augmentation: Optional[AugmentationConfig] = None,
                  pipeline_version: int = 1, scale_cfg: Optional[ScaleConfig] = None,
                  chunk_sampling: ChunkSampling = ChunkSampling.uniform,
-                 repeat_factor_threshold: float = 0.1, seed: Optional[int] = None):
+                 repeat_factor_threshold: float = 0.1, seed: Optional[int] = None,
+                 pin_memory: bool = False, prefetch_factor: Optional[int] = None):
         """``pipeline_version``, ``scale_cfg``, ``chunk_sampling`` and
         ``repeat_factor_threshold`` come from the train config (``training/run.py``); their
         defaults give the legacy (pipeline v1) data module. ``seed`` seeds the repeat-factor
-        sampler (default: ``torch.initial_seed()``)."""
+        sampler (default: ``torch.initial_seed()``). ``pin_memory`` / ``prefetch_factor`` (Gate 8b) go to
+        the ``DataLoader``s; the factor only with workers (torch rejects it without)."""
         super().__init__()
         self.save_hyperparameters(ignore=["augmentation", "pipeline_version", "scale_cfg", "chunk_sampling",
-                                          "repeat_factor_threshold", "seed"])
+                                          "repeat_factor_threshold", "seed", "pin_memory", "prefetch_factor"])
+        self.pin_memory = bool(pin_memory)
+        self.prefetch_factor = None if prefetch_factor is None else int(prefetch_factor)
         self.augmentation = augmentation
         self.pipeline_version = int(pipeline_version)
         self.scale_cfg = scale_cfg if scale_cfg is not None else ScaleConfig()
@@ -514,6 +518,9 @@ class Data(pl.LightningDataModule):
 
         if not self.hparams.return_labels:
             raise ValueError("data_pipeline_version=2 supports picking (labelled) chunks only")
+        if layout.get("storage", "chunks") != "chunks":  # invariant 4 (Gate 8c)
+            raise ValueError(f"storage mismatch: {self.hparams.data_dir} holds a tomogram store "
+                             "(train.sampling=on_the_fly) but train.sampling=chunks was requested.")
         self.class_table = class_table_from_json(layout["class_table"])
         n_classes = len(self.class_table)
         storage = str(layout.get("target_storage", "points"))
@@ -539,10 +546,16 @@ class Data(pl.LightningDataModule):
         # Legacy rule (reads the global config, as before Gate 2).
         return self.hparams.workers_for_data > 0 and mainConfig.train.use_gpus
 
+    def _loader_kwargs(self) -> dict:
+        kw = {"pin_memory": getattr(self, "pin_memory", False)}
+        if getattr(self, "prefetch_factor", None) is not None and self.hparams.workers_for_data > 0:
+            kw["prefetch_factor"] = self.prefetch_factor
+        return kw
+
     def _get_dataloader(self, dataset, shuffle=False):
         return DataLoader(dataset, batch_size=self.hparams.batch_size,
                           num_workers=self.hparams.workers_for_data, shuffle=shuffle,
-                          persistent_workers=self._persistent_workers())
+                          persistent_workers=self._persistent_workers(), **self._loader_kwargs())
 
     def train_dataloader(self): 
         if self.chunk_sampling == ChunkSampling.repeat_factor:
@@ -554,7 +567,7 @@ class Data(pl.LightningDataModule):
                                             generator=generator)
             return DataLoader(self.dataset_training, batch_size=self.hparams.batch_size,
                               num_workers=self.hparams.workers_for_data, sampler=sampler,
-                              persistent_workers=self._persistent_workers())
+                              persistent_workers=self._persistent_workers(), **self._loader_kwargs())
         return self._get_dataloader(self.dataset_training, True)
 
     def val_dataloader(self): 

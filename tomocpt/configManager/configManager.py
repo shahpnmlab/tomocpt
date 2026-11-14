@@ -1,7 +1,8 @@
 import copy
 import sys
+import warnings
 from dataclasses import is_dataclass, fields
-from typing import Any, Callable, Dict, List, Optional, Type, TypeVar, Union, Tuple, Set
+from typing import Any, Callable, Dict, List, Optional, Type, TypeVar, Union, Tuple, Set, get_args, get_origin
 from typing_extensions import Annotated
 from pathlib import Path
 import inspect
@@ -28,6 +29,138 @@ class ConfigurationError(Exception):
 class MergePreference(str, Enum):
     COMMAND = "command"
     CONFIG_FILE = "configFile"
+
+
+# --------------------------------------------------------------------------------------
+# typed values for key=value overrides and YAML (slim CLI, 9 Nov 2026)
+# --------------------------------------------------------------------------------------
+
+_TRUE = {"true", "1", "yes", "y", "on"}
+_FALSE = {"false", "0", "no", "n", "off"}
+_NONE = {"none", "null"}
+
+
+def _unwrap_annotated(tp: Any) -> Any:
+    while get_origin(tp) is Annotated:
+        tp = get_args(tp)[0]
+    return tp
+
+
+def parse_value(field_type: Any, value: Any, key: str = "") -> Any:
+    """``value`` (a command-line string or a YAML value) converted to ``field_type``.
+
+    Booleans accept true/false/1/0/yes/no/on/off; ``none``/``null`` clear an Optional field; Enums
+    take their value; Paths, tuples (``a,b`` or a list), ints (``3``, not ``3.5``) and floats as
+    expected. Raises ``ConfigurationError`` when the value does not fit."""
+    tp = _unwrap_annotated(field_type)
+    origin = get_origin(tp)
+
+    def fail(why: str = ""):
+        raise ConfigurationError(f"Cannot use {value!r} for '{key}' (expected {tp}){': ' + why if why else ''}")
+
+    if origin is Union:
+        args = [a for a in get_args(tp) if a is not type(None)]
+        if value is None or (isinstance(value, str) and value.strip().lower() in _NONE):
+            if len(args) < len(get_args(tp)):
+                return None
+            fail("not optional")
+        errors = []
+        for a in args:
+            try:
+                return parse_value(a, value, key)
+            except ConfigurationError as e:
+                errors.append(str(e))
+        fail("; ".join(errors))
+    if tp is Any or tp is None:
+        return value
+    if tp is bool:
+        if isinstance(value, bool):
+            return value
+        text = str(value).strip().lower()
+        if text in _TRUE:
+            return True
+        if text in _FALSE:
+            return False
+        fail()
+    if isinstance(tp, type) and issubclass(tp, Enum):
+        if isinstance(value, tp):
+            return value
+        for member in tp:
+            if str(member.value) == str(value) or member.name == str(value):
+                return member
+        fail(f"one of {[m.value for m in tp]}")
+    if isinstance(tp, type) and issubclass(tp, Path):
+        return value if isinstance(value, Path) else Path(str(value))
+    if origin in (tuple, Tuple):
+        items = list(value) if isinstance(value, (list, tuple)) else \
+            [v for v in str(value).strip("()[]{}").split(",") if v.strip() != ""]
+        types = get_args(tp)
+        if len(types) == 2 and types[1] is Ellipsis:
+            types = (types[0],) * len(items)
+        if types and len(types) != len(items):
+            fail(f"{len(types)} items")
+        return tuple(parse_value(t, v.strip() if isinstance(v, str) else v, key) for t, v in zip(types, items)) \
+            if types else tuple(items)
+    if origin in (list, List):
+        items = list(value) if isinstance(value, (list, tuple)) else [v for v in str(value).split(",") if v.strip()]
+        (t,) = get_args(tp) or (Any,)
+        return [parse_value(t, v.strip() if isinstance(v, str) else v, key) for v in items]
+    if tp is int:
+        if isinstance(value, bool):
+            fail()
+        if isinstance(value, int):
+            return value
+        if isinstance(value, float) and value.is_integer():
+            return int(value)
+        try:
+            return int(str(value).strip())
+        except ValueError:
+            fail()
+    if tp is float:
+        if isinstance(value, bool):
+            fail()
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            fail()
+    if tp is str:
+        return value if isinstance(value, str) else str(value)
+    if isinstance(tp, type) and isinstance(value, tp):
+        return value
+    try:
+        return tp(value)
+    except Exception:
+        fail()
+
+
+def field_type_of(obj: Any, name: str) -> Any:
+    for f in fields(type(obj)):
+        if f.name == name:
+            return f.type
+    raise ConfigurationError(f"Invalid parameter: {name}")
+
+
+def coerce_config_types(config: Any, prefix: str = "") -> None:
+    """Convert every field value of ``config`` (recursively) to its declared type in place. YAML
+    values arrive raw (``"32"`` for an Enum, ``"flips"``); a value that does not fit is left as it
+    is with a warning (the run fails later where it is used, as before)."""
+    if not is_dataclass(config):
+        return
+    for f in fields(type(config)):
+        v = getattr(config, f.name, MISSING)
+        if is_dataclass(v):
+            coerce_config_types(v, f"{prefix}{f.name}.")
+            continue
+        if v is MISSING or isinstance(v, str) and v == "???":
+            continue
+        try:
+            new = parse_value(f.type, v, prefix + f.name)
+        except ConfigurationError as e:
+            if v is not None:
+                warnings.warn(str(e))
+            continue
+        if new is not v:
+            setattr(config, f.name, new)
 
 
 class ConfigManager:
@@ -133,13 +266,17 @@ class ConfigManager:
         return required_params, optional_params, valid_paths
 
     def create_cli_parameters(
-        self, config_obj: Any
+        self, config_obj: Any, flags: Optional[Set[str]] = None
     ) -> Tuple[List[inspect.Parameter], Set[str]]:
+        """``flags``: dotted field names that become ``--flags`` (required fields always do);
+        ``None`` = every annotated field (the pre-9 Nov 2026 behaviour)."""
         if config_obj is None:
             return [], set([])
         required_params, optional_params, valid_paths = self._get_annotated_options(
             config_obj
         )
+        if flags is not None:
+            optional_params = [p for p in optional_params if _normalize_path(p[0]) in flags]
 
         # Create required parameters (without defaults)
         required_parameters = [
@@ -175,37 +312,12 @@ class ConfigurableApp:
             add_completion=False,
         )
         self.config_manager = ConfigManager()
+        #: command name -> (section config, its everyday flags or None)
+        self._sections: Dict[str, Tuple[Any, Optional[Set[str]]]] = {}
 
     def _get_typed_value(self, key: str, value: str, curr_obj: Any, attr: str) -> Any:
-        """Get properly typed value from type hints for config parameters"""
-        field_type = None
-
-        # Get the field from the dataclass
-        for field in fields(type(curr_obj)):
-            if field.name == attr:
-                if str(field.type).startswith("typing.Optional"):
-                    if value.lower() == "none":
-                        return None
-                    field_type = field.type.__args__[
-                        0
-                    ]  # Get the inner type of Optional
-                elif str(field.type).startswith("typing.Annotated"):
-                    field_type = field.type.__args__[
-                        0
-                    ]  # Get the actual type from Annotated
-                else:
-                    field_type = field.type
-                break
-
-        if field_type is None:
-            raise ConfigurationError(f"Could not determine type for parameter '{key}'")
-
-        try:
-            return field_type(value)
-        except ValueError:
-            raise ConfigurationError(
-                f"Could not convert value '{value}' to type {field_type} for parameter '{key}'"
-            )
+        """Properly typed value of ``key=value`` for field ``attr`` of ``curr_obj``."""
+        return parse_value(field_type_of(curr_obj, attr), value, key)
 
     def command(
         self,
@@ -265,10 +377,16 @@ class ConfigurableApp:
             func_params = [
                 p for p in original_sig.parameters.values() if p.name != "config"
             ]
+            flags = None
+            if create_cli_args and config_key is not None:
+                from tomocpt.configManager.cli_options import CLI_FLAGS
+
+                flags = set(CLI_FLAGS[config_key]) if config_key in CLI_FLAGS else None
             if create_cli_args:
-                cli_params, paths = self.config_manager.create_cli_parameters(config)
+                cli_params, paths = self.config_manager.create_cli_parameters(config, flags)
             else:
                 cli_params, paths = [], []
+            self._sections[typer_kwargs.get("name") or func.__name__] = (config, flags)
 
             # Create parameter mappings
             config_param_map = {param.name: param for param in cli_params}
@@ -419,6 +537,9 @@ class ConfigurableApp:
                             curr_obj = getattr(curr_obj, p)
                         setattr(curr_obj, path[-1], v)
 
+                # YAML values of fields without a flag arrive raw: give them their types
+                coerce_config_types(config)
+
                 if config_args:
                     for arg in config_args:
                         if "=" not in arg:
@@ -428,56 +549,13 @@ class ConfigurableApp:
                         curr_obj = config
 
                         for p in path[:-1]:
-                            if not hasattr(curr_obj, p):
+                            if not hasattr(curr_obj, p) or not is_dataclass(getattr(curr_obj, p)):
                                 raise ConfigurationError(f"Invalid path: {key}")
                             curr_obj = getattr(curr_obj, p)
 
-                        if not hasattr(curr_obj, path[-1]):
+                        if not is_dataclass(curr_obj) or path[-1] not in {f.name for f in fields(type(curr_obj))}:
                             raise ConfigurationError(f"Invalid parameter: {key}")
-
-                        # Get field type from dataclass
-                        field_type = None
-                        for field in fields(type(curr_obj)):
-                            if field.name == path[-1]:
-                                if str(field.type).startswith("typing.Optional"):
-                                    if value.lower() == "none":
-                                        setattr(curr_obj, path[-1], None)
-                                        continue
-                                    field_type = field.type.__args__[0]
-                                elif str(field.type).startswith("typing.Annotated"):
-                                    field_type = field.type.__args__[0]
-                                else:
-                                    field_type = field.type
-                                break
-
-                        if field_type is None:
-                            raise ConfigurationError(
-                                f"Cannot determine type for '{key}'"
-                            )
-
-                        try:
-                            if isinstance(field_type, type) and issubclass(
-                                field_type, Enum
-                            ):
-                                typed_value = field_type(value)
-                            elif str(field_type).startswith("typing.Tuple"):
-                                tuple_types = field_type.__args__
-                                cleaned_value = value.strip("()[]{}").split(",")
-                                if len(cleaned_value) != len(tuple_types):
-                                    raise ConfigurationError(
-                                        f"Tuple length mismatch for {key}: expected {len(tuple_types)}, got {len(cleaned_value)}"
-                                    )
-                                typed_value = tuple(
-                                    t(v.strip())
-                                    for t, v in zip(tuple_types, cleaned_value)
-                                )
-                            else:
-                                typed_value = field_type(value)
-                            setattr(curr_obj, path[-1], typed_value)
-                        except ValueError as e:
-                            raise ConfigurationError(
-                                f"Cannot convert '{value}' to {field_type} for '{key}': {str(e)}"
-                            )
+                        setattr(curr_obj, path[-1], self._get_typed_value(key, value, curr_obj, path[-1]))
 
                 # if config_file:
                 #     yaml_config = OmegaConf.load(config_file)
@@ -502,12 +580,82 @@ class ConfigurableApp:
             wrapped.__signature__ = inspect.Signature(
                 parameters=[*required_params, *optional_params]
             )
+            if flags is not None and "epilog" not in typer_kwargs:
+                from tomocpt.configManager.cli_options import HELP_EPILOG
+
+                typer_kwargs["epilog"] = HELP_EPILOG
             return self.app.command(*typer_args, **typer_kwargs)(wrapped)
 
         return decorator
 
-    def run(self):
-        self.app()
+    def run(self, args: Optional[List[str]] = None):
+        argv = list(sys.argv[1:] if args is None else args)
+        self.app(args=self._rewrite_old_flags(argv))
+
+    def _rewrite_old_flags(self, argv: List[str]) -> List[str]:
+        """Long flags of settings that are no longer flags (slim CLI) become ``key=value``
+        overrides, with a deprecation warning, so existing scripts keep working."""
+        cmd_index = next((i for i, a in enumerate(argv) if not a.startswith("-")), None)
+        if cmd_index is None or argv[cmd_index] not in self._sections:
+            return argv
+        config, flags = self._sections[argv[cmd_index]]
+        if flags is None or config is None:
+            return argv
+        keep = {"help", "config_file", "config_merge_preference"} | set(flags)
+        out, overrides = argv[:cmd_index + 1], []
+        i = cmd_index + 1
+        while i < len(argv):
+            tok = argv[i]
+            if tok == "--":
+                out.extend(argv[i:])
+                break
+            if not tok.startswith("--"):
+                out.append(tok)
+                i += 1
+                continue
+            name, eq, inline = tok[2:].partition("=")
+            negated = name.startswith("no-")
+            base = name[3:] if negated else name
+            target = self._field_target(config, base)
+            if base in keep or target is None:
+                out.append(tok)
+                i += 1
+                continue
+            obj, attr = target
+            is_bool = _unwrap_annotated(field_type_of(obj, attr)) is bool
+            if negated:
+                value = "false"
+            elif eq:
+                value = inline
+            elif is_bool:
+                value = "true"
+            elif i + 1 < len(argv):
+                i += 1
+                value = argv[i]
+            else:
+                out.append(tok)
+                i += 1
+                continue
+            overrides.append(f"{base}={value}")
+            msg = f"--{name} is no longer a command-line flag; use {base}={value} (or the YAML config)"
+            warnings.warn(msg, DeprecationWarning, stacklevel=2)
+            print(f"Warning: {msg}", file=sys.stderr)
+            i += 1
+        return out + overrides
+
+    @staticmethod
+    def _field_target(config: Any, dotted: str):
+        obj = config
+        parts = dotted.split(".")
+        for p in parts[:-1]:
+            obj = getattr(obj, p, None)
+            if not is_dataclass(obj):
+                return None
+        if not is_dataclass(obj) or parts[-1] not in {f.name for f in fields(type(obj))}:
+            return None
+        if is_dataclass(getattr(obj, parts[-1], None)):
+            return None
+        return obj, parts[-1]
 
     def register_command(
         self, func, mainConfig, config_key, create_cli_args=True

@@ -14,8 +14,8 @@ class ParticlesConfig:
     ] = None
     loss_checkpoint: Annotated[
         bool,
-        typer.Option(help="Compute the Hessian loss term one class at a time with gradient checkpointing"),
-    ] = True
+        typer.Option(help="Gradient checkpointing in the Hessian loss term (saves memory, slower)"),
+    ] = False
     cross_class_neg_weight: Annotated[
         float,
         typer.Option(help="Extra negative weight (x positive weight) for voxels inside another class's particle; 0 = off"),

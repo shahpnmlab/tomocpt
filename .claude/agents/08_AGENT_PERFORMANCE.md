@@ -1,8 +1,11 @@
 # 08_AGENT_PERFORMANCE.md — Gate 8: performance (single GPU first, DDP-ready)
 
-Written 9 Nov 2026 from `HANDOFF_gate8.md` (human decisions 2 and 9 Nov 2026). **Draft for human
-review: no Gate 8 code before the human has approved this spec and answered the open questions
-at the end.** Gate 8 runs before TODO items 4 (SSL re-evaluation), 5 (~130-class smoke test) and
+Written 9 Nov 2026 from `HANDOFF_gate8.md` (human decisions 2 and 9 Nov 2026). Open questions
+answered by the human on 9 Nov 2026 (Section 12); the spec below includes the answers.
+
+> **INVIOLABLE (human, 9 Nov 2026): all Gate 8 work, including amendments to this spec, lives on
+> branch `v2-feat/perf` (worktree `../tomocpt-perf`). Nothing is committed to or merged into
+> `v2-dev` until every sub-step works to spec within its stated margins.** Gate 8 runs before TODO items 4 (SSL re-evaluation), 5 (~130-class smoke test) and
 6 (DS-10490), which are deferred, not dropped. Optimiser for every profile: RAdam + EMA
 (`train.weight_averaging=ema`); schedule-free lost in 3b.3 (0.771 vs 0.792).
 
@@ -119,8 +122,13 @@ Data loader stages, one CPU thread (one DataLoader worker), 64³ chunk, 12 parti
 ## 3. Ground rules for every sub-step
 
 ### 3.1 Where and when
-- Implementation on branch `v2-feat/perf` in its own worktree (`git worktree add ../tomocpt-perf
-  -b v2-feat/perf v2-dev`); merged into `v2-dev` per sub-step after it passes. Never commit to `main`.
+- **Inviolable:** all work on branch `v2-feat/perf` in its own worktree `../tomocpt-perf` (created
+  9 Nov 2026 from `v2-dev` b8042e7). No commit to `v2-dev` and no merge into it until **every**
+  sub-step passes its criteria within the stated margins (human decision 9 Nov 2026); then one merge,
+  with the human's go-ahead. Sub-steps commit and tag on `v2-feat/perf` only (`v2-gate-8x-passed`
+  tags point at `v2-feat/perf` commits). Acceptance and benchmark runs start from the perf worktree.
+  Fixes needed on `v2-dev` meanwhile are merged *into* `v2-feat/perf`, never the other way. Never
+  commit to `main`.
 - Never change the `v2-dev` working tree while a CV / benchmark run uses it (folds start fresh
   `tomocpt train` processes from the repo).
 - Before any measurement: `nvidia-smi` and `pgrep -af "tomocpt|run_cv"` must show the GPU free.
@@ -218,10 +226,15 @@ human decision, recorded in `gate_status.json`, with the goldens handled as in 3
 **Pass criteria.**
 - **G8a-C1** `step.py` on synthetic data (C=2, B=2, tiny model, CPU, 5 steps) writes a JSON with
   `steps_per_s`, `ms_forward`, `ms_loss`, `ms_backward`, `ms_optimizer`, `ms_data_wait`,
-  `peak_mem_bytes`, `commit`, `config_hash`; two runs give the same loss sequence (CPU, fixed seed).
-- **G8a-C2** `compare_goldens.py` reports zero difference for a golden compared with itself and the
-  exact max difference for a perturbed copy.
-- **G8a-C3** Repository unchanged except `benchmarks/perf/**`, `tests/gate8/**`, reports.
+  `peak_mem_bytes`, `commit`, `config_hash` and `losses` (one float per timed step); two runs give the
+  same loss sequence (CPU, fixed seed); the CLI (`python -m benchmarks.perf.step ... --out x.json`)
+  writes the same keys.
+- **G8a-C2** `compare_goldens.compare(old, new)` (`.json` or `.npz`) returns `{"max_abs", "max_rel",
+  "keys": {name: {"max_abs", "max_rel"}}, "missing", "added", "mismatched"}` (JSON flattened to
+  `a/b/0` paths; `mismatched` = non-numeric values or shapes that differ). A golden against itself:
+  all zero, empty lists; a perturbed copy: the exact max difference at the perturbed key.
+- **G8a-C3** (orchestrator check, not pytest) Repository unchanged except `benchmarks/perf/**`,
+  `tests/gate8/**`, the spec, reports and state.
 - Baseline report written (human-reviewed, not a test); on the A6000, `step.py` run-to-run spread
   of `steps_per_s` ≤ 3 %.
 
@@ -274,7 +287,8 @@ option unless an 8f upgrade changes that. Questions for 8b: compile time per run
 batch, validation batch size), interaction with Swin checkpointing (compile with checkpointing off),
 with DDP (`DDPStrategy(static_graph=...)`, the optimizer hook), with the EMA swap (weights copied in
 place: no recompile), and `predict` (compile there only if a tomogram has enough patches to repay
-the compile time). Kept only if steps/s gains ≥ 10 % after compile time over a 1000-step epoch.
+the compile time). Kept if steps/s, compile time included over a 1000-step epoch, improves
+(numbers reported, no fixed bar).
 
 **8b.6 Channels-last 3-D convolutions (E1, opt-in, only if 8a shows the layout copies).**
 `train.network.channels_last: bool = False`: `model.to(memory_format=torch.channels_last_3d)` and
@@ -312,19 +326,23 @@ attention unless the human rules otherwise. `use_checkpoint` / `loss_checkpoint`
 - **G8b-C7** Gloo DDP check of 3.6 with every 8b option that runs on CPU.
 - **G8b-C8** (slow, GPU) 300-step overlay of the loss curve (3.2) for the recipe with the kept 8b
   options vs the 8a baseline, on fixed real CZII chunks.
-- Speed (report, not a test): steps/s ratio per item on the A6000 (target ≥ 1.15× for 8b.1 at
-  B=16; ≥ 2.5× at C=134, B=4 for 8b.2; others kept only with a measured gain).
+- Speed (report-only, human decision 9 Nov 2026; no pass/fail bar): steps/s ratio and peak memory
+  per item on the A6000. An opt-in item that measures no gain is dropped, with its numbers in the report.
 
 ### 8c — On-the-fly sampling, GPU data path, GPU augmentation (opt-in, E2)
-Human proposal (2 Nov 2026). Two groups, each ending with **one** acceptance run (Section 8):
-8c.1 changes only *where crops come from*; 8c.2 changes *how they are augmented and rendered*.
+Human proposal (2 Nov 2026). Two parts, 8c.1 changes only *where crops come from*, 8c.2 *how they
+are augmented and rendered*; **one** acceptance run for both, at the end of 8c (human decision
+9 Nov 2026, Section 8). Each part still passes its own E0/E1 and overlay checks first.
 
 **8c.1 Tomogram store and crop sampler (CPU augmentation unchanged).**
 - **Store** (`tomocpt/dataManager/tomostore.py`, written by `_prepare_data_if_needed` when
   `train.sampling=on_the_fly`): per tomogram and level/scale (same `plan_levels`, resample, padding
   and coordinate map as chunking; same `<dir>__L{li}s{k}` names, `assign_chunk_dir_names`) one
-  `volume.npy` (`train.otf.store_dtype`, float32 default so crops equal chunks exactly; float16
-  halves memory), `points.npy` `[N, 5]`, `filaments.npy` `[M, 8]`, `negative_mask.npy` (packed bits),
+  `volume.npy` in **float16** (human decision 9 Nov 2026; `train.otf.volume_dtype`, float32 kept
+  as an option for the exactness tests), and targets in **float32**: `points.npy` `[N, 5]`,
+  `filaments.npy` `[M, 8]` (geometry, float32, so sub-voxel centres and the Gaussian profiles are not
+  rounded), any dense target (`target_storage=dense`) float32, and the rendered target always float32
+  (CPU and GPU); `negative_mask.npy` (packed bits),
   `chunk_meta.json` (unchanged `ChunkMeta`). Manifest `chunk_layout.json` gains `"storage":
   "tomogram"` (absent = chunks; invariant 4: training refuses a storage that does not match
   `train.sampling`). The Gate 4c pool / fold split reuses the store (folds = lists of tomogram dirs,
@@ -343,14 +361,20 @@ Human proposal (2 Nov 2026). Two groups, each ending with **one** acceptance run
   Draws per epoch: `torch.multinomial(weights, n, replacement=True, generator=g)` with
   `g` seeded by `_stable_seed(seed, epoch, global_rank)`; each rank draws `n / world_size`; the
   jitter by the same generator. Fixed `train.seed` → identical crops (tests).
-- **Validation is fixed:** the exact grid crops of the validation tomograms with the chunking drop
-  rule and seeds, so the validation set (and `val_loss_smooth`, early stopping, the LR plateau)
-  equals the chunk baseline's.
+- **Validation is a fixed seeded random set** (human decision 9 Nov 2026): drawn once from the
+  validation tomograms with the training centre distribution (same candidate weights, jitter on), by a
+  generator seeded with `train.otf.val_seed` only (not the epoch, not the rank), `val_samples` crops
+  (`None` = the expected grid count of the validation tomograms); the same crops every epoch and every
+  run with that seed, so `val_loss_smooth`, early stopping and the LR plateau see a stable set. No
+  augmentation. Under DDP the fixed list is split over ranks by index. Its values are **not**
+  comparable with the chunk baseline's `val_loss`: the comparison is the CZII CV (Section 8).
 - **Reading.** CPU path: `np.load(mmap_mode="r")`, crop, then the unchanged `_getitem_v2` code from
   `render_targets` on (TorchIO transforms in workers). GPU path (8c.2): tomograms resident on the
   GPU when `train.otf.device=cuda` and they fit (`auto`: if the store is ≤ 25 % of free GPU memory;
-  CZII ≈ 7 × 0.29 GB float32 at 10 Å/px), else pinned host memory.
-- E0 check possible: with jitter 0 and every candidate kept, the crops equal the chunk files.
+  CZII ≈ 7 × 0.15 GB float16 at 10 Å/px), else pinned host memory.
+- Exactness check: with `volume_dtype=float32`, jitter off and every candidate kept, the crops equal
+  the chunk files; with float16 they differ by the float16 rounding only (values lie in [-3, 3] after
+  the robust normalisation, so `|Δ| ≤ 3 · 2⁻¹¹ ≈ 1.5e-3`).
 
 **8c.2 GPU augmentation and target rendering.** `train.otf.augment_device: cpu | cuda = cpu`.
 - Runs in `LightningDataModule.on_after_batch_transfer` on the GPU (no model code changes): the
@@ -382,13 +406,15 @@ Human proposal (2 Nov 2026). Two groups, each ending with **one** acceptance run
 train.sampling: str = "chunks"                 # "chunks" | "on_the_fly"
 @dataclass
 class OnTheFlyConfig:
-    store_dtype: str = "float32"               # "float32" | "float16"
+    volume_dtype: str = "float16"              # "float16" | "float32" (targets/geometry always float32)
     device: str = "auto"                       # where tomograms live: "auto" | "cuda" | "cpu"
     augment_device: str = "cpu"                # "cpu" (TorchIO in workers) | "cuda" (8c.2)
     samples_per_epoch: Optional[int] = None    # None = expected grid count
     jitter: bool = True                        # sub-stride jitter of crop corners
     negative_mask_weight: float = 0.0          # extra weight of crops with negative-mask voxels
     seed: int = 42
+    val_seed: int = 1234                       # fixed seeded validation set
+    val_samples: Optional[int] = None          # None = expected grid count of the validation tomograms
 ```
 
 **Goldens.** None changes (all new paths are opt-in). New goldens for the on-the-fly path, made by
@@ -398,14 +424,19 @@ batch (sums and SHA), store manifest.
 **Pass criteria.**
 - **G8c-C1** Defaults (`sampling=chunks`): every earlier test passes unchanged.
 - **G8c-C2** Store: for every tomogram, level and scale the store holds what chunking would chunk
-  (volume after resample + padding equal to the chunker's padded array, `atol 0` for float32;
-  points / segments / negative mask identical); written once for K folds.
+  (volume after resample + padding equal to the chunker's padded array: float16 store within
+  `atol 1.5e-3` and equal to `chunker_array.astype(float16)`, `atol 0` with `volume_dtype=float32`;
+  points / segments float32 and identical, negative mask identical); written once for K folds.
 - **G8c-C3** With `jitter=False` and every candidate kept, the crops and targets of the CPU path equal
-  the chunk files (volume `atol 0`, target `atol 1e-6`).
+  the chunk files (volume `atol 0` with `volume_dtype=float32`, `atol 1.5e-3` with float16; target
+  float32, `atol 1e-6` in both cases).
 - **G8c-C4** Sampler: same seed → same crops; different epoch or rank → different streams with no
   shared draws; the per-class frequency of object crops over 10⁴ draws matches the repeat-factor
   weights within 3 σ; the fraction of empty crops matches the grid's expected keep rate within 3 σ.
-- **G8c-C5** Validation crops equal the validation chunk set (same corners and contents).
+- **G8c-C5** Validation set: identical crops (corners and contents) across epochs, across two runs
+  with the same `val_seed`, and under 2-rank gloo DDP (union of the ranks' crops = the 1-process
+  list); a different `val_seed` gives a different set; drawn only from validation tomograms; no
+  augmentation applied.
 - **G8c-C6** GPU spatial transform: for 100 random affines, rendered targets after the transform
   have their maxima at the mapped point positions (≤ 0.5 voxel) and equal the CPU `render_targets`
   of the mapped points (`atol 1e-5`); identity transform → the crop equals the CPU crop.
@@ -436,6 +467,10 @@ batch (sums and SHA), store manifest.
 
 ### 8e — Predict, calibration and prepare_data
 **8e.1 Exact predict speed-ups (E0/E1, first after 8b: cheap and independent of training).**
+- **Accumulator device** (done first, 9 Nov 2026): `infer.accumulate_device=auto` counts the caching
+  allocator's reserved-but-free memory (`memory_reserved - memory_allocated`) as free. The 8a "falls
+  back to CPU, 2.3x" finding was a cProfile artefact and is withdrawn (`BASELINE_20261109.md`); the
+  change is kept as a robustness fix (no speed-up measured). Tests `tests/gate8/test_g8e1_accumulator.py`.
 - `peak_local_max_torch` (`predict/helpers.py:192`): move the greedy suppression loop to the CPU on
   the (small) candidate list — copy candidates and values once, run the same loop on numpy, then the
   same plateau-centroid rule — no per-candidate host sync. **E0: identical picks**, same order.
@@ -480,8 +515,7 @@ it becomes the default, `tests/golden/gate4_v1_infer.npz` maps and `gate6_c1.npz
 - **G8e-C4** `gpu_backend` with and without CuPy (skip the CuPy half when not installed): `label`,
   `find_objects`, `binary_fill_holes` identical, `edt` `atol 1e-5`; `mask_to_centerlines` on the Gate 6
   phantoms gives identical polylines.
-- Speed (report): CZII predict per tomogram and calibration per validation tomogram before/after
-  (target ≥ 2× for calibration; predict: measured ratio).
+- Speed (report-only): CZII predict per tomogram and calibration per validation tomogram before/after.
 
 ### 8f — Library upgrades (each its own step, E2)
 Candidates, each needing human approval of the pin (invariant 8) and a re-run of the full suite with
@@ -533,7 +567,8 @@ Gate 5 golden. Each upgrade: run the old goldens first and record which fail and
   `tomocpt.predict.multiclass.grid_locations(shape, patch, overlap) -> LongTensor [N, 6]`
 - `tomocpt.gpu_backend.{has_cupy, edt, label, find_objects, binary_fill_holes, map_coordinates}`
 - `tomocpt.defaultConfigs.otf_config.OnTheFlyConfig`
-- `benchmarks.perf.step.run_step_benchmark(config, data, classes, batch, steps, warmup, seed) -> dict`,
+- `benchmarks.perf.step.run_step_benchmark(config, data, classes, batch, steps, warmup, seed, **options) -> dict`
+  (`config`: a `MainConfig`, a YAML path or `None`; options: `overrides`, `device`, `logger`),
   `benchmarks.perf.compare_goldens.compare(old_path, new_path) -> dict`
 
 ## 7. Test plan notes for TA
@@ -547,16 +582,20 @@ Gate 5 golden. Each upgrade: run the old goldens first and record which fail and
 ## 8. Acceptance for humans
 - **8b, 8e.1** (E0/E1): no full training run. Report: micro-benchmark ratios, overlay plots,
   goldens changed (if any) with rulings.
-- **8c** (E2): one CZII 5-fold CV (built-in CV mode, RAdam + EMA recipe, same seeds as the current
-  baseline) at the end of 8c.1 and one at the end of 8c.2 — or one for both if the human prefers —
-  against the current grid-chunk baseline. Accept as default only if Kaggle-weighted OOF F4 (exact
+- **8c** (E2): **one** CZII 5-fold CV for 8c.1 + 8c.2 together (human decision 9 Nov 2026; built-in CV
+  mode, RAdam + EMA recipe, same seeds as the current baseline, run from the perf worktree), against
+  the current grid-chunk baseline. Accept as default only if Kaggle-weighted OOF F4 (exact
   coordinates) is within noise of the baseline: |ΔF4| ≤ 0.01 (Gate 7 arms differed by ±0.01 on a
-  single seed) and no class with weight > 0 drops by more than 0.03; plus wall time per fold. A
+  single seed) and no class with weight > 0 drops by more than 0.03 (bar approved by the human,
+9 Nov 2026); plus wall time per fold. A
   filament run (DS-10490 3c.2 recipe) with actin F1 within 0.02 of 0.810 before `on_the_fly` becomes
   the filament default.
 - **8f**: the same CZII CV once per group of upgrades.
-- Default flips (checkpointing off, `hessian_block`, `attention`, `compile`, `patch_sampler`,
-  `sampling`) are separate human decisions after the evidence.
+- Default flips: **E0 changes may become defaults inside Gate 8** (human decision 9 Nov 2026: Swin
+  checkpointing off, `loss_checkpoint` off, pinned memory, prefetch), each recorded in
+  `gate_status.json` with its goldens handled as in 3.4 — on `v2-feat/perf` only (3.1). E1/E2 flips
+  (`hessian_block`, `attention`, `compile`, `patch_sampler`, `sampling`) stay separate human
+  decisions after the evidence.
 
 ## 9. Multi-GPU: design checks here, measurements later (all unmeasured)
 Checked here: 3.6 gloo tests per sub-step; seeds per rank; no unused parameters; no new rank-0
@@ -594,17 +633,31 @@ Section 7 row:
 Section 1.6 note (after 8b, if the default is flipped): `use_checkpoint` default and the measured
 cost. Invariant 8 list updated with any approved pin.
 
-## 12. Open questions for the human
-1. **Order:** 8a → 8b → 8e.1 → 8c → 8e.2 → 8f (8d alongside 8a)? 8b.1 (checkpointing off) can be used
-   in runs immediately, it is a CLI flag today.
-2. **Default flips allowed inside Gate 8** for E0 changes (Swin checkpointing off, `loss_checkpoint`
-   off, pinned memory), or only recipe entries until the end of the gate?
-3. **8c acceptance:** one CZII CV per group (8c.1, then 8c.2), or one for both? Noise rule
-   |ΔF4| ≤ 0.01 and per-class ≤ 0.03 — acceptable?
-4. **Validation with on-the-fly:** fixed grid crops (equal to today's validation chunks, proposed) or a
-   fixed seeded random set?
-5. **Store dtype:** float32 (crops equal chunks exactly, CZII ≈ 2 GB) or float16 by default?
-6. **CuPy / cuCIM:** approve an optional `tomocpt[gpu]` extra in principle (exact pins later)?
-7. **Speed targets:** are the ratios in 8b / 8e (≥ 1.15×, ≥ 2.5× at C=134, ≥ 2× calibration) the right
-   bar, or report-only?
-8. **TODO 5.1:** fold its memory / step-time part into 8a as proposed (accuracy part stays in TODO 5)?
+## 12. Human answers (9 Nov 2026)
+1. **Order:** 8a → 8b → 8e.1 → 8c → 8e.2 → 8f, 8d alongside 8a — approved.
+2. **Default flips of E0 changes inside Gate 8:** allowed (Section 8), on `v2-feat/perf` only.
+3. **8c acceptance:** one CZII CV for 8c.1 + 8c.2 together; bar |ΔF4| ≤ 0.01 and per-class ≤ 0.03 approved.
+4. **On-the-fly validation:** a fixed seeded random set (8c.1, G8c-C5).
+5. **Precision:** volumes stored as float16; labels / targets float32 (the Gaussian profiles).
+6. **CuPy / cuCIM:** optional `tomocpt[gpu]` extra approved in principle; exact pins still need approval (Section 10).
+7. **Speed targets:** report-only; no pass/fail bar on speed.
+8. **TODO 5.1:** memory / step-time part folded into 8a; the accuracy part stays in TODO 5.
+9. **INVIOLABLE:** all changes on a separate branch (`v2-feat/perf`); no commits to `v2-dev` unless
+   everything works to spec within the margins (Section 3.1).
+
+### 8g - learning rate and EMA decay follow the effective batch size (human request 10 Nov 2026)
+`train.lr_scaling: none | sqrt | linear = none` (opt-in while tested; meant to become
+`sqrt` by default in production, a human decision after the GPU check), and
+`train.lr_reference_batch: int = 16` (the batch the recipe's lr was tuned at). Not CLI flags; in `train`, not `train.optimizer`, whose
+fields are passed to the optimizer constructor.
+- `k = batch_size x devices / lr_reference_batch` (effective batch; DDP counts every GPU).
+- `sqrt`: `lr * sqrt(k)` (Krizhevsky 2014; Malladi et al. 2022, the rule for Adam-family optimisers
+  such as RAdam). `linear`: `lr * k` (Goyal et al. 2017; derived for SGD, with warm-up).
+- EMA (`weight_averaging=ema`): `ema_decay ** k` (Busbridge et al. 2023), the same averaging window
+  in samples. SWA's `swa_lrs = 0.1 * lr` follows the scaled lr.
+- Epochs unchanged (Goyal keeps epochs; matching step counts would cost k times the compute).
+  Early stopping and patience are in epochs and need no change.
+- `k = 1` reproduces the unscaled run bit for bit (invariant 1 at the default batch 16).
+- Not ported from the illustrative script: batch size from a target lr (no use case), epoch
+  scaling. **G8g-C1..C4** in `tests/gate8/test_g8g_lr_scaling.py`. GPU check (later, the GPU is
+  busy with the 8c CVs): batch 16 vs 32 and 64 with `sqrt`, loss against samples seen.

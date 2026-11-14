@@ -8,7 +8,10 @@ With ``train.snapshot_chunks = n > 0`` (pipeline v2), the same ``n`` chunks per 
   ``target`` uint8 ``[K, C, D, H, W]`` (0..1 -> 0..255), ``split``, ``cls`` (the class it was chosen for) and ``name`` per chunk, ``classes``;
 - ``<log_dir>/snapshots/epoch_XXXX.npz``: ``pred`` uint8 ``[K, C, D, H, W]``.
 
-The training chunks are read without augmentation. Off by default: nothing is created.
+The training chunks are read without augmentation. With ``train.sampling=on_the_fly`` the chunks
+are the crops of the chunking grid of the tomogram store, cut and rendered once by the CPU
+on-the-fly path (the same crops and contents as the GPU path without augmentation).
+Off by default: nothing is created.
 """
 import copy
 from pathlib import Path
@@ -57,6 +60,25 @@ class VolumeSnapshots(pl.Callback):
             labels.append((split, c, f"{split} {class_names[c]} {vol_path.parent.parent.name}/{vol_path.name}"))
         return items, labels
 
+    def _otf_items(self, stores, split: str, class_names: List[str], band_max: float, chunk_size: int):
+        from tomocpt.dataManager.otf import OnTheFlyDataset, _candidate_info, crop_candidates
+
+        keys, sets = [], []
+        for si, st in enumerate(stores):
+            corners = crop_candidates(st)
+            sets += _candidate_info(st, corners, len(class_names))[1]
+            keys += [(si,) + tuple(int(v) for v in c) for c in corners]
+        if not keys:
+            return [], []
+        ds = OnTheFlyDataset(stores, transform=None, n_classes=len(class_names), zoom_aug_max=1.0,
+                             band_max=band_max, chunk_size=chunk_size)
+        items, labels = [], []
+        for i, c in pick_chunks(sets, len(class_names), self.per_class):
+            si, z, y, x = keys[i]
+            items.append(ds[keys[i]])
+            labels.append((split, c, f"{split} {class_names[c]} {Path(stores[si].path).name}@{z},{y},{x}"))
+        return items, labels
+
     def on_fit_start(self, trainer, pl_module):
         if trainer.global_rank != 0:
             return
@@ -66,7 +88,11 @@ class VolumeSnapshots(pl.Callback):
         names = [row.name for row in dm.class_table]
         items, labels = [], []
         for split, ds in (("train", dm.dataset_training), ("val", dm.dataset_val)):
-            it, lb = self._items(ds, split, names)
+            stores = getattr(dm, f"stores_{split}", None)
+            if stores is not None:  # train.sampling=on_the_fly
+                it, lb = self._otf_items(stores, split, names, float(dm.scale_cfg.band_max_vox), int(dm.chunk_size))
+            else:
+                it, lb = self._items(ds, split, names)
             items += it
             labels += lb
         if not items:

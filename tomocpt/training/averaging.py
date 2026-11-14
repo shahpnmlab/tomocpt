@@ -109,12 +109,18 @@ class WeightAveraging(pl.Callback):
             return
         d = ema_decay_at(self.n_updates, self.ema_decay)
         with torch.no_grad():
+            avg, cur = [], []
             for k, v in pl_module.state_dict().items():
                 if k in self.averaged:
                     a = self.averaged[k]
                     if a.device != v.device:
                         a = self.averaged[k] = a.to(v.device)
-                    a.mul_(d).add_(v.detach().to(a.dtype), alpha=1.0 - d)
+                    avg.append(a)
+                    cur.append(v.detach().to(a.dtype))
+            # one fused call per op instead of two kernels per tensor (Gate 8b); same per-element maths
+            if avg:
+                torch._foreach_mul_(avg, d)
+                torch._foreach_add_(avg, cur, alpha=1.0 - d)
         self.n_updates += 1
 
     def on_validation_start(self, trainer, pl_module):

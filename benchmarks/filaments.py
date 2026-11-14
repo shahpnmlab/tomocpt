@@ -143,12 +143,30 @@ def apply_recipe(train: dict) -> dict:
     train.setdefault("particles", {}).update(cross_class_neg_weight=0.0)
     train.update(early_stop_rel_delta=0.007, early_stop_patience=10, lr_plateau_match_early_stop=True,
                  lr_plateau_patience=5, weight_averaging="ema")
+    # Gate 8c (accepted 14 Nov 2026): on-the-fly crops with GPU augmentation
+    train["sampling"] = "on_the_fly"
+    train.setdefault("otf", {}).update(augment_device="cuda")
+    return train
+
+
+def _apply_train_overrides(train: dict, overrides) -> dict:
+    """``key.sub=value`` entries (values parsed as YAML) set on the ``train`` section, last wins."""
+    import yaml
+
+    for kv in overrides or ():
+        key, _, val = kv.partition("=")
+        if not key or not _:
+            raise ValueError(f"--train_set expects key=value, got '{kv}'")
+        node, parts = train, key.strip().split(".")
+        for k in parts[:-1]:
+            node = node.setdefault(k, {})
+        node[parts[-1]] = yaml.safe_load(val)
     return train
 
 
 def _train_arm(work, stage_dir, fil_classes, part_classes, particles_star, settings, val_stems=None,
                use_centerlines=False, band_max_vox=None, snapshot_chunks=0, negative_masks=(),
-               contrastive_weight=0.0):
+               contrastive_weight=0.0, train_overrides=()):
     from pathlib import Path
 
     from benchmarks.common import _find_checkpoint, _run_cli, _train_section, _write_config
@@ -184,6 +202,7 @@ def _train_arm(work, stage_dir, fil_classes, part_classes, particles_star, setti
         train["snapshot_chunks"] = int(snapshot_chunks)
     if contrastive_weight:
         train["discriminative"] = {"contrastive_weight": float(contrastive_weight)}
+    _apply_train_overrides(train, train_overrides)
     cfg = {"shared": {"training_data_dir": str(work / "training_data"), "chunks_dir": str(work / "chunks")},
            "prepData": prep, "train": train,
            "infer": {"predictions_dir": str(work / "predictions"),
@@ -367,6 +386,8 @@ def main(argv=None):
     ap.add_argument("--contrastive_weight", type=float, default=0.0,
                     help="train.discriminative.contrastive_weight (Gate 7; 0 = off; the CZII Gate 7 runs used 0.1)")
     ap.add_argument("--max_runs", type=int, default=None)
+    ap.add_argument("--train_set", action="append", default=[],
+                    help="key=value on the train section, e.g. sampling=on_the_fly (repeatable)")
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--tiny", action="store_true", help="feature_size 12 (smoke runs)")
     ap.add_argument("--out", required=True)
@@ -426,7 +447,7 @@ def main(argv=None):
                           use_centerlines=bool(a.centerlines), band_max_vox=a.band_max_vox,
                           snapshot_chunks=a.snapshot_chunks,
                           negative_masks=[m.strip() for m in (a.negative_masks or "").split(",") if m.strip()],
-                          contrastive_weight=a.contrastive_weight)
+                          contrastive_weight=a.contrastive_weight, train_overrides=a.train_set)
         res = {"checkpoint": str(ckpt), "train_seconds": time.time() - t0}
         views = out / arm / "views"
         _draw("training panels", dump_training_images, out / arm / "model", views / "training")

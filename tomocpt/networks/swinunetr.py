@@ -43,6 +43,13 @@ def _get_model_parameters_for_optimizer(self, different_lrs):
 SwinUNETR._get_model_parameters_for_optimizer = _get_model_parameters_for_optimizer
 
 class MySwinUNETR(SwinUNETR):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        # Gate 8b.4: fused window attention (same parameters; checkpoints unchanged)
+        from tomocpt.networks.attention import swap_window_attention
+
+        swap_window_attention(self)
+
     def forward(self, x_in):
         hidden_states_out = self.swinViT(x_in, self.normalize)
         enc0 = self.encoder1(x_in)
