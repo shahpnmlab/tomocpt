@@ -562,6 +562,10 @@
       "test_sha256": {
         "tests/gate8/test_g8d_cv.py": "06354d952242b3d190cf75570b04b4bc9c4d2712e63a575bbe267da906aed651"
       }
+    },
+    "8": {
+      "status": "PASSED",
+      "notes": "8a,8b,8c,8d,8e.1 passed; 8g merged opt-in; 8e.2/8f dropped (human 14 Nov 2026). Merged into v2-dev 58aaff1 with human go-ahead."
     }
   }
 }
