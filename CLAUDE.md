@@ -265,7 +265,9 @@ class is available at every level where `lo_c <= d_vox <= band_max`.
 
 1. **Legacy equivalence.** With all new config fields at their defaults, training
    loss, chunk files, inference maps, and coordinates are identical to `v2-gate-0-base`
-   (tolerance in each gate spec). Every new behaviour is opt-in. Exception (Gate 8, human
+   (tolerance in each gate spec). Every new behaviour is opt-in. Exception (Gate 4d, human
+   decision 4 Nov 2026): pipeline v2 uses exact sub-voxel label coordinates by default (v1 unchanged).
+   Exception (Gate 8, human
    decision 14 Nov 2026): speed-ups are on by default and chosen automatically when they leave
    pipeline v1 unchanged: `train.sampling=auto` and `train.otf.augment_device=auto` change only
    pipeline-v2 picking; Swin checkpointing off when memory allows and parallel CV folds give
@@ -292,7 +294,8 @@ class is available at every level where `lo_c <= d_vox <= band_max`.
 8. **Dependencies.** Use only the packages pinned in `pyproject.toml`
    (torch 2.5.1, MONAI 1.4.0, Kornia 0.7.4, TorchIO 0.20.2, Lightning 2.4.0,
    scikit-image 0.24.0, scikit-learn 1.6.0, scipy 1.14.1, imodmodel 0.1.0 (from Gate 4), and the others; the `portal`
-   extra for portal access). Any new dependency needs human approval.
+   extra for portal access; the `schedulefree` extra, `schedulefree==1.4.1`, approved 4 Nov 2026 for
+   `train.schedule_free`, Gate 4e). Any new dependency needs human approval.
 9. **Tests are frozen.** You never edit a test file that the orchestrator froze.
    The tests that exist at `v2-gate-0-base` (`tests/test_*.py`) are frozen from the start
    and run in every gate.
@@ -363,6 +366,13 @@ time (gradient checkpointing). Pipeline v1 uses Section 1.5 unchanged.
 | `train.particles.class_head` | `sigmoid` \| `softmax` = `sigmoid` | 3d |
 | `infer.apix_override` | Optional[float] = `None` | 4 |
 | `train.cv_folds`, `train.cv_fold` | int = `0`, `0` (k-fold off) | 4b |
+| `train.cv_all_folds`, `train.cv_class_weights` | bool = `False`, Optional[str] = `None` (train every fold, OOF calibration, ensemble, CV report) | 4c |
+| `train.early_stop_min_delta`, `train.early_stop_patience`, `train.schedule_free` | float = `0.005` (absolute), int = `10`, bool = `False` | 4e |
+| `train.weight_averaging`, `train.ema_decay`, `train.swa_plateau_patience`, `train.swa_plateau_rel_delta` | `swa` \| `ema` \| `swa_plateau` \| `none` = `swa` (legacy), `0.999`, `5`, `1e-3` | 4f |
+| `train.particles.core_weight`, `train.particles.core_power`, `train.particles.offset_weight` | float = `0.0` (off), `4.0`, `0.0` (offset head off) | 4f |
+| `infer.subvoxel_refine` | `fit` (legacy log-quadratic) \| `offset` (offset head) = `fit` | 4f |
+| `train.lr_plateau_match_early_stop`, `train.lr_plateau_patience` | bool = `False`, int = `5` | 4g |
+| `train.early_stop_rel_delta` | Optional[float] = `None` (relative threshold for early stopping and the matched LR plateau; recipe 0.007) | 4h |
 | `train.val_stems` | Optional[str] = `None` (fixed validation tomograms, comma-separated stems) | 6c |
 | `infer.classes` | Optional[str] = `None` (subset of class names) | 4 |
 | `infer.cross_class_nms` | bool = `True` | 4 |
@@ -398,6 +408,12 @@ Field details are in each gate spec. A gate may add fields only to the files it 
 | 3d | `03d_AGENT_SOFTMAX_HEAD.md` | Softmax class head with implicit background (human decision, 29 Oct 2026) | `tomocpt/training/multiclass_loss.py`, `tomocpt/networks/pickingModel.py`, `tomocpt/defaultConfigs/particles_config.py`, `tomocpt/predict/multiclass.py` (passing the level's classes only) |
 | 4 | `04_AGENT_INFER_BENCHMARK.md` | v2 inference with levels, per-class outputs, benchmarks | `tomocpt/predict/**`, `tomocpt/defaultConfigs/infer_config.py`, `tomocpt/training/run.py` (post-fit calibration call only), `benchmarks/**`, `README.md` |
 | 4b | `04b_AGENT_CV_ENSEMBLE.md` | k-fold training, out-of-fold calibration, fold ensemble (human decision, 29 Oct 2026) | `tomocpt/dataManager/chunking.py` (fold split, `cv` layout entry), `tomocpt/defaultConfigs/train_config.py` (`cv_folds`, `cv_fold`), `tomocpt/training/helpers.py` (`_prepare_data_if_needed`), `tomocpt/predict/**`, `experiments/run_cv.sh`, `README.md` |
+| 4c | `04c_AGENT_CV_ROUTINE.md` | Built-in CV + ensembling, opt-in (human decision 4 Nov 2026) | `tomocpt/training/{cv,run}.py`, `tomocpt/predict/{cv_report,calibration,ensemble}.py`, `tomocpt/dataManager/chunking.py`, `tomocpt/defaultConfigs/train_config.py` (own fields), `experiments/run_cv.sh`, `README.md` |
+| 4d | `04d_AGENT_EXACT_COORDS.md` | Exact sub-voxel label coordinates, the pipeline-v2 default (human decision 4 Nov 2026; v1 label MRCs unchanged) | `tomocpt/labels/{star,mod,helpers}.py`, `README.md` |
+| 4e | `04e_AGENT_TRAINING_SCHEDULE.md` | Configurable early stopping, opt-in schedule-free optimiser | `tomocpt/defaultConfigs/train_config.py` (own fields), `tomocpt/training/helpers.py` (`_setup_callbacks`), `tomocpt/networks/baseModel.py` (optimiser), `pyproject.toml` (extra), `README.md` |
+| 4f | `04f_AGENT_AVERAGING_SUBVOXEL.md` | EMA / plateau-triggered SWA, centroid weight, offset head | `tomocpt/training/{averaging,offsets,helpers,multiclass_loss}.py`, `tomocpt/networks/{pickingModel,swinunetr}.py`, `tomocpt/defaultConfigs/{train_config,particles_config,infer_config}.py` (own fields), `tomocpt/predict/{multiclass,ensemble,calibration}.py`, `README.md` |
+| 4g | `04g_AGENT_LR_PLATEAU.md` | LR plateau matched to early stopping | `tomocpt/defaultConfigs/train_config.py` (own fields), `tomocpt/networks/baseModel.py` (LR plateau), `README.md` |
+| 4h | `04h_AGENT_REL_THRESHOLD.md` | Relative threshold for early stopping and LR plateau | `tomocpt/defaultConfigs/train_config.py` (own field), `tomocpt/training/{callbacks,helpers}.py`, `tomocpt/networks/baseModel.py` (LR plateau), `README.md` |
 | 5 | `05_AGENT_SSL.md` | Wedge-aware, scale-aware SSL v2 with dense embeddings | `tomocpt/networks/selfSupervisedModel.py`, `tomocpt/networks/ssl/**`, `tomocpt/dataManager/ssl_views.py`, `tomocpt/defaultConfigs/ssl_config.py`, `tomocpt/training/helpers.py` (self-supervised branches only), `benchmarks/ssl_*.py` |
 | 5b | `05b_AGENT_SSL_FIX.md` | Fix SSL v2 embedding collapse and the shared-noise shortcut (human decision, 31 Oct 2026) | `tomocpt/networks/selfSupervisedModel.py`, `tomocpt/networks/ssl/**`, `tomocpt/dataManager/ssl_views.py`, `tomocpt/defaultConfigs/ssl_config.py`, `benchmarks/ssl_*.py`, `experiments/run_benchmarks.sh` |
 | 6 | `06_AGENT_FILAMENTS.md` | Microtubules: mask → centrelines, tube targets, tracing, output | `tomocpt/labels/**`, `tomocpt/dataManager/**`, `tomocpt/predict/**`, `tomocpt/defaultConfigs/{prepdata_config,infer_config}.py`, `scripts/download_portal_data.py`, `benchmarks/filaments.py`, `README.md` |

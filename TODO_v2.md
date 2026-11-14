@@ -37,7 +37,7 @@ notes and the gate reports; this file is only the order of work.
 - [x] 3.2c Housekeeping after `both`: delete the baseline CV fold chunks
       (`benchmarks/out/czii_bench_20261029_2237/cv/fold*/chunks`, 5 x 8.1 GB; the Gate 7 arms link to
       them) and remove the worktree `../tomocpt-g6` (keep `../tomocpt-base`, the legacy reference).
-- [ ] 3.3 After Gate 7 closes: update the invariants in `CLAUDE.md` (human decision 3 Nov 2026), e.g.
+- [x] 3.3 (done 14 Nov 2026: Gates 4c-4h rows, schedulefree extra, 4d exception) After Gate 7 closes: update the invariants in `CLAUDE.md` (human decision 3 Nov 2026), e.g.
       invariant 8 (dependency list, `schedulefree` if approved in 7) and Sections 6/7 for Gate 7.
 
 ## 3a. Built-in CV + ensembling in the package, opt-in (human decision 4 Nov 2026; first after Gate 7's CV)
