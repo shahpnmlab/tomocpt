@@ -38,7 +38,6 @@ Read `CLAUDE.md`, `.claude/agents/08_AGENT_PERFORMANCE.md` (spec), `HANDOFF_gate
 
 ## To do, in order
 1. Gate-8 fast tests on `d8fb1ee`: **214 passed** (`pytest -m "not slow" tests/gate8 tests/test_v2_snapshots.py`, 14 Nov 2026).
-   on `d8fb1ee`); fix anything red.
 2. **8c close-out** (human-approved):
    a. Filament recipe default: `benchmarks/filaments.py:apply_recipe` sets `train["sampling"]="on_the_fly"`
       and `train["otf"]={"augment_device": "cuda"}`. Check `tests/gate6c` does not lock the recipe dict
