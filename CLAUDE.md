@@ -265,7 +265,11 @@ class is available at every level where `lo_c <= d_vox <= band_max`.
 
 1. **Legacy equivalence.** With all new config fields at their defaults, training
    loss, chunk files, inference maps, and coordinates are identical to `v2-gate-0-base`
-   (tolerance in each gate spec). Every new behaviour is opt-in.
+   (tolerance in each gate spec). Every new behaviour is opt-in. Exception (Gate 8, human
+   decision 14 Nov 2026): speed-ups are on by default and chosen automatically when they leave
+   pipeline v1 unchanged: `train.sampling=auto` and `train.otf.augment_device=auto` change only
+   pipeline-v2 picking; Swin checkpointing off when memory allows and parallel CV folds give
+   identical numbers.
 2. **Checkpoint compatibility.** Every checkpoint written by `v2-gate-0-base` code
    (picking and SSL) loads for `train --fine_tune_from`, `train --resume_from`,
    distillation teacher, and `predict`, and behaves as v1.
@@ -374,6 +378,9 @@ time (gradient checkpointing). Pipeline v1 uses Section 1.5 unchanged.
 | `infer.filament_calibration_beta` | float = `1.0` (tracing threshold calibration) | 6b |
 | `train.discriminative` | `DiscriminativeConfig` (`defaultConfigs/discriminative_config.py`; contrastive and focal off) | 7 |
 | `prepData.negative_masks` | Optional[str] = `None` (`"<name>:<mask dir>"`) | 7 |
+| `train.sampling` | `auto` \| `chunks` \| `on_the_fly` = `auto` (on_the_fly for pipeline v2 picking without existing chunk files; chunks otherwise) | 8c |
+| `train.otf` | `OnTheFlyConfig` (`defaultConfigs/otf_config.py`; `augment_device` = `auto`: cuda when training on a GPU with every enabled augmentation ported) | 8c |
+| `train.lr_scaling`, `train.lr_reference_batch` | `none` \| `sqrt` \| `linear` = `none`, int = `16` (lr and EMA decay follow the effective batch) | 8g |
 
 Field details are in each gate spec. A gate may add fields only to the files it owns.
 
@@ -397,6 +404,7 @@ Field details are in each gate spec. A gate may add fields only to the files it 
 | 6b | `06b_AGENT_FILAMENT_CALIBRATION.md` | Tracing threshold calibration on validation centrelines (handoff step 2, 6 Nov 2026) | `tomocpt/metrics.py` (`centerline_scores`), `tomocpt/predict/{calibration,ensemble,cv_report}.py`, `tomocpt/dataManager/chunking.py` (`_v2_val_tomograms`), `tomocpt/defaultConfigs/infer_config.py`, `benchmarks/filaments.py`, `README.md` |
 | 6c | `06c_AGENT_FILAMENT_DRIVER.md` | Filament driver recipe, fixed split, pictures of targets and predictions; metric and tracing speed (handoff step 3, 6 Nov 2026) | `benchmarks/filaments.py`, `benchmarks/filament_views.py`, `tomocpt/dataManager/chunking.py` (fixed split), `tomocpt/defaultConfigs/train_config.py` (`val_stems`), `tomocpt/training/helpers.py` (`_prepare_data_if_needed`), `tomocpt/metrics.py`, `tomocpt/networks/pickingModel.py` (image logging only), `tomocpt/labels/filaments.py` (`_join_gaps`, junction cap), `README.md` |
 | 7 | `07_AGENT_DISCRIMINATIVE.md` | Supervised dense contrastive loss with hard negatives, focal value term; particles and filaments (human decision, 30 Oct 2026; after Gate 6) | `tomocpt/training/discriminative.py`, `tomocpt/networks/pickingModel.py`, `tomocpt/networks/swinunetr.py` (`forward_features`), `tomocpt/training/multiclass_loss.py` (value term), `tomocpt/training/helpers.py` (`_create_model` SSL head transfer), `tomocpt/defaultConfigs/{discriminative_config,train_config,prepdata_config}.py` (own fields), `tomocpt/dataManager/**` and `tomocpt/labels/**` (negative masks), `benchmarks/discriminative.py`, `experiments/run_benchmarks.sh`, `README.md` |
+| 8 | `08_AGENT_PERFORMANCE.md` | Performance (8a harness, 8b step, 8c on-the-fly crops and GPU augmentation, 8d CV, 8e.1 predict, 8g lr scaling; 8e.2 and 8f dropped). Speed-ups on by default, chosen automatically, no new CLI options (human decisions 9-14 Nov 2026) | `benchmarks/perf/**`, `tomocpt/dataManager/{otf,tomostore,gpu_augment,chunking,dataloading}.py`, `tomocpt/defaultConfigs/{otf_config,train_config}.py` (own fields), `tomocpt/training/{helpers,run,cv,snapshots,swin_memory,hparam_scaling}.py`, `tomocpt/networks/swinunetr.py` (fused attention), `tomocpt/predict/**` (8e.1), `tomocpt/labels/**` (renderers), `benchmarks/filaments.py` |
 
 Every gate also writes `.claude/reports/gate_0N_report.json`.
 Tests live in `tests/gateN/` and are written by the Test Author
