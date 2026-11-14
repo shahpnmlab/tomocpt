@@ -192,6 +192,7 @@ Filaments are less tested than particles (Gate 6 passed on synthetic data plus a
 - [x] 8.2a (9 Nov 2026, v2-feat/perf) 8a harness + baseline: `benchmarks/perf/`, `benchmarks/perf/BASELINE_20261109.md`. CZII step
       1.22 s, filaments 1.10 s (match production); C=134 B=16 5.6 / 7.3 s; predict 159 s per CZII tomogram, 2.3x faster with
       `infer.accumulate_device=cuda` (auto falls back to CPU after the first tomogram; 8e.1); calibration NMS 83 s, tracing 53 s.
-- [ ] 8.2 Implementation on `v2-feat/perf` (own worktree), training first; goldens regenerated per
+- [x] 8.2 Implementation on `v2-feat/perf` (own worktree), training first; goldens regenerated per
       change after equivalence tests against the old code. Merge into `v2-dev` only at the end, with the
       human's go-ahead.
+      Done 14 Nov 2026: merged into `v2-dev` (58aaff1), tag `v2-gate-8-passed`; report `.claude/reports/gate_08_report.json`.
