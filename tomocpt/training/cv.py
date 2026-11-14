@@ -19,11 +19,12 @@ import copy
 import dataclasses
 import enum
 import json
+import os
 import shutil
 import subprocess
 import sys
 from pathlib import Path
-from typing import List
+from typing import List, Optional
 
 from tomocpt.configManager.configManager import safe_getattr
 from tomocpt.logger import get_logger
@@ -179,10 +180,23 @@ def fold_config(config, k: int, fold_chunks: Path) -> dict:
     return out
 
 
-def _run_fold_process(cmd: List[str], log_path: Path) -> int:
+def _run_fold_process(cmd: List[str], log_path: Path, env: Optional[dict] = None) -> int:
     """Runs one fold process with stdout and stderr in ``log_path``; returns the exit code."""
     with open(log_path, "w") as log:
-        return subprocess.run(cmd, stdout=log, stderr=subprocess.STDOUT).returncode
+        return subprocess.run(cmd, stdout=log, stderr=subprocess.STDOUT, env=env).returncode
+
+
+def fold_parallelism(config) -> List[Optional[str]]:
+    """Gate 8d (automatic, no config field): one fold process per visible GPU, each pinned to
+    its GPU with ``CUDA_VISIBLE_DEVICES``, instead of DDP inside a fold. Returns one entry per
+    concurrent slot: the GPU id, or None (environment unchanged) for a single slot."""
+    import torch
+
+    if not config.use_gpus or not torch.cuda.is_available() or torch.cuda.device_count() < 2:
+        return [None]
+    visible = os.environ.get("CUDA_VISIBLE_DEVICES")
+    ids = [g.strip() for g in visible.split(",") if g.strip()] if visible else []
+    return ids or [str(i) for i in range(torch.cuda.device_count())]
 
 
 def _build_ensemble_and_report(config, checkpoints: List[Path], cv_dir: Path) -> None:
@@ -210,9 +224,12 @@ def _check_cv_config(cv_dir: Path, K: int, seed: int) -> None:
                          f"for folds={K}, seed={seed}. Use another experiment_name.")
 
 
-def run_cv(config) -> Path:
+def run_cv(config, slots: Optional[List[Optional[str]]] = None) -> Path:
     """Runs the whole k-fold CV (module docstring). ``config`` is the ``train`` section; the
-    other sections come from the global ``mainConfig``. Returns the ensemble file."""
+    other sections come from the global ``mainConfig``. Returns the ensemble file.
+
+    ``slots``: concurrent fold processes (:func:`fold_parallelism` when None); the folds are
+    independent (own config, seed, directory), so the order they run in does not change them."""
     import yaml
 
     from tomocpt.dataManager.metadata import read_chunk_layout
@@ -231,29 +248,58 @@ def run_cv(config) -> Path:
     meta = {"folds": K, "seed": seed, "chunks_dir": str(config.chunks_dir), "val_stems": val_stems}
     (cv_dir / "cv_config.json").write_text(json.dumps(meta, indent=1))
 
-    checkpoints = []
+    slots = list(slots) if slots is not None else fold_parallelism(config)
+    pending = []
     for k in range(K):
         fold_dir = cv_dir / "folds" / f"fold{k}"
         ckpt = fold_dir / FOLD_CHECKPOINT
         if (fold_dir / "done").is_file() and ckpt.is_file():
             logging.info(f"CV fold {k}/{K}: already trained ({ckpt})")
-            checkpoints.append(ckpt)
             continue
         if fold_dir.exists():
             shutil.rmtree(fold_dir)
         fold_dir.mkdir(parents=True)
         cfg_path = fold_dir / "config.yaml"
         cfg_path.write_text(yaml.safe_dump(fold_config(config, k, fold_chunks[k]), sort_keys=False))
+        pending.append(k)
+
+    def _train_fold(k: int, gpu: Optional[str]) -> None:
+        fold_dir = cv_dir / "folds" / f"fold{k}"
+        ckpt = fold_dir / FOLD_CHECKPOINT
         log_path = fold_dir / "train.log"
-        cmd = [sys.executable, "-m", "tomocpt.main", "train", "--config_file", str(cfg_path)]
-        logging.info(f"CV fold {k}/{K}: training (log: {log_path})")
-        rc = _run_fold_process(cmd, log_path)
+        cmd = [sys.executable, "-m", "tomocpt.main", "train", "--config_file", str(fold_dir / "config.yaml")]
+        env = None if gpu is None else {**os.environ, "CUDA_VISIBLE_DEVICES": str(gpu)}
+        where = "" if gpu is None else f" on GPU {gpu}"
+        logging.info(f"CV fold {k}/{K}: training{where} (log: {log_path})")
+        rc = _run_fold_process(cmd, log_path) if env is None else _run_fold_process(cmd, log_path, env)
         if rc != 0:
             raise RuntimeError(f"CV fold {k} failed (exit code {rc}); see {log_path}")
         if not ckpt.is_file():
             raise RuntimeError(f"CV fold {k} finished without a checkpoint at {ckpt}; see {log_path}")
         (fold_dir / "done").write_text("done")
-        checkpoints.append(ckpt)
+
+    if len(slots) <= 1 or len(pending) <= 1:
+        for k in pending:
+            _train_fold(k, slots[0] if slots else None)
+    else:
+        import queue
+        from concurrent.futures import ThreadPoolExecutor
+
+        free = queue.Queue()
+        for g in slots:
+            free.put(g)
+
+        def _on_slot(k):
+            gpu = free.get()
+            try:
+                _train_fold(k, gpu)
+            finally:
+                free.put(gpu)
+
+        with ThreadPoolExecutor(max_workers=min(len(slots), len(pending))) as ex:
+            for f in [ex.submit(_on_slot, k) for k in pending]:
+                f.result()
+    checkpoints = [cv_dir / "folds" / f"fold{k}" / FOLD_CHECKPOINT for k in range(K)]
 
     logging.info("CV: building the fold ensemble and the report")
     _build_ensemble_and_report(config, checkpoints, cv_dir)
