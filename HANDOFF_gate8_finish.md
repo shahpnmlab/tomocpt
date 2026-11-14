@@ -37,7 +37,7 @@ Read `CLAUDE.md`, `.claude/agents/08_AGENT_PERFORMANCE.md` (spec), `HANDOFF_gate
 - `benchmarks/filaments.py` got `--train_set key=value` (`eafe09e`).
 
 ## To do, in order
-1. **Check the gate-8 test run** started at handoff (`pytest -m "not slow" tests/gate8 tests/test_v2_snapshots.py`
+1. Gate-8 fast tests on `d8fb1ee`: **214 passed** (`pytest -m "not slow" tests/gate8 tests/test_v2_snapshots.py`, 14 Nov 2026).
    on `d8fb1ee`); fix anything red.
 2. **8c close-out** (human-approved):
    a. Filament recipe default: `benchmarks/filaments.py:apply_recipe` sets `train["sampling"]="on_the_fly"`
