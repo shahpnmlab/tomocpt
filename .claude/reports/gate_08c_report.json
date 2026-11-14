@@ -1,0 +1,83 @@
+{
+ "gate_id": "8c",
+ "agent_name": "08_AGENT_PERFORMANCE",
+ "status": "PASSED",
+ "base_ref": "v2-feat/perf",
+ "changes": [
+  "tomogram store + on-the-fly crops (8c.1), GPU augmentation and target rendering (8c.2)",
+  "windowed render_tubes_torch (identical output; filament step 1061 -> 801 ms, data wait 312 -> 54 ms)",
+  "snapshot panels with sampling=on_the_fly",
+  "defaults (human, 14 Nov 2026): train.sampling=auto (on_the_fly for pipeline v2 picking; chunks for v1, SSL, existing chunk files or chunk pool), train.otf.augment_device=auto (cuda when training on a GPU with every enabled augmentation ported)",
+  "Swin checkpointing off when memory allows (training.swin_memory.SwinCheckpointAuto; first step measured, off if peak + 0.47 GB/sample x 1.2 <= 85 % of the GPU; numerics identical, G8b-C2; use_checkpoint=False never changed)",
+  "filament recipe (benchmarks/filaments.py apply_recipe): sampling=on_the_fly, otf.augment_device=cuda"
+ ],
+ "config_fields_added": [
+  "train.sampling",
+  "train.otf.*"
+ ],
+ "legacy_equivalence": {
+  "pipeline_v1": "auto resolves to chunks; v1 unchanged",
+  "store_vs_chunks": "volume atol 0 (float32) / 1.5e-3 (float16), targets identical (G8c-C2)"
+ },
+ "metrics": {
+  "czii_5fold_oof_weighted_f4": {
+   "chunks": 0.748,
+   "on_the_fly_gpu_aug": 0.763,
+   "rule": "|dF4| <= 0.01; exceeded on the better side, human accepted as pass",
+   "worst_class": "VLP -0.008"
+  },
+  "czii_cv_wall_h": {
+   "chunks": 38.4,
+   "on_the_fly_gpu_aug": 29.9,
+   "note": "same min/epoch; early stop later (51-79 vs 45-65 epochs)"
+  },
+  "ds10490_actin": {
+   "f1": 0.836,
+   "precision": 0.869,
+   "recall": 0.806,
+   "point_f1": 0.78,
+   "reference_f1": 0.81,
+   "microtubule_f1": 0.9995,
+   "epochs": 65,
+   "wall_h": 22.0,
+   "note": "old tube renderer, no snapshot panels; human accepted"
+  },
+  "data_wait_share_B4": {
+   "C6_gpu_path": 0.044,
+   "C134_gpu_path": 0.018,
+   "filaments_windowed_tubes": 0.067,
+   "bar": 0.05,
+   "note": "filament share above the bar set on particles"
+  },
+  "prepare_data": {
+   "chunks_disk_per_fold_GB": 8.1,
+   "store_disk_GB": 0.976,
+   "store_build_s": 10.5
+  }
+ },
+ "results_docs": [
+  "benchmarks/perf/RESULTS_8c1.md",
+  "benchmarks/perf/RESULTS_8c2.md",
+  "benchmarks/perf/RESULTS_8c_tubes.md"
+ ],
+ "pytest_fast": {
+  "command": "pytest tests -m 'not slow'",
+  "passed": 1179,
+  "skipped": 27,
+  "failed": 1,
+  "note": "the one failure was the disputed default test, since updated and re-frozen (human ruling); gate 8 after the update: 229 passed"
+ },
+ "pytest_slow": {
+  "command": "pytest tests/gate8 -m slow -k '8c or 8d'",
+  "passed": 1,
+  "ran": true
+ },
+ "test_rulings": [
+  "test_G8c_C1_defaults_are_chunks: expected sampling and augment_device changed to 'auto' (human, 14 Nov 2026; gate_08c_test_dispute.md)"
+ ],
+ "known_limitations": [
+  "snapshot panels with on_the_fly recompute _candidate_info at fit start (~60 s on DS-10490)",
+  "Swin memory rule calibrated on fs 36 / 64^3 / bf16-mixed measurements only"
+ ],
+ "notes_for_next_agent": "8d done (separate entry). 8e.2/8f dropped. 8g merge last."
+}

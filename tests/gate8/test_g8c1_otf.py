@@ -42,11 +42,11 @@ def test_G8c_C1_defaults_are_chunks():
     from tomocpt.defaultConfigs.otf_config import OnTheFlyConfig
     from tomocpt.mainConfig import mainConfig
 
-    assert mainConfig.train.sampling == "chunks"
+    assert mainConfig.train.sampling == "auto"  # human ruling 14 Nov 2026 (gate_08c_test_dispute.md)
     assert mainConfig.train.otf == OnTheFlyConfig()
     o = OnTheFlyConfig()
     assert (o.volume_dtype, o.device, o.augment_device, o.samples_per_epoch, o.jitter, o.negative_mask_weight,
-            o.seed, o.val_seed, o.val_samples) == ("float16", "auto", "cpu", None, True, 0.0, 42, 1234, None)
+            o.seed, o.val_seed, o.val_samples) == ("float16", "auto", "auto", None, True, 0.0, 42, 1234, None)
 
 
 def test_G8c_C1_chunk_manifest_has_no_storage_key(built):
