@@ -88,9 +88,10 @@ def _synthetic_datamodule(n_samples: int, d_vox, batch: int, seed: int):
 
 def _chunks_datamodule(cfg):
     from tomocpt.dataManager.dataloading import Data
+    from tomocpt.training.helpers import resolve_sampling
 
     data_cls, extra = Data, {}
-    if str(getattr(cfg, "sampling", "chunks")) == "on_the_fly":  # Gate 8c, as training/run.py
+    if resolve_sampling(cfg) == "on_the_fly":  # Gate 8c, as training/run.py
         from tomocpt.dataManager.otf import OnTheFlyData
 
         data_cls, extra = OnTheFlyData, {"otf": cfg.otf}

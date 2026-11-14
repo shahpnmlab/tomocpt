@@ -46,6 +46,7 @@ def _prepare_data_if_needed(config: DictConfig):
     from tomocpt.dataManager.metadata import layout_pipeline_version, read_chunk_layout
 
     logging.info("Checking for prepared data...")
+    resolve_sampling(config)
     if config.mode == TrainingModes.selfSupervised:
         if _ssl_version(config) == 2:
             _prepare_ssl_v2_data_if_needed(config)
@@ -169,12 +170,47 @@ def _prepare_data_if_needed(config: DictConfig):
     logging.info("Data preparation complete.")
 
 
+def _sampling_value(config) -> str:
+    v = safe_getattr(config, "sampling", "chunks")
+    sampling = str(getattr(v, "value", v) or "chunks")
+    if sampling not in ("auto", "chunks", "on_the_fly"):
+        raise ValueError(f"train.sampling must be 'auto', 'chunks' or 'on_the_fly', got '{sampling}'")
+    return sampling
+
+
+def resolve_sampling(config) -> str:
+    """Resolve ``train.sampling = auto`` (Gate 8c default, human decision 14 Nov 2026) in place.
+
+    ``auto`` becomes ``on_the_fly`` for pipeline v2 picking, unless ``chunks_dir`` already holds
+    prepared chunk files (then ``chunks``, so existing chunks are reused, not refused). Pipeline v1
+    and self-supervised training always resolve to ``chunks`` (invariant 1). Explicit values are
+    returned unchanged. Returns the resolved value.
+    """
+    sampling = _sampling_value(config)
+    if sampling != "auto":
+        return sampling
+    resolved = "chunks"
+    if (config.mode == TrainingModes.picking and int(getattr(config, "data_pipeline_version", 1) or 1) == 2):
+        resolved = "on_the_fly"
+        chunks_dir = safe_getattr(config, "chunks_dir", None)
+        # an existing prepared dir, or the chunk pool of a k-fold CV (training.cv), decides
+        for d in ([Path(chunks_dir), Path(chunks_dir) / "pool"] if chunks_dir else []):
+            if Path(get_chunking_name_done(str(d), require_labels=True)).is_file():
+                from tomocpt.dataManager.metadata import read_chunk_layout
+
+                if str((read_chunk_layout(str(d)) or {}).get("storage") or "chunks") == "chunks":
+                    resolved = "chunks"
+                break
+    config.sampling = resolved
+    logging.info(f"train.sampling=auto -> {resolved}")
+    return resolved
+
+
 def _requested_storage(config) -> str:
     """Storage the train config asks for: ``chunks`` (chunk files) or ``tomogram`` (Gate 8c store)."""
-    sampling = str(getattr(safe_getattr(config, "sampling", "chunks"), "value",
-                           safe_getattr(config, "sampling", "chunks")) or "chunks")
-    if sampling not in ("chunks", "on_the_fly"):
-        raise ValueError(f"train.sampling must be 'chunks' or 'on_the_fly', got '{sampling}'")
+    sampling = _sampling_value(config)
+    if sampling == "auto":
+        sampling = resolve_sampling(config)
     return "tomogram" if sampling == "on_the_fly" else "chunks"
 
 
@@ -529,6 +565,15 @@ def _setup_callbacks(
             plateau_patience=int(safe_getattr(config, "swa_plateau_patience", 5)),
             plateau_rel_delta=float(safe_getattr(config, "swa_plateau_rel_delta", 1e-3))))
     callbacks.append(LRVerificationCallback())
+    if config.mode == TrainingModes.picking and config.use_gpus:
+        # Gate 8 (human decision 14 Nov 2026): Swin checkpointing off when memory allows
+        from tomocpt.training.swin_memory import SwinCheckpointAuto
+
+        prec = config.network.TORCH_FLOAT_PRECISION
+        callbacks.append(SwinCheckpointAuto(
+            feature_size=int(safe_getattr(config.network.SwinUNETR, "feature_size", 36)),
+            chunk_size=int(safe_getattr(config, "CHUNK_SIZE", 64)),
+            precision=str(getattr(prec, "value", prec)), batch_size=int(config.batch_size)))
     n_snap = int(safe_getattr(config, "snapshot_chunks", 0))
     if n_snap > 0 and int(safe_getattr(config, "data_pipeline_version", 1)) == 2:
         from tomocpt.training.snapshots import VolumeSnapshots

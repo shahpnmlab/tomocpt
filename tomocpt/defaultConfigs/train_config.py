@@ -278,9 +278,10 @@ class TrainConfig:
         float, typer.Option(help="Threshold t of repeat-factor sampling: r_c = max(1, sqrt(t / f_c))")
     ] = 0.1
     sampling: Annotated[
-        str, typer.Option(help="Where training crops come from (pipeline v2): 'chunks' (chunk files) or "
-                               "'on_the_fly' (crops drawn from one array per tomogram, Gate 8c)")
-    ] = "chunks"
+        str, typer.Option(help="Where training crops come from: 'auto' (on_the_fly for pipeline v2 picking "
+                               "unless chunks_dir already holds chunk files; chunks otherwise), 'chunks' (chunk "
+                               "files) or 'on_the_fly' (crops drawn from one array per tomogram, Gate 8c)")
+    ] = "auto"
     otf: Annotated[
         OnTheFlyConfig, typer.Option(help="On-the-fly crop sampling (train.sampling=on_the_fly)")
     ] = field(default_factory=OnTheFlyConfig)

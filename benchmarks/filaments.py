@@ -143,6 +143,9 @@ def apply_recipe(train: dict) -> dict:
     train.setdefault("particles", {}).update(cross_class_neg_weight=0.0)
     train.update(early_stop_rel_delta=0.007, early_stop_patience=10, lr_plateau_match_early_stop=True,
                  lr_plateau_patience=5, weight_averaging="ema")
+    # Gate 8c (accepted 14 Nov 2026): on-the-fly crops with GPU augmentation
+    train["sampling"] = "on_the_fly"
+    train.setdefault("otf", {}).update(augment_device="cuda")
     return train
 
 

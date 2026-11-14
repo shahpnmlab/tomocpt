@@ -241,6 +241,25 @@ class CropDescriptorDataset(torch.utils.data.Dataset):
                 "dataset_id": torch.tensor(int(meta.dataset_id), dtype=torch.int64)}
 
 
+def resolve_augment_device(value, augmentation, use_gpu: bool) -> str:
+    """``train.otf.augment_device``: ``auto`` (Gate 8c default) is ``cuda`` when training on a GPU
+    and every enabled augmentation has a GPU port (``gpu_augment.check_gpu_augmentation``), else ``cpu``."""
+    dev = str(_enum_value(value))
+    if dev not in ("auto", "cpu", "cuda"):
+        raise ValueError(f"train.otf.augment_device must be 'auto', 'cpu' or 'cuda', got '{dev}'")
+    if dev != "auto":
+        return dev
+    if not (use_gpu and torch.cuda.is_available()):
+        return "cpu"
+    from tomocpt.dataManager.gpu_augment import check_gpu_augmentation
+
+    try:
+        check_gpu_augmentation(augmentation)
+    except ValueError:
+        return "cpu"
+    return "cuda"
+
+
 class OnTheFlyData(Data):
     """LightningDataModule of ``train.sampling=on_the_fly`` (pipeline v2, picking)."""
 
@@ -255,9 +274,7 @@ class OnTheFlyData(Data):
         self.otf = otf if otf is not None else OnTheFlyConfig()
         if self.pipeline_version != 2:
             raise ValueError("train.sampling=on_the_fly needs train.data_pipeline_version=2")
-        self.augment_device = str(_enum_value(self.otf.augment_device))
-        if self.augment_device not in ("cpu", "cuda"):
-            raise ValueError(f"train.otf.augment_device must be 'cpu' or 'cuda', got '{self.augment_device}'")
+        self.augment_device = resolve_augment_device(self.otf.augment_device, self.augmentation, pin_memory)
         if self.augment_device == "cuda":
             from tomocpt.dataManager.gpu_augment import check_gpu_augmentation
 
