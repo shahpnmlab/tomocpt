@@ -5,7 +5,7 @@ from torch import nn
 from tomocpt.configManager.configManager import safe_getattr
 from tomocpt.networks.baseModel import BaseModel
 from tomocpt.training.losses import gradient3d_loss
-from tomocpt.training.multiclass_loss import (CLASS_HEADS, auto_hessian_block, class_probabilities, multiclass_picking_loss,
+from tomocpt.training.multiclass_loss import (CLASS_HEADS, auto_hessian_block, auto_loss_checkpoint, class_probabilities, multiclass_picking_loss,
                                               renormalise_targets)
 from tomocpt.logger import get_logger
 
@@ -341,6 +341,9 @@ class BasePickingModel(BaseModel):
         """Pipeline-v2 loss (CLAUDE.md Section 5.4) for a v2 batch."""
         particles = safe_getattr(self.hparams.config.train, "particles", None)
         use_checkpoint = bool(safe_getattr(particles, "loss_checkpoint", False)) if particles is not None else False
+        # automatic when the saved Hessian activations would not fit (large class counts; same numbers)
+        use_checkpoint = use_checkpoint or auto_loss_checkpoint(y_pred.shape[0], y_pred.shape[1],
+                                                                y_pred[0, 0].numel(), y_pred.device)
         kw = {}
         if self.value_loss() == "focal":
             # soft focal penalty on particle channels, Huber on filament channels (1 Nov 2026)

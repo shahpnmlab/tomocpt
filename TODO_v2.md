@@ -182,6 +182,10 @@ Filaments are less tested than particles (Gate 6 passed on synthetic data plus a
       35.8 GB (too much for a 24 GB GPU). After 3 epochs: particle F4 mean 0.20 (51 of 119 classes 0), MT F1 0.88,
       actin F1 0.49 (not a quality result). Open: memory of the contrastive anchors and of predict at large C;
       softmax over particles only (needs a new field + spec).
+      Fixed 15 Nov 2026 (v2-fix/large-c-memory): automatic Hessian loss checkpointing when its saved activations
+      exceed 40 % of the GPU (B=16 C=134: OOM -> 22 GB, 3.0-3.5 s/step), per-channel anchor peaks, in-place map
+      division in predict (29.8 -> 17.0 GB). Particles-only softmax: spec `.claude/agents/03e_AGENT_SOFTMAX_SCOPE.md`
+      (draft, awaiting human OK).
 
 ## 6. DS-10490 "final boss" (only after 3–5)
 - Prep done: points `data/filaments/10490_points/coords/`, diameters

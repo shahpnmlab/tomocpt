@@ -36,6 +36,16 @@ def _peak_mask(target: torch.Tensor, min_target: float) -> torch.Tensor:
     return (t >= F.max_pool3d(t, 3, 1, 1)) & (t >= float(min_target))
 
 
+def _channel_peaks(target: torch.Tensor, min_target: float, wanted: torch.Tensor):
+    """``(c, peaks [B, D, H, W] bool)`` per channel with a wanted ``(b, c)`` pair whose target
+    reaches ``min_target``; one channel at a time, so memory does not grow with the class count
+    (the full ``[B, C, ...]`` max-pool needs several GB at C ~ 134). Same peaks as ``_peak_mask``."""
+    reach = (target.detach().flatten(2).amax(-1) >= float(min_target)).cpu() & wanted
+    for c in range(target.shape[1]):
+        if bool(reach[:, c].any()):
+            yield c, _peak_mask(target[:, c:c + 1], min_target)[:, 0]
+
+
 def _greedy_spacing(coords: np.ndarray, values: np.ndarray, min_dist: float) -> np.ndarray:
     """Indices kept by greedy non-maximum suppression (highest value first): every kept pair is
     at least ``min_dist`` apart."""
@@ -53,8 +63,8 @@ def _greedy_spacing(coords: np.ndarray, values: np.ndarray, min_dist: float) -> 
 
 def _instances(target, peaks, b: int, c: int, d: float, filament: bool) -> np.ndarray:
     """Instance voxels ``[K, 3]`` (z, y, x) of one ``(b, c)``: particle centres (peaks at least
-    d/2 apart) or ridge voxels subsampled at one diameter."""
-    pz = torch.nonzero(peaks[b, c]).cpu().numpy()
+    d/2 apart) or ridge voxels subsampled at one diameter. ``peaks``: ``[B, D, H, W]`` of channel c."""
+    pz = torch.nonzero(peaks[b]).cpu().numpy()
     if not len(pz):
         return np.zeros((0, 3), np.int64)
     vals = target[b, c][tuple(torch.as_tensor(pz.T, device=target.device))].float().cpu().numpy()
@@ -82,11 +92,10 @@ def sample_anchors(target: torch.Tensor, available: torch.Tensor, d_vox: torch.T
     Returns ``(index [N, 4] int64 = (b, z, y, x), label [N] int64 channel)`` on the CPU.
     """
     B, C = target.shape[:2]
-    peaks = _peak_mask(target, min_target)
     avail = torch.as_tensor(available).bool().view(B, C).cpu()
     d = torch.as_tensor(d_vox).float().view(B, C).cpu()
     idx, lab = [], []
-    for c in range(C):
+    for c, peaks in _channel_peaks(target, min_target, avail):
         rows = []
         for b in range(B):
             if not bool(avail[b, c]):
@@ -110,20 +119,19 @@ def focal_positives(target: torch.Tensor, available: torch.Tensor, d_vox: torch.
     one diameter (ridge voxels subsampled at one diameter). Returns ``(positive [B, C, D, H, W]
     bool, num_instances [B, C] float32)`` on the device of ``target``."""
     B, C = target.shape[:2]
-    peaks = _peak_mask(target, min_target)
     avail = torch.as_tensor(available).bool().view(B, C).cpu()
     d = torch.as_tensor(d_vox).float().view(B, C).cpu()
-    positive = torch.zeros_like(peaks)
+    positive = torch.zeros(target.shape, dtype=torch.bool, device=target.device)
     n = torch.zeros(B, C, dtype=torch.float32)
-    for b in range(B):
-        for c in range(C):
+    for c, peaks in _channel_peaks(target, min_target, avail):
+        for b in range(B):
             if not bool(avail[b, c]):
                 continue
             fil = bool(is_filament[c])
             inst = _instances(target, peaks, b, c, float(d[b, c]), fil)
             n[b, c] = float(len(inst))
             if fil:
-                positive[b, c] = peaks[b, c]
+                positive[b, c] = peaks[b]
             elif len(inst):
                 ii = torch.as_tensor(inst, device=target.device)
                 positive[b, c, ii[:, 0], ii[:, 1], ii[:, 2]] = True

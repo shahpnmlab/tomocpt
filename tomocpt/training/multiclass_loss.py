@@ -24,6 +24,28 @@ def auto_hessian_block(n_samples: int, n_voxels: int, budget_bytes: int = HESSIA
     B = 16 at 64^3: up to 7 classes in one call."""
     per_class = max(1, int(n_samples) * int(n_voxels) * HESSIAN_BYTES_PER_VOXEL)
     return max(1, int(budget_bytes) // per_class)
+
+
+#: Activations the Hessian term keeps for backward per voxel of one (sample, class) pair without
+#: checkpointing (8b.2, C = 134, B = 4: 12.3 - 6.3 GB over 536 pairs of 64^3).
+HESSIAN_SAVED_BYTES_PER_VOXEL = 48
+#: Fraction of the GPU memory those activations may take before the loss is checkpointed
+#: automatically (TODO 5.1: CZII B = 16 1.2 GB -> off; C = 134: B = 8 13.5 GB -> off on 48 GB
+#: (measured peak 25 GB), B = 16 27 GB -> on (out of memory without it)).
+HESSIAN_SAVED_FRACTION = 0.4
+
+
+def auto_loss_checkpoint(n_samples: int, n_classes: int, n_voxels: int, device=None,
+                         fraction: float = HESSIAN_SAVED_FRACTION) -> bool:
+    """True when the Hessian term's saved activations of all classes would exceed ``fraction`` of
+    the GPU memory (checkpointing gives the same loss and gradients, at a recompute cost).
+    Off on the CPU."""
+    dev = torch.device(device) if device is not None else None
+    if dev is None or dev.type != "cuda" or not torch.cuda.is_available():
+        return False
+    total = torch.cuda.get_device_properties(dev).total_memory
+    saved = int(n_samples) * int(n_classes) * int(n_voxels) * HESSIAN_SAVED_BYTES_PER_VOXEL
+    return saved > float(fraction) * total
 CLASS_HEADS = ("sigmoid", "softmax")
 
 
