@@ -47,6 +47,7 @@ def auto_loss_checkpoint(n_samples: int, n_classes: int, n_voxels: int, device=N
     saved = int(n_samples) * int(n_classes) * int(n_voxels) * HESSIAN_SAVED_BYTES_PER_VOXEL
     return saved > float(fraction) * total
 CLASS_HEADS = ("sigmoid", "softmax")
+SOFTMAX_SCOPES = ("all", "particles")
 
 
 def _channel_mask(available, B: int, C: int, device) -> torch.Tensor:
@@ -62,27 +63,47 @@ def _channel_mask(available, B: int, C: int, device) -> torch.Tensor:
     return mask.view(1, C).expand(B, C)
 
 
-def class_probabilities(logits: torch.Tensor, class_head: str, available=None) -> torch.Tensor:
+def class_probabilities(logits: torch.Tensor, class_head: str, available=None,
+                        softmax_channels=None) -> torch.Tensor:
     """Per-class probabilities ``[B, C, D, H, W]`` (float32) from logits (Gate 3d).
 
     ``sigmoid``: independent sigmoids. ``softmax``: softmax over an implicit background logit
     fixed at 0 and the available channels, ``p_c = exp(l_c) / (1 + sum_d exp(l_d))``;
-    unavailable channels are 0. With one class both heads are equal."""
+    unavailable channels are 0. With one class both heads are equal.
+    ``softmax_channels`` (Gate 3e): ``[C]`` bool, the channels inside the softmax (``None`` = all);
+    the other available channels are independent sigmoids."""
     if class_head == "sigmoid":
         return torch.sigmoid(logits.float())
     if class_head != "softmax":
         raise ValueError(f"class_head must be one of {CLASS_HEADS}, got {class_head!r}")
     x = logits.float()
     B, C = x.shape[:2]
-    mask = _channel_mask(available, B, C, x.device).view(B, C, *([1] * (x.ndim - 2)))
-    x = torch.where(mask, x, torch.full_like(x, float("-inf")))
-    p = torch.softmax(torch.cat([torch.zeros_like(x[:, :1]), x], dim=1), dim=1)[:, 1:]
-    return torch.where(mask, p, torch.zeros_like(p))
+    shape = (B, C, *([1] * (x.ndim - 2)))
+    avail = _channel_mask(available, B, C, x.device)
+    mask = avail
+    if softmax_channels is not None:
+        in_softmax = torch.as_tensor(softmax_channels, dtype=torch.bool, device=x.device).view(1, C)
+        mask = avail & in_softmax
+    mask = mask.view(shape)
+    xs = torch.where(mask, x, torch.full_like(x, float("-inf")))
+    p = torch.softmax(torch.cat([torch.zeros_like(xs[:, :1]), xs], dim=1), dim=1)[:, 1:]
+    p = torch.where(mask, p, torch.zeros_like(p))
+    if softmax_channels is None:
+        return p
+    independent = (avail & ~in_softmax).view(shape)
+    return torch.where(independent, torch.sigmoid(x), p)
 
 
-def renormalise_targets(y_true: torch.Tensor) -> torch.Tensor:
-    """``y / max(1, sum_c y_c)`` per voxel: softmax probabilities cannot sum above 1."""
-    return y_true / y_true.sum(dim=1, keepdim=True).clamp(min=1)
+def renormalise_targets(y_true: torch.Tensor, softmax_channels=None) -> torch.Tensor:
+    """``y / max(1, sum_c y_c)`` per voxel: softmax probabilities cannot sum above 1.
+    ``softmax_channels`` (Gate 3e): ``[C]`` bool; the sum and the division cover these channels
+    only, the other targets are unchanged (``None`` = all)."""
+    if softmax_channels is None:
+        return y_true / y_true.sum(dim=1, keepdim=True).clamp(min=1)
+    C = y_true.shape[1]
+    m = torch.as_tensor(softmax_channels, dtype=torch.bool, device=y_true.device).view(1, C, *([1] * (y_true.ndim - 2)))
+    s = (y_true * m).sum(dim=1, keepdim=True).clamp(min=1)
+    return torch.where(m, y_true / s, y_true)
 
 
 #: Non-zero entries (channel, z, y, x, value) of Kornia's ``get_diff_kernel3d_2nd_order`` (xx, yy, zz,

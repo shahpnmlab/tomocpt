@@ -299,6 +299,10 @@ conditioned model works: the new FiLM layers start at zero.
 - `softmax`: the classes and an implicit background compete for each voxel, so one particle
   is not picked as two classes. No extra parameters; with one class it equals `sigmoid`.
   Classes not annotated in a training sample are left out of the competition.
+- `train.particles.softmax_scope` (softmax head only): `all` (default) puts every channel in one
+  softmax; `particles` puts only the particle channels in it, and filament channels become
+  independent sigmoids (filaments can overlap particles, e.g. decorated actin). Older checkpoints
+  read as `all`.
 - `train.particles.cross_class_neg_weight` (default 0) makes sigmoid models penalise firing on
   another class's particles. With `softmax` it is not needed.
 

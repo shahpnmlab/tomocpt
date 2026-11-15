@@ -5,7 +5,7 @@ from torch import nn
 from tomocpt.configManager.configManager import safe_getattr
 from tomocpt.networks.baseModel import BaseModel
 from tomocpt.training.losses import gradient3d_loss
-from tomocpt.training.multiclass_loss import (CLASS_HEADS, auto_hessian_block, auto_loss_checkpoint, class_probabilities, multiclass_picking_loss,
+from tomocpt.training.multiclass_loss import (CLASS_HEADS, SOFTMAX_SCOPES, auto_hessian_block, auto_loss_checkpoint, class_probabilities, multiclass_picking_loss,
                                               renormalise_targets)
 from tomocpt.logger import get_logger
 
@@ -103,6 +103,8 @@ class BasePickingModel(BaseModel):
         self.lr = lr
         if self.class_head() not in CLASS_HEADS:
             raise ValueError(f"train.particles.class_head must be one of {CLASS_HEADS}, got {self.class_head()!r}")
+        if self.softmax_scope() not in SOFTMAX_SCOPES:
+            raise ValueError(f"train.particles.softmax_scope must be one of {SOFTMAX_SCOPES}, got {self.softmax_scope()!r}")
         self.contrastive_head = None
         self._build_discriminative()
         self.offset_head = None
@@ -187,7 +189,7 @@ class BasePickingModel(BaseModel):
         use_apix = apix if self.scale_conditioning() else None
         logits, _, dec1 = self._forward_all(batch, apix=use_apix)
         if self.class_head() == "softmax":
-            probs = class_probabilities(logits, "softmax", classes)
+            probs = class_probabilities(logits, "softmax", classes, self._softmax_channels())
         else:
             probs = nn.functional.sigmoid(logits)
         return probs, self.offset_head(dec1)
@@ -247,10 +249,23 @@ class BasePickingModel(BaseModel):
         particles = safe_getattr(self.hparams.config.train, "particles", None)
         return str(safe_getattr(particles, "class_head", "sigmoid")) if particles is not None else "sigmoid"
 
+    def softmax_scope(self) -> str:
+        """``train.particles.softmax_scope`` of this model's (checkpoint) config; ``all`` if absent (Gate 3e)."""
+        particles = safe_getattr(self.hparams.config.train, "particles", None)
+        return str(safe_getattr(particles, "softmax_scope", "all")) if particles is not None else "all"
+
+    def _softmax_channels(self):
+        """``None`` (every channel in the softmax) or ``[C]`` bools, True on particle channels."""
+        if self.softmax_scope() != "particles" or not self.is_pipeline_v2():
+            return None
+        fil = self._is_filament()
+        return None if not any(fil) else [not f for f in fil]
+
     def _probabilities(self, logits, y, batch):
         """``(y_pred, y)`` for the loss: sigmoid, or the softmax head on a v2 batch (renormalised targets)."""
         if self.class_head() == "softmax" and self._is_v2_batch(batch):
-            return class_probabilities(logits, "softmax", batch["class_available"]), renormalise_targets(y)
+            sm = self._softmax_channels()
+            return class_probabilities(logits, "softmax", batch["class_available"], sm), renormalise_targets(y, sm)
         return nn.functional.sigmoid(logits), y
 
     def setup(self, stage: str) -> None:
@@ -449,7 +464,7 @@ class BasePickingModel(BaseModel):
         (channel indices, default all)."""
         logits = self(batch, apix=apix)
         if self.class_head() == "softmax":
-            return class_probabilities(logits, "softmax", classes)
+            return class_probabilities(logits, "softmax", classes, self._softmax_channels())
         # y_pred = nn.functional.softplus(logits, beta=BETA_FOR_SOFTPLUS)
         y_pred = nn.functional.sigmoid(logits)
         return y_pred
