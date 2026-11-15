@@ -269,7 +269,9 @@ def _predict_level(model, padded: torch.Tensor, classes: List[int], apix_work: f
                     weight[i0:i1, j0:j1, k0:k1] += hann
                 if pbar is not None:
                     pbar.update(1)
-        m = (acc.float() / weight).cpu()
+        # in place when acc is float32 (acc.float() is acc): no second full-size copy of the maps,
+        # which doubled the peak GPU memory at large class counts (TODO 5.1, C=134)
+        m = acc.float().div_(weight).cpu()
         if with_offsets:
             o = (acc_off / weight).cpu()
             if flip is not None:
