@@ -1,6 +1,6 @@
 # Gate 3e — softmax scope: particles only, filaments independent (TODO 5.1, human request 15 Nov 2026)
 
-Status: **draft, awaiting human OK** before tests and code. Read `CLAUDE.md` and `03d_AGENT_SOFTMAX_HEAD.md` first.
+Status: **approved 15 Nov 2026** (human); tests frozen, implemented. Read `CLAUDE.md` and `03d_AGENT_SOFTMAX_HEAD.md` first.
 
 ## 1. Why
 The Gate 3d softmax head (`train.particles.class_head=softmax`) normalises over an implicit background

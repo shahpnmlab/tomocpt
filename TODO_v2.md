@@ -185,7 +185,8 @@ Filaments are less tested than particles (Gate 6 passed on synthetic data plus a
       Fixed 15 Nov 2026 (v2-fix/large-c-memory): automatic Hessian loss checkpointing when its saved activations
       exceed 40 % of the GPU (B=16 C=134: OOM -> 22 GB, 3.0-3.5 s/step), per-channel anchor peaks, in-place map
       division in predict (29.8 -> 17.0 GB). Particles-only softmax: spec `.claude/agents/03e_AGENT_SOFTMAX_SCOPE.md`
-      (draft, awaiting human OK).
+      (approved 15 Nov 2026). Implemented on v2-feat/softmax-scope: `train.particles.softmax_scope: all | particles`
+      (default `all`), tests `tests/gate3e/`. Open: DS-10490 comparison run `all` vs `particles` (spec 6).
 
 ## 6. DS-10490 "final boss" (only after 3–5)
 - Prep done: points `data/filaments/10490_points/coords/`, diameters

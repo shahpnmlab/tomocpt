@@ -25,6 +25,11 @@ class ParticlesConfig:
         typer.Option(help="Class head of pipeline-v2 pickers: 'sigmoid' (independent classes) or 'softmax' "
                           "(classes and an implicit background compete per voxel)"),
     ] = "sigmoid"
+    softmax_scope: Annotated[
+        str,
+        typer.Option(help="Softmax head only (Gate 3e): 'all' (every channel in one softmax) or 'particles' "
+                          "(softmax over particle channels, filament channels independent sigmoids)"),
+    ] = "all"
     core_weight: Annotated[
         float,
         typer.Option(help="Centroid weight (Gate 4f): particle-channel value weight x (1 + core_weight * y^core_power), "
