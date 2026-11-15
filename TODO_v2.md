@@ -174,6 +174,14 @@ Filaments are less tested than particles (Gate 6 passed on synthetic data plus a
 - [ ] 5.1 (memory / step-time part moved into Gate 8a, 9 Nov 2026) Memory and step time with C≈134 (logits B×C×64³, per-class Hessian loop); softmax over
       particles only vs particles+filaments; with the 3b recipe and, if adopted, the offset head and
       centroid weight.
+      Smoke run 14-15 Nov 2026 (`benchmarks/out/smoke_c134_20261114`, code ba639bb): C=134 (132 DS-10490 species + MT +
+      actin), joint arm, softmax over all channels, 3c.2 recipe on v2-dev defaults, 6 train / 2 val runs, 3 epochs. Whole
+      path works (prepare_data, otf training at 2 levels 6.8 / 10.5 A, calibration of 134 classes in 3 min, predict,
+      tracing, evaluation). B=16 OOM in step 1: contrastive `_peak_mask` max_pool3d over [B,134,64^3] with 44 GB in use;
+      B=4: 19 GB, ~0.85 s/step (50 min/epoch, 3388 steps), Swin checkpointing auto-off. Predict 51 s/tomogram, peak
+      35.8 GB (too much for a 24 GB GPU). After 3 epochs: particle F4 mean 0.20 (51 of 119 classes 0), MT F1 0.88,
+      actin F1 0.49 (not a quality result). Open: memory of the contrastive anchors and of predict at large C;
+      softmax over particles only (needs a new field + spec).
 
 ## 6. DS-10490 "final boss" (only after 3–5)
 - Prep done: points `data/filaments/10490_points/coords/`, diameters
