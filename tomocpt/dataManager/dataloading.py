@@ -33,6 +33,28 @@ def _enum_value(v) -> str:
     return str(getattr(v, "value", v))
 
 
+def build_fourier_degradation(cfg) -> Optional[RandomFourierDegradation]:
+    """The :class:`RandomFourierDegradation` of an :class:`AugmentationConfig`, or None when
+    ``use_mw_aug`` and ``use_fourier_aug`` are both off. Shared by the CPU pipeline and the GPU
+    port (``gpu_augment.fourier_degrade``) so both use the same parameters."""
+    if cfg is None or not (cfg.use_mw_aug or cfg.use_fourier_aug):
+        return None
+    return RandomFourierDegradation(
+        missing_wedge_aug=bool(cfg.use_mw_aug),
+        amplitude_aug=bool(cfg.use_fourier_aug),
+        missing_wedge_prob=cfg.missing_wedge_prob,
+        amplitude_prob=cfg.amplitude_prob,
+        sample_kernel_prob=cfg.sample_kernel_prob,
+        keep_angle_range=(cfg.keep_angle_min, cfg.keep_angle_max),
+        smooth_sigma_range=(cfg.smooth_sigma_min, cfg.smooth_sigma_max),
+        step_sigma_range=(cfg.step_sigma_min, cfg.step_sigma_max),
+        offset_range=(cfg.offset_min, cfg.offset_max),
+        taper_width=cfg.taper_width,
+        reclip=cfg.reclip,
+        clip_value=cfg.clip_value,
+    )
+
+
 def build_training_transforms(cfg: Optional[AugmentationConfig] = None) -> tio.Compose:
     """Compose the training-time augmentation pipeline.
 
@@ -92,23 +114,9 @@ def build_training_transforms(cfg: Optional[AugmentationConfig] = None) -> tio.C
         ]
 
     # --- Fourier degradation: strictly after every spatial transform ---
-    if cfg.use_mw_aug or cfg.use_fourier_aug:
-        transforms.append(
-            RandomFourierDegradation(
-                missing_wedge_aug=cfg.use_mw_aug,
-                amplitude_aug=cfg.use_fourier_aug,
-                missing_wedge_prob=cfg.missing_wedge_prob,
-                amplitude_prob=cfg.amplitude_prob,
-                sample_kernel_prob=cfg.sample_kernel_prob,
-                keep_angle_range=(cfg.keep_angle_min, cfg.keep_angle_max),
-                smooth_sigma_range=(cfg.smooth_sigma_min, cfg.smooth_sigma_max),
-                step_sigma_range=(cfg.step_sigma_min, cfg.step_sigma_max),
-                offset_range=(cfg.offset_min, cfg.offset_max),
-                taper_width=cfg.taper_width,
-                reclip=cfg.reclip,
-                clip_value=cfg.clip_value,
-            )
-        )
+    fourier = build_fourier_degradation(cfg)
+    if fourier is not None:
+        transforms.append(fourier)
 
     # --- Intensity transforms ---
     # Contrast inversion is always on, deliberately not configurable: tomogram

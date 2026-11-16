@@ -47,6 +47,7 @@ def _prepare_data_if_needed(config: DictConfig):
 
     logging.info("Checking for prepared data...")
     resolve_sampling(config)
+    resolve_fourier_augmentation(config)
     if config.mode == TrainingModes.selfSupervised:
         if _ssl_version(config) == 2:
             _prepare_ssl_v2_data_if_needed(config)
@@ -204,6 +205,27 @@ def resolve_sampling(config) -> str:
     config.sampling = resolved
     logging.info(f"train.sampling=auto -> {resolved}")
     return resolved
+
+
+def resolve_fourier_augmentation(config) -> bool:
+    """Turn the Fourier degradation on for pipeline v2 picking (human decision 16 Nov 2026), in place.
+
+    With ``train.augmentation.fourier_auto`` (default True), pipeline v2 picking sets
+    ``augmentation.use_mw_aug`` and ``augmentation.use_fourier_aug`` to True, so the checkpoint
+    records the switches that ran. Pipeline v1 and self-supervised training are never changed
+    (invariant 1), nor is a config with ``fourier_auto=False``. Returns whether the Fourier
+    degradation is on after resolution.
+    """
+    aug = safe_getattr(config, "augmentation", None)
+    if aug is None:
+        return False
+    if (bool(safe_getattr(aug, "fourier_auto", True)) and config.mode == TrainingModes.picking
+            and int(getattr(config, "data_pipeline_version", 1) or 1) == 2):
+        if not (aug.use_mw_aug and aug.use_fourier_aug):
+            logging.info("augmentation.fourier_auto: pipeline v2 picking -> use_mw_aug=True, use_fourier_aug=True")
+        aug.use_mw_aug = True
+        aug.use_fourier_aug = True
+    return bool(aug.use_mw_aug or aug.use_fourier_aug)
 
 
 def _requested_storage(config) -> str:

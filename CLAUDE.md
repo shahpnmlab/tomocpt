@@ -272,6 +272,11 @@ class is available at every level where `lo_c <= d_vox <= band_max`.
    pipeline v1 unchanged: `train.sampling=auto` and `train.otf.augment_device=auto` change only
    pipeline-v2 picking; Swin checkpointing off when memory allows and parallel CV folds give
    identical numbers.
+   Exception (Gate 8 follow-up, human decision 16 Nov 2026: augmentations that make a generalised
+   picker are on by default): `train.augmentation.fourier_auto=True` turns `use_mw_aug` and
+   `use_fourier_aug` on for pipeline-v2 picking only (`training.helpers.resolve_fourier_augmentation`);
+   pipeline v1, SSL and the `AugmentationConfig()` dataclass defaults are unchanged. Every CPU
+   augmentation has a GPU port (`dataManager/gpu_augment.py`); the optional intensity transforms stay off.
 2. **Checkpoint compatibility.** Every checkpoint written by `v2-gate-0-base` code
    (picking and SSL) loads for `train --fine_tune_from`, `train --resume_from`,
    distillation teacher, and `predict`, and behaves as v1.
@@ -390,6 +395,7 @@ time (gradient checkpointing). Pipeline v1 uses Section 1.5 unchanged.
 | `prepData.negative_masks` | Optional[str] = `None` (`"<name>:<mask dir>"`) | 7 |
 | `train.sampling` | `auto` \| `chunks` \| `on_the_fly` = `auto` (on_the_fly for pipeline v2 picking without existing chunk files; chunks otherwise) | 8c |
 | `train.otf` | `OnTheFlyConfig` (`defaultConfigs/otf_config.py`; `augment_device` = `auto`: cuda when training on a GPU with every enabled augmentation ported) | 8c |
+| `train.augmentation.fourier_auto` | bool = `True` (pipeline-v2 picking sets `use_mw_aug` and `use_fourier_aug`; no effect on v1 or SSL) | 8 follow-up |
 | `train.lr_scaling`, `train.lr_reference_batch` | `none` \| `sqrt` \| `linear` = `none`, int = `16` (lr and EMA decay follow the effective batch) | 8g |
 
 Field details are in each gate spec. A gate may add fields only to the files it owns.

@@ -275,6 +275,20 @@ Useful `infer` options for v2:
 | `apix_override` | Voxel size in A when the MRC header is wrong or 0. |
 | `accumulate_dtype`, `accumulate_device` | `float16` and/or `cpu` reduce GPU memory for large tomograms with many classes (`auto` uses the GPU when the maps fit). |
 
+### Augmentation (`train.augmentation`)
+
+Pipeline-v2 picking trains with the Fourier degradation by default (human decision 16 Nov 2026):
+a missing wedge (`use_mw_aug`, the retained wedge around X as in a tilt series about Y) and a
+random amplitude spectrum (`use_fourier_aug`, varied CTF / defocus / dose filtering), each at
+probability 0.5, blended into the crop through a soft blob and run after every spatial transform.
+`augmentation.fourier_auto: true` (the default) switches both on for pipeline-v2 picking only;
+set `augmentation.fourier_auto=false` to keep `use_mw_aug` / `use_fourier_aug` as written
+(both off unless set). Pipeline v1 and self-supervised training are unchanged.
+The optional intensity transforms (`brightness_gradient_p`, `local_gamma_p`, `brightness_p`,
+`contrast_p`, `anisotropy_p`, `noise_p`, `gamma_p`, `bias_field_p`) stay off by default.
+Every augmentation also runs on the GPU path (`train.otf.augment_device=auto` picks it whatever
+is enabled). Contrast inversion (p 0.5) is always on.
+
 ### Scale conditioning (`train.network.scale_conditioning`)
 
 **What it does.** The working voxel size of each input is fed to the network as
@@ -427,6 +441,9 @@ or alignment mismatch.
 # Changelog
 
 ## Unreleased (v2, multi-class picking)
+- Pipeline-v2 picking trains with the missing-wedge and amplitude-spectrum Fourier augmentation by
+  default (`train.augmentation.fourier_auto`; `false` restores the previous behaviour). The Fourier
+  degradation and the optional intensity augmentations now also run on the GPU data path.
 - v2 picking defaults (1 Nov 2026): `infer.peak_spacing_fraction = 0.5` (picks of one class at least one
   radius apart; before, one full diameter, which merged touching particles) and `infer.cross_class_nms`
   off. On the CZII 5-fold CV these settings raise the Kaggle-weighted out-of-fold F4 from 0.631 to
