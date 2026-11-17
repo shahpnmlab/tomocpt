@@ -24,3 +24,6 @@ No legacy (`tests/test_*.py`) or Gate 1 test conflicts with the v2 default: the 
 `tests/test_config_backfill.py` and `tests/gate1/test_g1_backfill_instance_fields.py`) and adds
 `augmentation.fourier_auto=True`, resolved for pipeline-v2 picking in
 `training.helpers.resolve_fourier_augmentation`.
+
+
+**Resolution (human, 17 Nov 2026):** approved. The three tests are re-frozen with the opposite expectation.

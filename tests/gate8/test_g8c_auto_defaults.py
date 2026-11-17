@@ -90,8 +90,8 @@ def test_G8c_D2_augment_device(monkeypatch):
     assert resolve_augment_device("auto", aug, False) == "cpu"
     monkeypatch.setattr(torch.cuda, "is_available", lambda: True)
     assert resolve_augment_device("auto", aug, True) == "cuda"
-    aug.noise_p = 0.5  # no GPU port
-    assert resolve_augment_device("auto", aug, True) == "cpu"
+    aug.noise_p = 0.5  # GPU port since 17 Nov 2026 (re-frozen, human-approved dispute)
+    assert resolve_augment_device("auto", aug, True) == "cuda"
     monkeypatch.setattr(torch.cuda, "is_available", lambda: False)
     assert resolve_augment_device("auto", AugmentationConfig(), True) == "cpu"
     with pytest.raises(ValueError, match="augment_device"):

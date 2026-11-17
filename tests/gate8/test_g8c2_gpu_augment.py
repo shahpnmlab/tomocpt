@@ -296,15 +296,15 @@ def test_G8c_C7_elastic_statistics_match_torchio():
     assert abs(g_max / t_max - 1) < 0.10, (g_max, t_max)
 
 
-def test_G8c_C7_unported_options_name_the_cpu_path(store):
+def test_G8c_C7_formerly_unported_options_are_accepted(store):
+    """Re-frozen 17 Nov 2026 (human-approved dispute): the Fourier and intensity options have GPU ports."""
     from tomocpt.defaultConfigs.train_config import AugmentationConfig
 
     for field, value in [("use_mw_aug", True), ("use_fourier_aug", True), ("brightness_p", 0.5),
                          ("noise_p", 0.5)]:
         cfg = AugmentationConfig()
         setattr(cfg, field, value)
-        with pytest.raises(ValueError, match="augment_device"):
-            _aug([store], train=True, augmentation=cfg)
+        _aug([store], train=True, augmentation=cfg)
 
 
 # --------------------------------------------------------------------------------------------
@@ -395,14 +395,14 @@ def test_G8c2_datamodule_yields_descriptors_and_transfers(phantom_store):
         assert torch.equal(vg[k], vc[k]), k
 
 
-def test_G8c2_datamodule_refuses_unported_options(phantom_store):
+def test_G8c2_datamodule_accepts_fourier_on_gpu_path(phantom_store):
+    """Re-frozen 17 Nov 2026 (human-approved dispute): the Fourier degradation has a GPU port."""
     from gate2 import g2_helpers as G2
     from gate8 import g8c_helpers as G
 
     aug = G2.no_spatial_aug()
     aug.use_mw_aug = True
-    with pytest.raises(ValueError, match="augment_device"):
-        G.otf_data(phantom_store, augmentation=aug, augment_device="cuda")
+    G.otf_data(phantom_store, augmentation=aug, augment_device="cuda")
 
 
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="needs CUDA")
