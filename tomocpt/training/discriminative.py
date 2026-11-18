@@ -21,7 +21,8 @@ import torch.nn.functional as F
 from torch import nn
 
 __all__ = ["sample_anchors", "sample_hard_negatives", "ContrastiveMemoryBank", "supcon_loss",
-           "focal_heatmap_loss", "soft_focal_penalty", "focal_positives"]
+           "focal_heatmap_loss", "soft_focal_penalty", "focal_positives", "PrototypeClassifier",
+           "prototype_ce_loss"]
 
 _BIG = 1e12
 
@@ -300,6 +301,82 @@ class ContrastiveMemoryBank(nn.Module):
         if not es:
             return self.queue.new_zeros(0, self.dim), torch.zeros(0, dtype=torch.long, device=self.queue.device)
         return torch.cat(es).detach(), torch.cat(ls)
+
+
+# --------------------------------------------------------------------------------------
+# Gate 9b: cosine prototypes on the embedding
+# --------------------------------------------------------------------------------------
+
+class PrototypeClassifier(nn.Module):
+    """Cosine classifier on the projection embedding (Gate 9b, ``09b_AGENT_EMBED_HEAD.md``).
+
+    ``prototypes [n_classes + 1, dim]``: row ``k < n_classes`` = the k-th particle channel, the last
+    row = background. ``alpha [1]`` (zero-initialised, only with ``residual=True``) scales the
+    prototype residual on the particle logits; at 0 the logits are unchanged (invariant 6).
+    Cosines are computed in float32."""
+
+    def __init__(self, n_classes: int, dim: int, scale: float = 10.0, residual: bool = False):
+        super().__init__()
+        self.n_classes, self.dim, self.scale = int(n_classes), int(dim), float(scale)
+        self.prototypes = nn.Parameter(torch.randn(self.n_classes + 1, self.dim) / float(self.dim) ** 0.5)
+        self.alpha = nn.Parameter(torch.zeros(1)) if residual else None
+
+    def _unit_prototypes(self) -> torch.Tensor:
+        return F.normalize(self.prototypes.float(), dim=1)
+
+    def cosine(self, emb: torch.Tensor) -> torch.Tensor:
+        """``emb [N, dim] -> [N, n_classes + 1]`` cosine similarities."""
+        return F.normalize(emb.float(), dim=1) @ self._unit_prototypes().T
+
+    def cosine_map(self, emb_map: torch.Tensor) -> torch.Tensor:
+        """``emb_map [B, dim, ...] -> [B, n_classes + 1, ...]``: the normalised embedding through a
+        1x1x1 convolution with the normalised prototypes."""
+        z = F.normalize(emb_map.float(), dim=1)
+        w = self._unit_prototypes()
+        return F.conv3d(z, w.view(*w.shape, 1, 1, 1))
+
+    def residual(self, emb_map: torch.Tensor, channels: Sequence[int], n_channels: int,
+                 size: Sequence[int]) -> torch.Tensor:
+        """``[B, n_channels, *size]`` float32: ``alpha * scale * (cos_k - cos_bg)`` on the particle
+        ``channels`` (0 elsewhere), computed on the embedding grid and trilinearly upsampled to
+        ``size``. Convolution and interpolation are linear, so this equals the cosine of the
+        upsampled normalised embedding (not renormalised) at ``n_classes`` channels on the coarse
+        grid instead of ``dim`` channels on the fine one."""
+        cos = self.cosine_map(emb_map)
+        r = (self.alpha.float() * self.scale) * (cos[:, :-1] - cos[:, -1:])
+        full = r.new_zeros((r.shape[0], int(n_channels), *r.shape[2:]))
+        full = full.index_copy(1, torch.as_tensor(list(channels), dtype=torch.long, device=r.device), r)
+        if tuple(full.shape[2:]) != tuple(size):
+            full = F.interpolate(full, size=tuple(size), mode="trilinear", align_corners=False)
+        return full
+
+
+def prototype_ce_loss(cos: torch.Tensor, rows: torch.Tensor, allowed: torch.Tensor, scale: float,
+                      zero_from: Optional[torch.Tensor] = None) -> torch.Tensor:
+    """Cross-entropy of the cosine-softmax classifier (Gate 9b option 3), float32.
+
+    Args:
+        cos: ``[N, K + 1]`` cosines (last column = background).
+        rows: ``[N]`` int64 target column of each anchor.
+        allowed: ``[N, K + 1]`` bool; columns that are False get ``-inf`` (classes not available in
+            the anchor's sample, as the softmax head masks them). Anchors whose target is not
+            allowed are skipped.
+        scale: logits are ``scale * cos``.
+        zero_from: a tensor added as ``0 * sum`` (DDP: keeps e.g. the prototypes in the graph).
+
+    Returns the mean over anchors; with no anchor, 0 with a gradient path."""
+    zero = 0.0 * cos.float().sum()
+    if zero_from is not None:
+        zero = zero + 0.0 * zero_from.float().sum()
+    if cos.shape[0] == 0:
+        return zero
+    rows = rows.to(cos.device).long()
+    allowed = allowed.to(cos.device).bool()
+    ok = allowed[torch.arange(len(rows), device=cos.device), rows]
+    if not bool(ok.any()):
+        return zero
+    logits = (float(scale) * cos.float()).masked_fill(~allowed, float("-inf"))[ok]
+    return F.cross_entropy(logits, rows[ok]) + zero
 
 
 # --------------------------------------------------------------------------------------

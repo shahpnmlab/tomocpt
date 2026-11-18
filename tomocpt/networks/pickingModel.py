@@ -106,6 +106,7 @@ class BasePickingModel(BaseModel):
         if self.softmax_scope() not in SOFTMAX_SCOPES:
             raise ValueError(f"train.particles.softmax_scope must be one of {SOFTMAX_SCOPES}, got {self.softmax_scope()!r}")
         self.contrastive_head = None
+        self.prototype_classifier = None
         self._build_discriminative()
         self.offset_head = None
         self._build_offset_head()
@@ -128,27 +129,61 @@ class BasePickingModel(BaseModel):
             return w
         return w * max(0, int(step)) / n
 
+    def embed_ce_weight(self) -> float:
+        """``train.discriminative.embed_ce_weight`` (Gate 9b option 3; 0 = off)."""
+        return float(self._disc("embed_ce_weight", 0.0) or 0.0)
+
+    def embed_ce_weight_at(self, step: int) -> float:
+        """The embedding-CE weight at global step ``step``: follows the contrastive ramp
+        (``contrastive_warmup_steps``; 0 = constant), since it trains the same embedding."""
+        w = self.embed_ce_weight()
+        n = int(self._disc("contrastive_warmup_steps", 0) or 0)
+        if n <= 0 or step >= n:
+            return w
+        return w * max(0, int(step)) / n
+
+    def prototype_head(self) -> bool:
+        """``train.discriminative.prototype_head`` (Gate 9b option 2)."""
+        return bool(self._disc("prototype_head", False))
+
+    def _prototype_residual_on(self) -> bool:
+        clf = getattr(self, "prototype_classifier", None)
+        return clf is not None and clf.alpha is not None
+
     def value_loss(self) -> str:
         v = self._disc("value_loss", "huber")
         return str(getattr(v, "value", v))
 
     def _build_discriminative(self):
-        """Create the contrastive head and memory bank when ``contrastive_weight > 0`` (only then:
-        invariant 5). The head is a 1x1x1 projection of the ``decoder2`` output."""
+        """Create the projection head when ``contrastive_weight > 0``, ``embed_ce_weight > 0`` or
+        ``prototype_head`` (only then: invariant 5); the memory bank only with ``contrastive_weight > 0``;
+        the cosine prototypes (Gate 9b) with ``embed_ce_weight > 0`` or ``prototype_head``.
+        The head is a 1x1x1 projection of the ``decoder2`` output."""
         if self.value_loss() not in ("huber", "focal"):
             raise ValueError(f"train.discriminative.value_loss must be 'huber' or 'focal', got {self.value_loss()!r}")
-        if self.contrastive_weight() <= 0:
+        supcon = self.contrastive_weight() > 0
+        prototypes = self.embed_ce_weight() > 0 or self.prototype_head()
+        if not (supcon or prototypes):
             return
         if not self.is_pipeline_v2():
-            raise ValueError("train.discriminative.contrastive_weight > 0 needs data pipeline v2")
+            what = "contrastive_weight > 0" if supcon else "embed_ce_weight > 0 / prototype_head"
+            raise ValueError(f"train.discriminative.{what} needs data pipeline v2")
         from tomocpt.networks.ssl.heads import DenseProjectionHead
-        from tomocpt.training.discriminative import ContrastiveMemoryBank
+        from tomocpt.training.discriminative import ContrastiveMemoryBank, PrototypeClassifier
 
         fs = self.model.out.conv.conv.in_channels  # decoder2 output channels = feature_size (CLAUDE.md 1.4)
         dim = int(self._disc("embed_dim", 64))
         self.contrastive_head = DenseProjectionHead(fs, dim)
-        self.contrastive_bank = ContrastiveMemoryBank(len(self.class_table()), int(self._disc("bank_size", 1024)), dim,
-                                                      max_age=int(self._disc("bank_max_age", 0) or 0))
+        if supcon:
+            self.contrastive_bank = ContrastiveMemoryBank(len(self.class_table()), int(self._disc("bank_size", 1024)),
+                                                          dim, max_age=int(self._disc("bank_max_age", 0) or 0))
+        if prototypes:
+            self._proto_channels = [c for c, f in enumerate(self._is_filament()) if not f]
+            if not self._proto_channels:
+                raise ValueError("train.discriminative.embed_ce_weight / prototype_head need particle classes")
+            self.prototype_classifier = PrototypeClassifier(
+                len(self._proto_channels), dim, scale=float(self._disc("prototype_scale", 10.0)),
+                residual=self.prototype_head())
 
     # ------------------------------------------------------------------ Gate 4f
     def _particles(self, name, default):
@@ -176,14 +211,34 @@ class BasePickingModel(BaseModel):
         nn.init.zeros_(last.bias)
         self.offset_head = nn.Sequential(nn.Conv3d(fs, 16, kernel_size=3, padding=1), nn.GELU(), last)
 
-    def _forward_all(self, x, apix=None):
-        """``(logits, decoder2, decoder1)`` in one network pass."""
+    def _forward_embed(self, x, apix=None, with_decoder1=False, embed=True):
+        """``(logits, decoder2, decoder1 or None, embedding map or None)`` in one network pass.
+
+        The embedding map is the projection head on ``decoder2`` (float32), computed when the head
+        exists and ``embed`` or the prototype residual is on. With ``prototype_head`` (Gate 9b) the
+        particle logits get the prototype residual (the logits are then float32)."""
         x = x[0] if isinstance(x, (tuple, list)) else x
         if apix is None or not self.scale_conditioning():
-            out = self.model.forward_features(x, with_decoder1=True)
+            out = self.model.forward_features(x, with_decoder1=with_decoder1)
         else:
-            out = self.model.forward_features(x, apix=apix, with_decoder1=True)
-        return out[0], out[2], out[3]
+            out = self.model.forward_features(x, apix=apix, with_decoder1=with_decoder1)
+        logits, dec2 = out[0], out[2]
+        dec1 = out[3] if with_decoder1 else None
+        emb_map = None
+        residual = self._prototype_residual_on()
+        if self.contrastive_head is not None and (embed or residual):
+            with torch.autocast(device_type=dec2.device.type, enabled=False):
+                emb_map = self.contrastive_head(dec2.float())  # [B, E, d, h, w]
+                if residual:
+                    r = self.prototype_classifier.residual(emb_map, self._proto_channels, logits.shape[1],
+                                                           logits.shape[2:])
+                    logits = logits.float() + r
+        return logits, dec2, dec1, emb_map
+
+    def _forward_all(self, x, apix=None):
+        """``(logits, decoder2, decoder1)`` in one network pass."""
+        logits, dec2, dec1, _ = self._forward_embed(x, apix=apix, with_decoder1=True, embed=False)
+        return logits, dec2, dec1
 
     def _offset_term(self, offsets, y, batch):
         from tomocpt.training.offsets import offset_loss, offset_targets
@@ -211,12 +266,8 @@ class BasePickingModel(BaseModel):
 
     def _forward_features(self, x, apix=None):
         """``(logits, decoder2 features)``; logits as ``forward``."""
-        x = x[0] if isinstance(x, (tuple, list)) else x
-        if apix is None or not self.scale_conditioning():
-            out = self.model.forward_features(x)
-        else:
-            out = self.model.forward_features(x, apix=apix)
-        return out[0], out[2]
+        logits, dec2, _, _ = self._forward_embed(x, apix=apix, embed=False)
+        return logits, dec2
 
     def contrastive_loss(self, features, y_pred, batch, update_bank: bool = True):
         """Supervised dense contrastive loss (Gate 7, option a) on the ``decoder2`` features.
@@ -224,12 +275,28 @@ class BasePickingModel(BaseModel):
         Anchors from the batch's dense target, hard negatives ranked by ``y_pred`` (detached), mask
         negatives from ``batch["negative_mask"]``; SupCon against the batch and the memory bank,
         in float32. The head is always in the graph (DDP)."""
-        from tomocpt.training.discriminative import sample_anchors, sample_hard_negatives, supcon_loss
-
-        target = batch["target_data"]
-        target = target.data if hasattr(target, "data") and not torch.is_tensor(target) else target
         with torch.autocast(device_type=features.device.type, enabled=False):
             emb_map = self.contrastive_head(features.float())  # [B, E, d, h, w]
+        terms = self.discriminative_terms(emb_map, y_pred, batch, update_bank=update_bank, embed_ce=False)
+        return terms["contrastive"], terms["n_anchors"]
+
+    def discriminative_terms(self, emb_map, y_pred, batch, update_bank: bool = True, embed_ce=None):
+        """The embedding losses of one batch from one anchor draw: ``dict(contrastive=SupCon or None,
+        embed_ce=Gate 9b embedding CE or None, n_anchors)``.
+
+        Anchors from the batch's dense target, hard negatives ranked by ``y_pred`` (detached), mask
+        negatives from ``batch["negative_mask"]``. SupCon (when ``contrastive_weight > 0``) against
+        the batch and the memory bank; the embedding CE (when ``embed_ce_weight > 0``, or ``embed_ce``)
+        over the particle prototypes and background, masked by ``class_available``. Float32; the
+        embedding map (and the prototypes) are always in the graph (DDP)."""
+        from tomocpt.training.discriminative import sample_anchors, sample_hard_negatives, supcon_loss
+
+        supcon = self.contrastive_weight() > 0
+        use_ce = (self.embed_ce_weight() > 0) if embed_ce is None else bool(embed_ce)
+        use_ce = use_ce and self.prototype_classifier is not None
+        target = batch["target_data"]
+        target = target.data if hasattr(target, "data") and not torch.is_tensor(target) else target
+        with torch.autocast(device_type=emb_map.device.type, enabled=False):
             a_idx, a_lab = sample_anchors(
                 target, batch["class_available"], batch["class_d_vox"], self._is_filament(),
                 min_target=float(self._disc("anchor_min_target", 0.5)),
@@ -247,12 +314,36 @@ class BasePickingModel(BaseModel):
                                  device=emb_map.device)
             fz = (idx[:, 1:].float() * scale).floor().long()
             emb = emb_map[idx[:, 0], :, fz[:, 0], fz[:, 1], fz[:, 2]]  # [N, E]
-            bank_e, bank_l = self.contrastive_bank.get(step=self.global_step)
-            loss = supcon_loss(emb, labels, bank_e, bank_l, float(self._disc("temperature", 0.1)))
-            loss = loss + 0.0 * emb_map.sum()
-            if update_bank and len(emb):
+            out = dict(contrastive=None, embed_ce=None, n_anchors=int((labels >= 0).sum()))
+            if supcon:
+                bank_e, bank_l = self.contrastive_bank.get(step=self.global_step)
+                loss = supcon_loss(emb, labels, bank_e, bank_l, float(self._disc("temperature", 0.1)))
+                out["contrastive"] = loss + 0.0 * emb_map.sum()
+            if use_ce:
+                out["embed_ce"] = self._embed_ce(emb, labels, idx, batch) + 0.0 * emb_map.sum()
+            if supcon and update_bank and len(emb):
                 self.contrastive_bank.push(nn.functional.normalize(emb.detach(), dim=1), labels, step=self.global_step)
-        return loss, int((labels >= 0).sum())
+        return out
+
+    def _embed_ce(self, emb, labels, idx, batch):
+        """Gate 9b option 3: cosine-softmax CE of the anchors over the particle prototypes and the
+        background prototype. Particle anchors -> their class row, negatives (label -1) -> background,
+        filament anchors dropped; classes unavailable in the anchor's sample are masked (-inf)."""
+        from tomocpt.training.discriminative import prototype_ce_loss
+
+        clf = self.prototype_classifier
+        dev = emb.device
+        C = len(self._is_filament())
+        P = len(self._proto_channels)
+        row_of = torch.full((C,), -1, dtype=torch.long, device=dev)
+        row_of[torch.as_tensor(self._proto_channels, dtype=torch.long, device=dev)] = torch.arange(P, device=dev)
+        labels = labels.to(dev)
+        rows = torch.where(labels < 0, torch.full_like(labels, P), row_of[labels.clamp(min=0)])
+        keep = rows >= 0
+        avail = torch.as_tensor(batch["class_available"]).to(dev).bool().view(-1, C)[idx[:, 0].to(dev)]
+        allowed = torch.cat([avail[:, self._proto_channels], torch.ones_like(avail[:, :1])], dim=1)
+        cos = clf.cosine(emb[keep])
+        return prototype_ce_loss(cos, rows[keep], allowed[keep], clf.scale, zero_from=clf.prototypes)
 
     def class_head(self) -> str:
         """``train.particles.class_head`` of this model's (checkpoint) config; ``sigmoid`` if absent."""
@@ -326,6 +417,8 @@ class BasePickingModel(BaseModel):
             network ignores it (its output does not depend on the voxel size).
         :return: logits ``[B, C, D, H, W]``
         """
+        if self._prototype_residual_on():
+            return self._forward_embed(x, apix=apix, embed=False)[0]
         if apix is None or not self.scale_conditioning():
             out = super().forward(x)
         else:
@@ -391,12 +484,12 @@ class BasePickingModel(BaseModel):
     def training_step(self, batch, batch_idx):
         x, y = self.resolve_batch(batch)
         y_raw = y
-        contrastive = self.contrastive_head is not None and self._is_v2_batch(batch)
+        contrastive = self.contrastive_head is not None and self._is_v2_batch(batch) and (
+            self.contrastive_weight() > 0 or self.embed_ce_weight() > 0)
         offsets = self.offset_head is not None and self._is_v2_batch(batch)
-        if offsets:
-            logits, features, dec1 = self._forward_all(x, apix=self._batch_apix(batch))
-        elif contrastive:
-            logits, features = self._forward_features(x, apix=self._batch_apix(batch))
+        if offsets or contrastive:
+            logits, features, dec1, emb_map = self._forward_embed(x, apix=self._batch_apix(batch),
+                                                                  with_decoder1=offsets, embed=contrastive)
         else:
             logits = self(x, apix=self._batch_apix(batch))
         y_pred, y = self._probabilities(logits, y, batch)
@@ -405,10 +498,17 @@ class BasePickingModel(BaseModel):
         else:
             loss = self.loss(y_pred, y)
         if contrastive:
-            loss_c, n_anchors = self.contrastive_loss(features, y_pred, batch)
-            loss = loss + self.contrastive_weight_at(self.global_step) * loss_c
-            self.log("loss_contrastive", loss_c.detach(), on_step=False, on_epoch=True, sync_dist=True,
-                     batch_size=x.shape[0])
+            terms = self.discriminative_terms(emb_map, y_pred, batch)
+            if terms["contrastive"] is not None:
+                loss_c = terms["contrastive"]
+                loss = loss + self.contrastive_weight_at(self.global_step) * loss_c
+                self.log("loss_contrastive", loss_c.detach(), on_step=False, on_epoch=True, sync_dist=True,
+                         batch_size=x.shape[0])
+            if terms["embed_ce"] is not None:
+                loss_e = terms["embed_ce"]
+                loss = loss + self.embed_ce_weight_at(self.global_step) * loss_e
+                self.log("loss_embed_ce", loss_e.detach(), on_step=False, on_epoch=True, sync_dist=True,
+                         batch_size=x.shape[0])
         if offsets:
             loss_o = self._offset_term(self.offset_head(dec1), y_raw, batch)
             loss = loss + self.offset_weight() * loss_o

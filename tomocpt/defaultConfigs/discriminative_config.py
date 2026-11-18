@@ -44,3 +44,15 @@ class DiscriminativeConfig:
     ] = "huber"
     focal_alpha: Annotated[float, typer.Option(help="Exponent gamma of |y - p| in the soft focal penalty")] = 2.0
     focal_beta: Annotated[float, typer.Option(help="Unused (beta of the CenterNet focal loss, kept for config compatibility)")] = 4.0
+    # Gate 9b: the class head uses the contrastive embedding (09b_AGENT_EMBED_HEAD.md)
+    embed_ce_weight: Annotated[
+        float, typer.Option(help="Weight of the cosine-softmax cross-entropy on the projection embedding at the "
+                                 "contrastive anchors, over the particle classes and background (0 = off)")
+    ] = 0.0
+    prototype_head: Annotated[
+        bool, typer.Option(help="Particle logits get a residual alpha * s * (cos(e, p_k) - cos(e, p_bg)) from the "
+                                "projection embedding (alpha learned, starts at 0)")
+    ] = False
+    prototype_scale: Annotated[
+        float, typer.Option(help="Scale s of the cosine prototype logits (embedding CE and prototype head)")
+    ] = 10.0
