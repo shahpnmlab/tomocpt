@@ -194,6 +194,10 @@ Filaments are less tested than particles (Gate 6 passed on synthetic data plus a
 - [x] Gate 9 recipe options (17 Nov 2026, v2-feat/boss-recipe, spec `.claude/agents/09_AGENT_BOSS_RECIPE.md`,
   tests `tests/gate9/`): `train.lr_warmup_steps`, `train.discriminative.contrastive_warmup_steps`,
   `train.discriminative.bank_max_age`, `train.repeat_factor_max`; all off by default. Open: values for the run.
+- [ ] Gate 9b prototype (18 Nov 2026, v2-feat/embed-head, spec `.claude/agents/09b_AGENT_EMBED_HEAD.md`,
+  tests `tests/gate9b/`): embedding CE (`train.discriminative.embed_ce_weight`, option 3) and prototype
+  residual head (`prototype_head`, option 2), both off. Open: run `experiments/run_embed_head_ablation.sh`
+  (4 arms, fine-tunes from the softmax_scope `all` checkpoint) and decide.
 
 ## 7. Schedule-free optimiser
 - Moved into item 3b.3 (human decision 4 Nov 2026).

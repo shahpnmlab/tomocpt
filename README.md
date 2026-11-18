@@ -401,6 +401,18 @@ tomocpt train --config_file my_config.yaml lr_warmup_steps=2000 repeat_factor_ma
 - `train.repeat_factor_max`: upper limit of the per-class repeat factor with
   `chunk_sampling: repeat_factor`. The training log lists the largest factors at data setup.
 
+Two prototype options make the class head use the contrastive embedding (pipeline v2, off by
+default; spec `.claude/agents/09b_AGENT_EMBED_HEAD.md`):
+- `train.discriminative.embed_ce_weight`: a cosine-softmax cross-entropy over the particle classes
+  and background on the projection embedding, at the contrastive anchors (unavailable classes
+  masked). It follows `contrastive_warmup_steps`.
+- `train.discriminative.prototype_head: true`: particle logits get `alpha * s * (cos(e, p_k) -
+  cos(e, p_bg))` from the embedding (upsampled from the `decoder2` grid); `alpha` starts at 0, so a
+  fine-tune starts from the old output. It runs in `predict` too.
+- `train.discriminative.prototype_scale` (10): the scale `s`. Both options share the prototypes and
+  work without the contrastive loss. A fine-tune from a contrastive picker now keeps its projection
+  head (and its memory bank and prototypes when the class table is the same).
+
 ### Benchmarks
 
 `benchmarks/synthetic_multisize.py` (phantoms from 80 to 500 A, two levels) and
@@ -490,6 +502,8 @@ or alignment mismatch.
 - Opt-in training options for large class tables: `train.lr_warmup_steps`,
   `train.discriminative.contrastive_warmup_steps`, `train.discriminative.bank_max_age`,
   `train.repeat_factor_max` (see "Training options for many classes").
+- Prototype options (opt-in): `train.discriminative.embed_ce_weight`, `prototype_head`,
+  `prototype_scale`. `fine_tune_from` a contrastive picker copies its projection head.
 
 ## 0.7.1
 - Self-supervised training (`train.mode = selfSupervised`) works again. It had been broken
