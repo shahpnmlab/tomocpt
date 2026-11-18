@@ -382,6 +382,25 @@ Masks whose filaments touch or cross (DS-10490) merge under skeleton tracing. `s
 such masks with oriented templates instead and writes one IMOD model per mask, for `prepData.filament_coords`
 (`benchmarks/filaments.py --centerlines`).
 
+### Training options for many classes
+
+Four opt-in settings for large class tables (e.g. 130+ species with the softmax head and the
+contrastive loss); all are off by default and are set in the YAML or as `key=value` overrides:
+
+```bash
+tomocpt train --config_file my_config.yaml lr_warmup_steps=2000 repeat_factor_max=8 \
+    discriminative.contrastive_warmup_steps=2000 discriminative.bank_max_age=5000
+```
+- `train.lr_warmup_steps`: linear LR warmup over the first N optimizer steps, for every parameter
+  group (fine-tuning groups keep their ratios; `lr_scaling` applies first). `ReduceLROnPlateau`
+  works as before; a resumed run continues the warmup from its step. Not with `schedule_free`.
+- `train.discriminative.contrastive_warmup_steps`: the contrastive weight ramps from 0 to
+  `contrastive_weight` over N steps (the memory bank keeps filling meanwhile).
+- `train.discriminative.bank_max_age`: memory-bank entries older than N steps are not used (rare
+  classes otherwise keep embeddings from many epochs ago).
+- `train.repeat_factor_max`: upper limit of the per-class repeat factor with
+  `chunk_sampling: repeat_factor`. The training log lists the largest factors at data setup.
+
 ### Benchmarks
 
 `benchmarks/synthetic_multisize.py` (phantoms from 80 to 500 A, two levels) and
@@ -468,6 +487,9 @@ or alignment mismatch.
   rechunk data prepared earlier to use them.
 - k-fold CV in one command (`train.cv_all_folds`): shared chunk pool, one process per fold,
   saved validation / OOF picks, CV report with localisation and peak profiles.
+- Opt-in training options for large class tables: `train.lr_warmup_steps`,
+  `train.discriminative.contrastive_warmup_steps`, `train.discriminative.bank_max_age`,
+  `train.repeat_factor_max` (see "Training options for many classes").
 
 ## 0.7.1
 - Self-supervised training (`train.mode = selfSupervised`) works again. It had been broken
