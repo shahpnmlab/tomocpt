@@ -119,6 +119,15 @@ class BasePickingModel(BaseModel):
     def contrastive_weight(self) -> float:
         return float(self._disc("contrastive_weight", 0.0) or 0.0)
 
+    def contrastive_weight_at(self, step: int) -> float:
+        """The contrastive weight at global step ``step``: ramps linearly from 0 to
+        ``contrastive_weight`` over ``contrastive_warmup_steps`` steps (Gate 9; 0 = constant)."""
+        w = self.contrastive_weight()
+        n = int(self._disc("contrastive_warmup_steps", 0) or 0)
+        if n <= 0 or step >= n:
+            return w
+        return w * max(0, int(step)) / n
+
     def value_loss(self) -> str:
         v = self._disc("value_loss", "huber")
         return str(getattr(v, "value", v))
@@ -138,7 +147,8 @@ class BasePickingModel(BaseModel):
         fs = self.model.out.conv.conv.in_channels  # decoder2 output channels = feature_size (CLAUDE.md 1.4)
         dim = int(self._disc("embed_dim", 64))
         self.contrastive_head = DenseProjectionHead(fs, dim)
-        self.contrastive_bank = ContrastiveMemoryBank(len(self.class_table()), int(self._disc("bank_size", 1024)), dim)
+        self.contrastive_bank = ContrastiveMemoryBank(len(self.class_table()), int(self._disc("bank_size", 1024)), dim,
+                                                      max_age=int(self._disc("bank_max_age", 0) or 0))
 
     # ------------------------------------------------------------------ Gate 4f
     def _particles(self, name, default):
@@ -237,11 +247,11 @@ class BasePickingModel(BaseModel):
                                  device=emb_map.device)
             fz = (idx[:, 1:].float() * scale).floor().long()
             emb = emb_map[idx[:, 0], :, fz[:, 0], fz[:, 1], fz[:, 2]]  # [N, E]
-            bank_e, bank_l = self.contrastive_bank.get()
+            bank_e, bank_l = self.contrastive_bank.get(step=self.global_step)
             loss = supcon_loss(emb, labels, bank_e, bank_l, float(self._disc("temperature", 0.1)))
             loss = loss + 0.0 * emb_map.sum()
             if update_bank and len(emb):
-                self.contrastive_bank.push(nn.functional.normalize(emb.detach(), dim=1), labels)
+                self.contrastive_bank.push(nn.functional.normalize(emb.detach(), dim=1), labels, step=self.global_step)
         return loss, int((labels >= 0).sum())
 
     def class_head(self) -> str:
@@ -396,7 +406,7 @@ class BasePickingModel(BaseModel):
             loss = self.loss(y_pred, y)
         if contrastive:
             loss_c, n_anchors = self.contrastive_loss(features, y_pred, batch)
-            loss = loss + self.contrastive_weight() * loss_c
+            loss = loss + self.contrastive_weight_at(self.global_step) * loss_c
             self.log("loss_contrastive", loss_c.detach(), on_step=False, on_epoch=True, sync_dist=True,
                      batch_size=x.shape[0])
         if offsets:

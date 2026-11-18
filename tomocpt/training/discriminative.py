@@ -232,18 +232,38 @@ class ContrastiveMemoryBank(nn.Module):
     """Per-class FIFO queues of detached embeddings plus one queue for negatives (label -1).
 
     The queues are registered buffers (saved in ``state_dict``, never parameters). Under DDP each
-    rank keeps its own queues."""
+    rank keeps its own queues.
 
-    def __init__(self, n_classes: int, size: int, dim: int):
+    Gate 9: ``max_age > 0`` (``train.discriminative.bank_max_age``) makes ``get(step)`` skip entries
+    pushed more than ``max_age`` steps before ``step``. The step of each entry is kept in the
+    non-persistent buffer ``stamp`` (-1 = unknown), so the ``state_dict`` keys stay ``queue``,
+    ``ptr``, ``count`` and old and new checkpoints load strictly either way. Entries restored from
+    a checkpoint have unknown age; the first ``get`` / ``push`` with a step stamps them with that
+    step, so they are used for at most ``max_age`` more steps."""
+
+    def __init__(self, n_classes: int, size: int, dim: int, max_age: int = 0):
         super().__init__()
         self.n_classes, self.size, self.dim = int(n_classes), int(size), int(dim)
+        self.max_age = max(0, int(max_age or 0))
         self.register_buffer("queue", torch.zeros(self.n_classes + 1, self.size, self.dim))
         self.register_buffer("ptr", torch.zeros(self.n_classes + 1, dtype=torch.long))
         self.register_buffer("count", torch.zeros(self.n_classes + 1, dtype=torch.long))
+        self.register_buffer("stamp", torch.full((self.n_classes + 1, self.size), -1, dtype=torch.long),
+                             persistent=False)
 
     @torch.no_grad()
-    def push(self, embeddings: torch.Tensor, labels: torch.Tensor) -> None:
-        """Append ``embeddings [N, dim]`` to the queues of their ``labels [N]`` (-1 = negatives)."""
+    def _stamp_unknown(self, step: Optional[int]) -> None:
+        """Give the stored entries of unknown age (restored from a checkpoint) the step ``step``."""
+        if step is None:
+            return
+        filled = torch.arange(self.size, device=self.stamp.device)[None, :] < self.count[:, None]
+        self.stamp[filled & (self.stamp < 0)] = int(step)
+
+    @torch.no_grad()
+    def push(self, embeddings: torch.Tensor, labels: torch.Tensor, step: Optional[int] = None) -> None:
+        """Append ``embeddings [N, dim]`` to the queues of their ``labels [N]`` (-1 = negatives),
+        stamped with the global step ``step`` (None = unknown)."""
+        self._stamp_unknown(step)
         e = embeddings.detach().to(self.queue.device, self.queue.dtype)
         labels = labels.to(self.queue.device).long()
         for q in labels.unique().tolist():
@@ -254,16 +274,27 @@ class ContrastiveMemoryBank(nn.Module):
             k = len(v)
             pos = (int(self.ptr[row]) + torch.arange(k, device=v.device)) % self.size
             self.queue[row, pos] = v
+            self.stamp[row, pos] = -1 if step is None else int(step)
             self.ptr[row] = (int(self.ptr[row]) + k) % self.size
             self.count[row] = min(self.size, int(self.count[row]) + k)
 
-    def get(self) -> Tuple[torch.Tensor, torch.Tensor]:
-        """Every stored entry: ``(embeddings [K, dim], labels [K])`` (detached)."""
+    def get(self, step: Optional[int] = None) -> Tuple[torch.Tensor, torch.Tensor]:
+        """Every stored entry: ``(embeddings [K, dim], labels [K])`` (detached). With ``max_age > 0``
+        and a ``step``, only the entries at most ``max_age`` steps old."""
+        aged = self.max_age > 0 and step is not None
+        if aged:
+            self._stamp_unknown(step)
         es, ls = [], []
         for row in range(self.n_classes + 1):
             k = int(self.count[row])
             if k:
-                es.append(self.queue[row, :k])
+                e = self.queue[row, :k]
+                if aged:
+                    e = e[(int(step) - self.stamp[row, :k]) <= self.max_age]
+                    k = len(e)
+                    if not k:
+                        continue
+                es.append(e)
                 ls.append(torch.full((k,), -1 if row == self.n_classes else row, dtype=torch.long,
                                      device=self.queue.device))
         if not es:

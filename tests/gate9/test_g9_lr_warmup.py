@@ -139,3 +139,35 @@ def test_G9_C2_resume_continues_from_global_step(tmp_path, monkeypatch):
 def test_G9_C2_schedule_free_raises(tmp_path):
     with pytest.raises(ValueError, match="lr_warmup_steps"):
         _model_conf(tmp_path, lr_warmup_steps=N, schedule_free=True)
+
+
+def test_G9_C2_lightning_fit_scales_the_step(tmp_path):
+    """Through Lightning's LightningOptimizer: inside the step (``on_before_optimizer_step`` runs
+    after the closure, inside ``optimizer.step``) the lr is warmed up; after the step it is nominal."""
+    import pytorch_lightning as pl
+
+    class Probe(pl.Callback):
+        def __init__(self):
+            self.lrs, self.inside = [], []
+
+        def on_before_optimizer_step(self, trainer, pl_module, optimizer):
+            self.inside.append([g["lr"] for g in trainer.optimizers[0].param_groups])
+
+        def on_train_batch_end(self, trainer, pl_module, outputs, batch, batch_idx):
+            self.lrs.append([g["lr"] for g in trainer.optimizers[0].param_groups])
+
+    D_VOX = (12.0, 18.0)
+    cfg = _cfg(tmp_path, lr_warmup_steps=N)
+    with applied_main_config(cfg):
+        from tomocpt.networks.pickingModel import BasePickingModel
+
+        torch.manual_seed(0)
+        model = BasePickingModel(lr=4e-4)
+        probe = Probe()
+        items = [G3.v2_item(s, D_VOX) for s in range(4)]
+        trainer = G3.cpu_trainer(tmp_path / "tb", callbacks=[probe], max_steps=2, limit_train_batches=2,
+                                 limit_val_batches=1)
+        trainer.fit(model, datamodule=G3.datamodule(items))
+    assert trainer.global_step == 2
+    assert probe.lrs == [[4e-4], [4e-4]]
+    assert probe.inside == [[pytest.approx(4e-4 / N)], [pytest.approx(4e-4 * 2 / N)]]

@@ -77,6 +77,7 @@ def train(config: DictConfig = None):
             scale_cfg=config.scale,
             chunk_sampling=config.chunk_sampling,
             repeat_factor_threshold=config.repeat_factor_threshold,
+            repeat_factor_max=config.repeat_factor_max,  # Gate 9
             pin_memory=bool(config.use_gpus),  # Gate 8b: always with a GPU
             **extra,
         )

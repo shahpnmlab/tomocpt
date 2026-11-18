@@ -84,7 +84,7 @@ def _fit_one_step(tmp_path, **disc):
         model = BasePickingModel(lr=4e-4)
         probe = _GradProbe()
         items = [G3.v2_item(s, D_VOX) for s in range(2)]
-        trainer = G3.cpu_trainer(tmp_path / "tb", callbacks=[probe], max_steps=1, limit_val_batches=0)
+        trainer = G3.cpu_trainer(tmp_path / "tb", callbacks=[probe], max_steps=1, limit_val_batches=1)
         trainer.fit(model, datamodule=G3.datamodule(items))
     return probe
 

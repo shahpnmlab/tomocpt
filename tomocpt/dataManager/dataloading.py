@@ -430,14 +430,50 @@ class VolumeDatsetIO(Dataset):
                    band_max=float(scale_cfg.band_max_vox), chunk_size=chunk_size)
 
 
-def repeat_factor_weights(chunk_classes: Sequence[Set[int]], n_classes: int, threshold: float) -> np.ndarray:
+def repeat_factors(frequencies, threshold: float, max_factor: Optional[float] = None) -> np.ndarray:
+    """Per-class repeat factors ``r_c = max(1, sqrt(t / f_c))`` (1 where ``f_c = 0``), capped at
+    ``max_factor`` (``train.repeat_factor_max``, Gate 9; None = no cap, a cap below 1 is an error)."""
+    f = np.asarray(frequencies, dtype=np.float64)
+    r_c = np.ones(f.shape, dtype=np.float64)
+    nz = f > 0
+    r_c[nz] = np.maximum(1.0, np.sqrt(float(threshold) / f[nz]))
+    if max_factor is not None:
+        if float(max_factor) < 1.0:
+            raise ValueError(f"train.repeat_factor_max must be >= 1 (or None), got {max_factor}")
+        r_c = np.minimum(r_c, float(max_factor))
+    return r_c
+
+
+def log_repeat_factors(names: Sequence[str], frequencies, factors, threshold: float,
+                       max_factor: Optional[float] = None, top: int = 10) -> List[str]:
+    """Logs (rank zero) and returns a summary of the per-class repeat factors: threshold, cap,
+    the number of capped classes and the ``top`` largest factors with their class frequency."""
+    f = np.asarray(frequencies, dtype=np.float64)
+    r = np.asarray(factors, dtype=np.float64)
+    n_up = int((r > 1.0).sum())
+    head = f"Repeat-factor sampling: t = {float(threshold):g}, {n_up}/{len(r)} classes oversampled"
+    if max_factor is not None:
+        uncapped = repeat_factors(f, threshold)
+        head += f", cap r_c <= {float(max_factor):g} ({int((uncapped > float(max_factor)).sum())} capped)"
+    lines = [head]
+    order = sorted(range(len(r)), key=lambda c: (-r[c], c))[:int(top)]
+    for c in order:
+        lines.append(f"Repeat-factor sampling:   {names[c]}: f_c = {f[c]:.4f}, r_c = {r[c]:.3f}")
+    for line in lines:
+        rank_zero_info(line)
+    return lines
+
+
+def repeat_factor_weights(chunk_classes: Sequence[Set[int]], n_classes: int, threshold: float,
+                          max_factor: Optional[float] = None) -> np.ndarray:
     """Repeat factors (Gupta et al., LVIS 2019) per chunk.
 
-    ``f_c`` = fraction of chunks whose class set contains ``c``; ``r_c = max(1, sqrt(t / f_c))``;
-    chunk factor ``r = max(r_c)`` over its classes, 1 for a chunk without classes.
+    ``f_c`` = fraction of chunks whose class set contains ``c``; ``r_c = max(1, sqrt(t / f_c))``
+    (capped at ``max_factor``, Gate 9); chunk factor ``r = max(r_c)`` over its classes, 1 for a
+    chunk without classes.
     """
     n = len(chunk_classes)
-    r_c = _class_repeat_factors(chunk_classes, n_classes, threshold)[1]
+    r_c = _class_repeat_factors(chunk_classes, n_classes, threshold, max_factor)[1]
     r = np.ones(n, dtype=np.float64)
     for i, classes in enumerate(chunk_classes):
         vals = [r_c[c] for c in classes if 0 <= int(c) < n_classes]
@@ -446,7 +482,8 @@ def repeat_factor_weights(chunk_classes: Sequence[Set[int]], n_classes: int, thr
     return r
 
 
-def _class_repeat_factors(chunk_classes: Sequence[Set[int]], n_classes: int, threshold: float):
+def _class_repeat_factors(chunk_classes: Sequence[Set[int]], n_classes: int, threshold: float,
+                          max_factor: Optional[float] = None):
     n = max(1, len(chunk_classes))
     counts = np.zeros(int(n_classes), dtype=np.float64)
     for classes in chunk_classes:
@@ -454,10 +491,7 @@ def _class_repeat_factors(chunk_classes: Sequence[Set[int]], n_classes: int, thr
             if 0 <= int(c) < n_classes:
                 counts[int(c)] += 1
     f = counts / n
-    r_c = np.ones(int(n_classes), dtype=np.float64)
-    nz = f > 0
-    r_c[nz] = np.maximum(1.0, np.sqrt(float(threshold) / f[nz]))
-    return f, r_c
+    return f, repeat_factors(f, threshold, max_factor)
 
 
 class Data(pl.LightningDataModule):
@@ -466,15 +500,17 @@ class Data(pl.LightningDataModule):
                  pipeline_version: int = 1, scale_cfg: Optional[ScaleConfig] = None,
                  chunk_sampling: ChunkSampling = ChunkSampling.uniform,
                  repeat_factor_threshold: float = 0.1, seed: Optional[int] = None,
-                 pin_memory: bool = False, prefetch_factor: Optional[int] = None):
+                 pin_memory: bool = False, prefetch_factor: Optional[int] = None,
+                 repeat_factor_max: Optional[float] = None):
         """``pipeline_version``, ``scale_cfg``, ``chunk_sampling`` and
         ``repeat_factor_threshold`` come from the train config (``training/run.py``); their
         defaults give the legacy (pipeline v1) data module. ``seed`` seeds the repeat-factor
-        sampler (default: ``torch.initial_seed()``). ``pin_memory`` / ``prefetch_factor`` (Gate 8b) go to
+        sampler (default: ``torch.initial_seed()``); ``repeat_factor_max`` caps its per-class factors (Gate 9). ``pin_memory`` / ``prefetch_factor`` (Gate 8b) go to
         the ``DataLoader``s; the factor only with workers (torch rejects it without)."""
         super().__init__()
         self.save_hyperparameters(ignore=["augmentation", "pipeline_version", "scale_cfg", "chunk_sampling",
-                                          "repeat_factor_threshold", "seed", "pin_memory", "prefetch_factor"])
+                                          "repeat_factor_threshold", "seed", "pin_memory", "prefetch_factor",
+                                          "repeat_factor_max"])
         self.pin_memory = bool(pin_memory)
         self.prefetch_factor = None if prefetch_factor is None else int(prefetch_factor)
         self.augmentation = augmentation
@@ -482,6 +518,10 @@ class Data(pl.LightningDataModule):
         self.scale_cfg = scale_cfg if scale_cfg is not None else ScaleConfig()
         self.chunk_sampling = ChunkSampling(_enum_value(chunk_sampling))
         self.repeat_factor_threshold = float(repeat_factor_threshold)
+        self.repeat_factor_max = None if repeat_factor_max is None else float(repeat_factor_max)
+        if self.repeat_factor_max is not None and self.repeat_factor_max < 1.0:
+            raise ValueError(f"train.repeat_factor_max must be >= 1 (or None), got {repeat_factor_max}")
+        self.class_frequencies = self.class_repeat_factors = None
         self.seed = seed
         self.class_table = None
         self.sample_weights = None
@@ -531,11 +571,12 @@ class Data(pl.LightningDataModule):
         self.dataset_val = VolumeDatsetIO.get_dataset_v2(self._get_split_dir('val'), False, **common)
         if self.chunk_sampling == ChunkSampling.repeat_factor:
             sets = self.dataset_training.chunk_classes()
-            f, r_c = _class_repeat_factors(sets, n_classes, self.repeat_factor_threshold)
-            self.sample_weights = repeat_factor_weights(sets, n_classes, self.repeat_factor_threshold)
-            for c, row in enumerate(self.class_table):
-                rank_zero_info(f"Repeat-factor sampling: class {row.name} (#{row.number}) "
-                               f"f_c = {f[c]:.4f}, r_c = {r_c[c]:.3f}")
+            f, r_c = _class_repeat_factors(sets, n_classes, self.repeat_factor_threshold, self.repeat_factor_max)
+            self.sample_weights = repeat_factor_weights(sets, n_classes, self.repeat_factor_threshold,
+                                                        self.repeat_factor_max)
+            self.class_frequencies, self.class_repeat_factors = f, r_c
+            log_repeat_factors([f"{row.name} (#{row.number})" for row in self.class_table], f, r_c,
+                               self.repeat_factor_threshold, self.repeat_factor_max)
             rank_zero_info(f"Repeat-factor sampling: {len(sets)} training chunks, "
                            f"{int(round(self.sample_weights.sum()))} draws per epoch")
 
