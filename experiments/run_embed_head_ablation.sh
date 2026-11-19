@@ -5,7 +5,8 @@
 #   a_supcon01    contrastive_weight 0.1 (as the source run)
 #   b_supcon05    contrastive_weight 0.5
 #   c_embed_ce    contrastive_weight 0.1 + embed_ce_weight 0.1 (option 3)
-#   d_prototype   contrastive_weight 0.1 + prototype_head true (option 2)
+#   d_ce_proto    contrastive_weight 0.1 + embed_ce_weight 0.1 + prototype_head true (options 3 + 2; option 2 alone
+#                 barely trains its prototypes while alpha ~ 0, human decision 19 Nov 2026)
 # Budget: 6 epochs x 1024 steps (16384 crops / batch 16) = 6144 optimizer steps per arm. Early stopping and the
 # LR plateau are pushed out (patience 100), so every arm runs exactly 6144 steps. Measured on the source run:
 # 3.7 s/step + ~4 min validation per epoch -> ~6.8 h training + ~0.5 h evaluation per arm, ~29 h for all four
@@ -31,8 +32,8 @@ declare -A ARM
 ARM[a_supcon01]="--train_set discriminative.contrastive_weight=0.1"
 ARM[b_supcon05]="--train_set discriminative.contrastive_weight=0.5"
 ARM[c_embed_ce]="--train_set discriminative.contrastive_weight=0.1 --train_set discriminative.embed_ce_weight=0.1"
-ARM[d_prototype]="--train_set discriminative.contrastive_weight=0.1 --train_set discriminative.prototype_head=true"
-ARMS=("$@"); [ ${#ARMS[@]} -gt 0 ] || ARMS=(a_supcon01 b_supcon05 c_embed_ce d_prototype)
+ARM[d_ce_proto]="--train_set discriminative.contrastive_weight=0.1 --train_set discriminative.embed_ce_weight=0.1 --train_set discriminative.prototype_head=true"
+ARMS=("$@"); [ ${#ARMS[@]} -gt 0 ] || ARMS=(a_supcon01 b_supcon05 c_embed_ce d_ce_proto)
 
 echo "start $(date '+%F %T') code $(git rev-parse --short HEAD) source $CKPT" | tee -a "$O/run.log"
 for arm in "${ARMS[@]}"; do
