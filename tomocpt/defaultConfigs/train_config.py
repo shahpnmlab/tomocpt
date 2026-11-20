@@ -283,6 +283,11 @@ class TrainConfig:
     repeat_factor_threshold: Annotated[
         float, typer.Option(help="Threshold t of repeat-factor sampling: r_c = max(1, sqrt(t / f_c))")
     ] = 0.1
+    # Gate 9 (not CLI flags)
+    repeat_factor_max: Annotated[
+        Optional[float], typer.Option(help="Upper limit of the per-class repeat factor r_c (chunk_sampling="
+                                           "repeat_factor); None = no cap")
+    ] = None
     sampling: Annotated[
         str, typer.Option(help="Where training crops come from: 'auto' (on_the_fly for pipeline v2 picking "
                                "unless chunks_dir already holds chunk files; chunks otherwise), 'chunks' (chunk "
@@ -342,6 +347,11 @@ class TrainConfig:
     lr_reference_batch: Annotated[
         int, typer.Option(help="Effective batch size at which lr was tuned (lr_scaling reference)")
     ] = 16
+    # Gate 9: not a CLI flag
+    lr_warmup_steps: Annotated[
+        int, typer.Option(help="Linear LR warmup over the first N optimizer steps (every param group, "
+                               "after lr_scaling); 0 = off. Not with schedule_free")
+    ] = 0
     snapshot_chunks: Annotated[
         int, typer.Option(help="Pipeline v2: chunks per class and split (train, val) predicted after every validation "
                                "and saved as volumes in <log_dir>/snapshots for scripts/train_dashboard.py; 0 = off")

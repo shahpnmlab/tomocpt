@@ -21,6 +21,15 @@ from tomocpt.logger import get_logger
 
 logging = get_logger()
 
+
+def linear_warmup_factor(step: int, n: int) -> float:
+    """LR factor of linear warmup (Gate 9): ``min(1, (step + 1) / n)``; 1 when ``n <= 0``."""
+    n = int(n)
+    if n <= 0:
+        return 1.0
+    return min(1.0, (int(step) + 1) / n)
+
+
 class BaseModel(pl.LightningModule):
 
     def set_default_args(self, lr: float | None):
@@ -169,8 +178,36 @@ class BaseModel(pl.LightningModule):
             param_groups = checkpoint["optimizer_states"][0]["param_groups"]
             self._saved_optimizer_group_sizes = [len(g["params"]) for g in param_groups]
 
+    # ------------------------------------------------------------------------------------
+    # Linear LR warmup (Gate 9, train.lr_warmup_steps)
+    # ------------------------------------------------------------------------------------
+
+    def lr_warmup_steps(self) -> int:
+        return int(safe_getattr(self.hparams.config.train, "lr_warmup_steps", 0) or 0)
+
+    def optimizer_step(self, epoch, batch_idx, optimizer, optimizer_closure=None):
+        """Scales every param group's lr by the warmup factor for this one step and restores the
+        nominal values afterwards, so ReduceLROnPlateau and SWA only ever see (and change) the
+        nominal lr; the factor depends only on ``global_step``, so a resume continues the warmup."""
+        scale = linear_warmup_factor(self.global_step, self.lr_warmup_steps())
+        if scale >= 1.0:
+            return super().optimizer_step(epoch, batch_idx, optimizer, optimizer_closure)
+        groups = getattr(optimizer, "optimizer", optimizer).param_groups  # LightningOptimizer wraps it
+        nominal = [g["lr"] for g in groups]
+        for g, lr in zip(groups, nominal):
+            g["lr"] = lr * scale
+        try:
+            return super().optimizer_step(epoch, batch_idx, optimizer, optimizer_closure)
+        finally:
+            for g, lr in zip(groups, nominal):
+                g["lr"] = lr
+
     def configure_optimizers(self):
         train_config = self.hparams.config.train
+        if self.lr_warmup_steps() > 0 and self._schedule_free():
+            raise ValueError("train.lr_warmup_steps cannot be combined with train.schedule_free: RAdamScheduleFree "
+                             "warms up by itself (RAdam rectification) and has no warmup_steps; set "
+                             "train.lr_warmup_steps=0")
         if self.global_rank == 0:
             logging.info(f"optimizer:{train_config.optimizer}")
 

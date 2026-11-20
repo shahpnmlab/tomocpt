@@ -19,6 +19,14 @@ class DiscriminativeConfig:
         float, typer.Option(help="Minimum target value of an anchor (peak voxel of a particle / filament ridge)")
     ] = 0.5
     bank_size: Annotated[int, typer.Option(help="Memory bank size per class (and for negatives)")] = 1024
+    # Gate 9
+    contrastive_warmup_steps: Annotated[
+        int, typer.Option(help="The contrastive weight ramps linearly from 0 to contrastive_weight over the first "
+                               "N optimizer steps (0 = constant weight)")
+    ] = 0
+    bank_max_age: Annotated[
+        int, typer.Option(help="Memory-bank entries older than this many steps are not used (0 = no limit)")
+    ] = 0
     hard_negatives: Annotated[int, typer.Option(help="Hard negatives per batch, ranked by the model's score")] = 64
     hard_negative_min_score: Annotated[float, typer.Option(help="Lowest score of a hard negative")] = 0.3
     hard_negative_max_score: Annotated[

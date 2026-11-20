@@ -23,7 +23,7 @@ import torch
 from torch.utils.data import DataLoader, DistributedSampler
 from pytorch_lightning.utilities.rank_zero import rank_zero_info
 
-from tomocpt.dataManager.dataloading import Data, VolumeDatsetIO, _enum_value
+from tomocpt.dataManager.dataloading import Data, VolumeDatsetIO, _enum_value, log_repeat_factors, repeat_factors
 from tomocpt.dataManager.tomostore import TomogramStore, read_tomogram_store
 from tomocpt.defaultConfigs.otf_config import OnTheFlyConfig
 from tomocpt.defaultConfigs.train_config import ChunkSampling
@@ -82,10 +82,13 @@ def _candidate_info(store: TomogramStore, corners: np.ndarray, n_classes: int):
 
 def candidate_weights(stores: Sequence[TomogramStore], n_classes: int,
                       chunk_sampling: str = "uniform", repeat_factor_threshold: float = 0.1,
-                      negative_mask_weight: float = 0.0) -> Tuple[np.ndarray, np.ndarray, float]:
+                      negative_mask_weight: float = 0.0, repeat_factor_max: Optional[float] = None,
+                      class_factors: Optional[dict] = None) -> Tuple[np.ndarray, np.ndarray, float]:
     """``(index [K, 4] int64 (store, z, y, x), weights [K] float64, expected)`` over every
     candidate of ``stores``. ``expected`` = the expected number of chunks (or repeat-factor draws)
-    of the grid baseline, ``sum(keep * r)`` (the negative-mask weight not included)."""
+    of the grid baseline, ``sum(keep * r)`` (the negative-mask weight not included).
+    ``repeat_factor_max`` caps the per-class factors (Gate 9); with ``chunk_sampling=repeat_factor``
+    a dict passed as ``class_factors`` receives ``f`` (class frequencies) and ``r`` (factors)."""
     idx_parts, keeps, rs, negs, all_classes = [], [], [], [], []
     for si, st in enumerate(stores):
         corners = crop_candidates(st)
@@ -106,9 +109,9 @@ def candidate_weights(stores: Sequence[TomogramStore], n_classes: int,
             for c in cl:
                 member[i, c] = True
         f = (keep[:, None] * member).sum(0) / max(float(keep.sum()), 1e-12)
-        r_c = np.ones(int(n_classes))
-        nz = f > 0
-        r_c[nz] = np.maximum(1.0, np.sqrt(float(repeat_factor_threshold) / f[nz]))
+        r_c = repeat_factors(f, repeat_factor_threshold, repeat_factor_max)
+        if class_factors is not None:
+            class_factors.update(f=f, r=r_c)
         r = np.where(member.any(1), np.max(np.where(member, r_c[None, :], 0.0), axis=1), 1.0)
     w = keep * r
     expected = float(w.sum())
@@ -266,11 +269,12 @@ class OnTheFlyData(Data):
     def __init__(self, data_dir, return_labels, batch_size, workers_for_data, augmentation=None,
                  pipeline_version: int = 2, scale_cfg=None, chunk_sampling=ChunkSampling.uniform,
                  repeat_factor_threshold: float = 0.1, seed: Optional[int] = None, pin_memory: bool = False,
-                 prefetch_factor: Optional[int] = None, otf: Optional[OnTheFlyConfig] = None):
+                 prefetch_factor: Optional[int] = None, otf: Optional[OnTheFlyConfig] = None,
+                 repeat_factor_max: Optional[float] = None):
         super().__init__(data_dir, return_labels, batch_size, workers_for_data, augmentation=augmentation,
                          pipeline_version=pipeline_version, scale_cfg=scale_cfg, chunk_sampling=chunk_sampling,
                          repeat_factor_threshold=repeat_factor_threshold, seed=seed, pin_memory=pin_memory,
-                         prefetch_factor=prefetch_factor)
+                         prefetch_factor=prefetch_factor, repeat_factor_max=repeat_factor_max)
         self.otf = otf if otf is not None else OnTheFlyConfig()
         if self.pipeline_version != 2:
             raise ValueError("train.sampling=on_the_fly needs train.data_pipeline_version=2")
@@ -318,10 +322,16 @@ class OnTheFlyData(Data):
         kw = dict(n_classes=n_classes, chunk_sampling=_enum_value(self.chunk_sampling),
                   repeat_factor_threshold=self.repeat_factor_threshold,
                   negative_mask_weight=float(self.otf.negative_mask_weight))
-        self.train_index, self.train_weights, expected = candidate_weights(self.stores_train, **kw)
+        factors = {}
+        self.train_index, self.train_weights, expected = candidate_weights(
+            self.stores_train, repeat_factor_max=self.repeat_factor_max, class_factors=factors, **kw)
+        if factors:
+            self.class_frequencies, self.class_repeat_factors = factors["f"], factors["r"]
+            log_repeat_factors([f"{row.name} (#{row.number})" for row in self.class_table], factors["f"],
+                               factors["r"], self.repeat_factor_threshold, self.repeat_factor_max)
         self.samples_per_epoch = int(self.otf.samples_per_epoch or max(1, round(expected)))
         if self.stores_val:
-            v_index, v_weights, v_expected = candidate_weights(self.stores_val, **kw)
+            v_index, v_weights, v_expected = candidate_weights(self.stores_val, repeat_factor_max=self.repeat_factor_max, **kw)
             kw_unif = dict(kw, chunk_sampling="uniform", negative_mask_weight=0.0)
             n_val = int(self.otf.val_samples or max(1, round(candidate_weights(self.stores_val, **kw_unif)[2])))
             self.val_crops = draw_crops(v_index, v_weights, n_val, int(self.otf.val_seed), epoch="val", rank=0,

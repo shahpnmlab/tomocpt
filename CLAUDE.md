@@ -397,6 +397,10 @@ time (gradient checkpointing). Pipeline v1 uses Section 1.5 unchanged.
 | `train.otf` | `OnTheFlyConfig` (`defaultConfigs/otf_config.py`; `augment_device` = `auto`: cuda when training on a GPU with every enabled augmentation ported) | 8c |
 | `train.augmentation.fourier_auto` | bool = `True` (pipeline-v2 picking sets `use_mw_aug` and `use_fourier_aug`; no effect on v1 or SSL) | 8 follow-up |
 | `train.lr_scaling`, `train.lr_reference_batch` | `none` \| `sqrt` \| `linear` = `none`, int = `16` (lr and EMA decay follow the effective batch) | 8g |
+| `train.lr_warmup_steps` | int = `0` (off; linear LR warmup over N optimizer steps, all groups; not with `schedule_free`) | 9 |
+| `train.discriminative.contrastive_warmup_steps` | int = `0` (off; contrastive weight ramps 0 → `contrastive_weight` over N steps) | 9 |
+| `train.discriminative.bank_max_age` | int = `0` (no limit; memory-bank entries older than N steps unused; stamps not in `state_dict`) | 9 |
+| `train.repeat_factor_max` | Optional[float] = `None` (no cap on the per-class repeat factor `r_c`) | 9 |
 
 Field details are in each gate spec. A gate may add fields only to the files it owns.
 
@@ -427,6 +431,7 @@ Field details are in each gate spec. A gate may add fields only to the files it 
 | 6c | `06c_AGENT_FILAMENT_DRIVER.md` | Filament driver recipe, fixed split, pictures of targets and predictions; metric and tracing speed (handoff step 3, 6 Nov 2026) | `benchmarks/filaments.py`, `benchmarks/filament_views.py`, `tomocpt/dataManager/chunking.py` (fixed split), `tomocpt/defaultConfigs/train_config.py` (`val_stems`), `tomocpt/training/helpers.py` (`_prepare_data_if_needed`), `tomocpt/metrics.py`, `tomocpt/networks/pickingModel.py` (image logging only), `tomocpt/labels/filaments.py` (`_join_gaps`, junction cap), `README.md` |
 | 7 | `07_AGENT_DISCRIMINATIVE.md` | Supervised dense contrastive loss with hard negatives, focal value term; particles and filaments (human decision, 30 Oct 2026; after Gate 6) | `tomocpt/training/discriminative.py`, `tomocpt/networks/pickingModel.py`, `tomocpt/networks/swinunetr.py` (`forward_features`), `tomocpt/training/multiclass_loss.py` (value term), `tomocpt/training/helpers.py` (`_create_model` SSL head transfer), `tomocpt/defaultConfigs/{discriminative_config,train_config,prepdata_config}.py` (own fields), `tomocpt/dataManager/**` and `tomocpt/labels/**` (negative masks), `benchmarks/discriminative.py`, `experiments/run_benchmarks.sh`, `README.md` |
 | 8 | `08_AGENT_PERFORMANCE.md` | Performance (8a harness, 8b step, 8c on-the-fly crops and GPU augmentation, 8d CV, 8e.1 predict, 8g lr scaling; 8e.2 and 8f dropped). Speed-ups on by default, chosen automatically, no new CLI options (human decisions 9-14 Nov 2026) | `benchmarks/perf/**`, `tomocpt/dataManager/{otf,tomostore,gpu_augment,chunking,dataloading}.py`, `tomocpt/defaultConfigs/{otf_config,train_config}.py` (own fields), `tomocpt/training/{helpers,run,cv,snapshots,swin_memory,hparam_scaling}.py`, `tomocpt/networks/swinunetr.py` (fused attention), `tomocpt/predict/**` (8e.1), `tomocpt/labels/**` (renderers), `benchmarks/filaments.py` |
+| 9 | `09_AGENT_BOSS_RECIPE.md` | DS-10490 boss recipe: LR warmup, contrastive ramp, memory-bank age limit, repeat-factor cap; all opt-in (human request 17 Nov 2026) | `tomocpt/defaultConfigs/{train_config,discriminative_config}.py` (own fields), `tomocpt/networks/{baseModel,pickingModel}.py`, `tomocpt/training/discriminative.py` (memory bank), `tomocpt/training/run.py` (`Data(...)` argument only), `tomocpt/dataManager/{dataloading,otf}.py` (repeat factors), `README.md`, `TODO_v2.md` |
 
 Every gate also writes `.claude/reports/gate_0N_report.json`.
 Tests live in `tests/gateN/` and are written by the Test Author
