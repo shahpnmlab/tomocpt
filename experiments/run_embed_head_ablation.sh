@@ -8,7 +8,7 @@
 #   d_ce_proto    contrastive_weight 0.1 + embed_ce_weight 0.1 + prototype_head true (options 3 + 2; option 2 alone
 #                 barely trains its prototypes while alpha ~ 0, human decision 19 Nov 2026)
 # Budget: 6 epochs x 1024 steps (16384 crops / batch 16) = 6144 optimizer steps per arm. Early stopping and the
-# LR plateau are pushed out (patience 100), so every arm runs exactly 6144 steps. Measured on the source run:
+# LR plateau are pushed out (patience 1000 and 100; the plateau must be shorter), so every arm runs exactly 6144 steps. Measured on the source run:
 # 3.7 s/step + ~4 min validation per epoch -> ~6.8 h training + ~0.5 h evaluation per arm, ~29 h for all four
 # (at 3 s/step: ~5.5 h + 0.5 h, ~24 h). Option 2 adds < 1 % per step (estimate, see the 9b report).
 # Fine-tuning: differential LR (swinViT x0.01, encoder x0.1, decoder / out / heads / prototypes x1.0); the
@@ -49,7 +49,7 @@ for arm in "${ARMS[@]}"; do
     --negative_masks membrane --seed 0 \
     --train_set particles.softmax_scope=particles --train_set otf.samples_per_epoch=16384 \
     --train_set fine_tune_from=$CKPT \
-    --train_set early_stop_patience=100 --train_set lr_plateau_patience=100 \
+    --train_set early_stop_patience=1000 --train_set lr_plateau_patience=100 \
     ${ARM[$arm]} \
     --out $O/$arm > $O/$arm.log 2>&1
   echo "arm $arm exit $? $(date '+%F %T')" | tee -a "$O/run.log"
