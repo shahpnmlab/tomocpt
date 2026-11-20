@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Gate 9b ablation (spec .claude/agents/09b_AGENT_EMBED_HEAD.md): short fine-tunes from the DS-10490
-# softmax_scope `all` checkpoint (C = 134: 132 species + microtubule + actin), same data, split and recipe
+# softmax_scope `particles` checkpoint (winner of Gate 3e, human decision 20 Nov 2026) (C = 134: 132 species + microtubule + actin), same data, split and recipe
 # as benchmarks/out/softmax_scope_20261115/run.sh. Arms differ only in train.discriminative:
 #   a_supcon01    contrastive_weight 0.1 (as the source run)
 #   b_supcon05    contrastive_weight 0.5
@@ -18,7 +18,7 @@
 set -u
 R=$(cd "$(dirname "$0")/.." && pwd)
 SRC=/home/pranav/Desktop/pranav/software/tomocpt/benchmarks/out/softmax_scope_20261115
-CKPT=$SRC/all/joint/model/bench/checkpoints/weights.ckpt
+CKPT=$SRC/particles/joint/model/bench/checkpoints/weights.ckpt
 O=$R/benchmarks/out/embed_head_$(date +%Y%m%d)
 PY=/home/pranav/Desktop/pranav/software/miniconda3/envs/tomocpt/bin/python
 DATA=/home/pranav/Desktop/pranav/software/tomocpt/data/filaments
@@ -39,7 +39,7 @@ echo "start $(date '+%F %T') code $(git rev-parse --short HEAD) source $CKPT" | 
 for arm in "${ARMS[@]}"; do
   [ -n "${ARM[$arm]:-}" ] || { echo "unknown arm $arm"; exit 1; }
   mkdir -p "$O/$arm/joint"
-  [ -e "$O/$arm/joint/training_data" ] || ln -s "$SRC/all/joint/training_data" "$O/$arm/joint/training_data"
+  [ -e "$O/$arm/joint/training_data" ] || ln -s "$SRC/particles/joint/training_data" "$O/$arm/joint/training_data"
   echo "arm $arm start $(date '+%F %T')" | tee -a "$O/run.log"
   # shellcheck disable=SC2086
   $PY -W ignore benchmarks/filaments.py --data_root $DATA --centerlines $DATA/10490/centerlines \
@@ -47,7 +47,7 @@ for arm in "${ARMS[@]}"; do
     --particles_star $SRC/all_particles.star --particle_classes "$(cat $SRC/particle_classes.txt)" \
     --train_runs $TRAIN --val_runs sample_6,sample_7 --band_max_vox 37 --epochs $EPOCHS --batch_size 16 --n_cpus 8 \
     --negative_masks membrane --seed 0 \
-    --train_set particles.softmax_scope=all --train_set otf.samples_per_epoch=16384 \
+    --train_set particles.softmax_scope=particles --train_set otf.samples_per_epoch=16384 \
     --train_set fine_tune_from=$CKPT \
     --train_set early_stop_patience=100 --train_set lr_plateau_patience=100 \
     ${ARM[$arm]} \
