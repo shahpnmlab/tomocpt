@@ -212,3 +212,8 @@ Filaments are less tested than particles (Gate 6 passed on synthetic data plus a
       change after equivalence tests against the old code. Merge into `v2-dev` only at the end, with the
       human's go-ahead.
       Done 14 Nov 2026: merged into `v2-dev` (58aaff1), tag `v2-gate-8-passed`; report `.claude/reports/gate_08_report.json`.
+- [x] 8.3 (16 Nov 2026, `v2-feat/gpu-augment-ports`, not merged) GPU ports of the Fourier degradation (`torch.fft`,
+      equal to the CPU function on the same draws) and of the optional intensity transforms; `gpu_augment._UNPORTED`
+      is empty, so `augment_device=auto` picks cuda whatever is enabled. Human decision 16 Nov 2026: Fourier
+      degradation on by default for pipeline-v2 picking (`train.augmentation.fourier_auto=True`); v1, SSL and the
+      optional intensity transforms unchanged (off). Test disputes: `.claude/reports/gate_08_test_dispute.md`.

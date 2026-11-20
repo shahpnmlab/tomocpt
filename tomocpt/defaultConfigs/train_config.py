@@ -103,6 +103,12 @@ class AugmentationConfig:
     use_fourier_aug: Annotated[
         bool, typer.Option(help="Enable amplitude-spectrum randomization (simulates varied CTF/defocus/dose filtering)")
     ] = False
+    # Human decision 16 Nov 2026: on by default for pipeline v2 picking (training.helpers.
+    # resolve_fourier_augmentation sets use_mw_aug and use_fourier_aug); pipeline v1 and SSL unchanged.
+    fourier_auto: Annotated[
+        bool, typer.Option(help="Pipeline v2 picking: turn use_mw_aug and use_fourier_aug on (default). False "
+                                "keeps the two switches as set. No effect on pipeline v1 or self-supervised training")
+    ] = True
     missing_wedge_prob: Annotated[
         float, typer.Option(help="Probability of applying the missing wedge")
     ] = 0.5
