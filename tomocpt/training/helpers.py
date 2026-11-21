@@ -433,6 +433,39 @@ def _init_contrastive_head_from_ssl(model, state_dict) -> bool:
     return True
 
 
+def _init_discriminative_from_picker(model, state_dict, checkpoint_config) -> list:
+    """Gate 9b: when fine-tuning from a v2 picker, copy its projection head (``contrastive_head.*``,
+    when the shapes match) and, if the class tables are equal (numbers, names, kinds, diameters in
+    the same order), its memory bank and cosine prototypes (keys present in both with equal
+    shapes; e.g. ``alpha`` starts at 0 when the source had none). Returns the copied prefixes."""
+    from tomocpt.labels.multiclass import class_table_from_config
+
+    def rows(table):
+        return [(r.number, r.name, str(getattr(r.kind, "value", r.kind)), float(r.diameter_ang)) for r in table]
+
+    try:
+        same_table = rows(class_table_from_config(checkpoint_config.prepData)) == rows(model.class_table())
+    except Exception:
+        same_table = False
+    copied = []
+    for name, needs_same_table in (("contrastive_head", False), ("contrastive_bank", True),
+                                   ("prototype_classifier", True)):
+        module = getattr(model, name, None)
+        if module is None or (needs_same_table and not same_table):
+            continue
+        prefix = name + "."
+        src = {k[len(prefix):]: v for k, v in state_dict.items() if k.startswith(prefix)}
+        own = module.state_dict()
+        match = {k: v for k, v in src.items() if k in own and tuple(v.shape) == tuple(own[k].shape)}
+        if not match or (name != "prototype_classifier" and set(match) != set(own)):
+            continue
+        module.load_state_dict({**own, **match})
+        copied.append(name)
+    if copied:
+        logging.info(f"Fine-tuning: {', '.join(copied)} copied from the source picker.")
+    return copied
+
+
 def _create_model(config: DictConfig):
     """Factory function to create the appropriate model based on the config."""
     from tomocpt.training.hparam_scaling import config_lr
@@ -493,6 +526,8 @@ def _create_model(config: DictConfig):
             resume_from_ckpt = None
             if checkpoint_config.train.mode != TrainingModes.picking:
                 _init_contrastive_head_from_ssl(model, state_dict)
+            else:
+                _init_discriminative_from_picker(model, state_dict, checkpoint_config)
         elif checkpoint_path:
             logging.info(f"Loading model from checkpoint: {checkpoint_path}")
             try:
