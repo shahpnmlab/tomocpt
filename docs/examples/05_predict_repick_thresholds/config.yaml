@@ -1,0 +1,8 @@
+# Example 5: prediction only, with saved maps for re-picking and per-class thresholds.
+infer:
+  tomogram_dir: /path/to/tomograms
+  predictions_dir: /path/to/predictions
+  weights: /path/to/model/checkpoints/weights.ckpt   # or a fold ensemble: /path/to/model/ensemble.json
+  save_prediction_confidence_map: true  # <tomo>_<class>.mrc per class, for re-picking without inference
+  class_thresholds: "ribosome:0.4,apo-ferritin:0.35"  # overrides the calibrated thresholds of these classes
+  predictions_coord_format: relion_50

@@ -1,0 +1,21 @@
+# Example 1: one species, legacy pipeline (v1). Only settings that differ from the defaults and the
+# required ones are written; everything else keeps its default (docs/options.md).
+shared:
+  training_data_dir: /path/to/work/training_data   # written by prepare_data, read by train
+  chunks_dir: /path/to/work/chunks                 # 64^3 training chunks, written by train
+
+prepData:
+  raw_data_dir: /path/to/tomograms                 # MRC tomograms (several dirs: comma-separated)
+  coordinate_files: /path/to/coords/ribosome.star  # RELION STAR (or IMOD with coordinate_file_type: imod)
+  particle_length_ang: "300"                       # particle diameter in A
+
+train:
+  model_dir: /path/to/work/model
+  experiment_name: ribosome_v1
+  n_epochs: 100                                    # a maximum: early stopping ends the run earlier
+
+infer:
+  tomogram_dir: /path/to/new_tomograms
+  predictions_dir: /path/to/work/predictions
+  weights: /path/to/work/model/ribosome_v1/checkpoints/weights.ckpt   # the folder is printed at the end of training
+  length: 300                                      # v1 checkpoints need the diameter at prediction time

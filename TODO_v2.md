@@ -241,3 +241,12 @@ Filaments are less tested than particles (Gate 6 passed on synthetic data plus a
       is empty, so `augment_device=auto` picks cuda whatever is enabled. Human decision 16 Nov 2026: Fourier
       degradation on by default for pipeline-v2 picking (`train.augmentation.fourier_auto=True`); v1, SSL and the
       optional intensity transforms unchanged (off). Test disputes: `.claude/reports/gate_08_test_dispute.md`.
+
+## 10. Gate 10 — option levels and user documentation (human request 22 Nov 2026)
+- [x] 10.1 `tomocpt init --level basic|advanced|diagnostic`, option registry
+      (`configManager/option_levels.py`), help text on the 40 unannotated fields, `docs/options.md`
+      (generated, staleness test), `docs/tuning.md`, `docs/examples/` (6 scenarios). Branch
+      `v2-feat/config-levels`, spec `.claude/agents/10_AGENT_CONFIG_LEVELS.md`, tests `tests/gate10/`,
+      report `.claude/reports/gate_10_report.json`.
+- [ ] 10.2 Human review: the diagnostic list and the internal fields (report), and the test dispute on
+      the `cli_slim` help scan (`.claude/reports/gate_10_test_dispute.md`).

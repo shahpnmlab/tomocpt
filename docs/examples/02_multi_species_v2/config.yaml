@@ -1,0 +1,33 @@
+# Example 2: several particle species of different sizes, pipeline v2 with the softmax head
+# (the CZII 10440 setting: 6 species, 120-300 A, 10.012 A/px).
+shared:
+  training_data_dir: /path/to/work/training_data
+  chunks_dir: /path/to/work/chunks
+
+prepData:
+  raw_data_dir: /path/to/czii/tomograms
+  coordinate_files: /path/to/czii/coords/all_objects.star   # one STAR, rlnClassNumber per particle
+  particle_length_ang: "300"            # required field; the class diameters below are what v2 uses
+  multiclass: true
+  class_diameters: "1:130,2:180,3:260,4:300,5:120,6:270"
+  class_names: "1:beta-amylase,2:beta-galactosidase,3:thyroglobulin,4:ribosome,5:apo-ferritin,6:virus-like-particle"
+  label_border_policy: clip             # keep particles cut by the tomogram border as positives
+
+train:
+  model_dir: /path/to/work/model
+  experiment_name: czii_v2
+  data_pipeline_version: 2
+  n_epochs: 100                         # a maximum; the relative early stopping below ends the run
+  chunk_sampling: repeat_factor         # oversample crops with rare classes
+  early_stop_rel_delta: 0.007           # relative threshold: carries over to any loss scale
+  lr_plateau_match_early_stop: true     # LR halves (patience 5) before early stopping (patience 10)
+  weight_averaging: ema                 # legacy SWA never reaches a checkpoint under early stopping
+  particles:
+    class_head: softmax                 # classes compete per voxel: no double picks across classes
+  augmentation:
+    label_interpolation: linear         # smooth soft targets under rotation
+
+infer:
+  tomogram_dir: /path/to/new_tomograms
+  predictions_dir: /path/to/work/predictions
+  weights: /path/to/work/model/czii_v2/checkpoints/weights.ckpt
