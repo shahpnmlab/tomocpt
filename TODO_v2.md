@@ -171,7 +171,7 @@ Filaments are less tested than particles (Gate 6 passed on synthetic data plus a
       (`STEPS=ssl experiments/run_benchmarks.sh`, fresh `OUT`).
 
 ## 5. Scaling smoke test at ~130 classes
-- [ ] 5.1 (memory / step-time part moved into Gate 8a, 9 Nov 2026) Memory and step time with C≈134 (logits B×C×64³, per-class Hessian loop); softmax over
+- [x] 5.1 (memory / step-time part moved into Gate 8a, 9 Nov 2026) Memory and step time with C≈134 (logits B×C×64³, per-class Hessian loop); softmax over
       particles only vs particles+filaments; with the 3b recipe and, if adopted, the offset head and
       centroid weight.
       Smoke run 14-15 Nov 2026 (`benchmarks/out/smoke_c134_20261114`, code ba639bb): C=134 (132 DS-10490 species + MT +
@@ -187,17 +187,29 @@ Filaments are less tested than particles (Gate 6 passed on synthetic data plus a
       division in predict (29.8 -> 17.0 GB). Particles-only softmax: spec `.claude/agents/03e_AGENT_SOFTMAX_SCOPE.md`
       (approved 15 Nov 2026). Implemented on v2-feat/softmax-scope: `train.particles.softmax_scope: all | particles`
       (default `all`), tests `tests/gate3e/`. Open: DS-10490 comparison run `all` vs `particles` (spec 6).
+      Done 20 Nov 2026 (`benchmarks/out/softmax_scope_20261115/`): particle F4 tie (cross-calibrated 0.280 `particles`
+      vs 0.277 `all`), filaments train faster, 80S and GroEL better; human choice `particles` for the boss run.
+      Merged into `v2-dev` with gpu-augment-ports / boss-recipe (21 Nov 2026).
 
 ## 6. DS-10490 "final boss" (only after 3–5)
 - Prep done: points `data/filaments/10490_points/coords/`, diameters
   `experiments/configs/ds10490_species.csv`, config `experiments/configs/ds10490_train.yaml`.
 - [x] Gate 9 recipe options (17 Nov 2026, v2-feat/boss-recipe, spec `.claude/agents/09_AGENT_BOSS_RECIPE.md`,
   tests `tests/gate9/`): `train.lr_warmup_steps`, `train.discriminative.contrastive_warmup_steps`,
-  `train.discriminative.bank_max_age`, `train.repeat_factor_max`; all off by default. Open: values for the run.
-- [ ] Gate 9b prototype (18 Nov 2026, v2-feat/embed-head, spec `.claude/agents/09b_AGENT_EMBED_HEAD.md`,
+  `train.discriminative.bank_max_age`, `train.repeat_factor_max`; all off by default. Merged into `v2-dev`
+  (1c7ad8d, 21 Nov 2026). Values for the run: warmups 1024 steps, bank age 5000, repeat factor t 1.0 cap 10.
+- [x] Gate 9b prototype (18 Nov 2026, v2-feat/embed-head, spec `.claude/agents/09b_AGENT_EMBED_HEAD.md`,
   tests `tests/gate9b/`): embedding CE (`train.discriminative.embed_ce_weight`, option 3) and prototype
   residual head (`prototype_head`, option 2), both off. Open: run `experiments/run_embed_head_ablation.sh`
   (4 arms, fine-tunes from the softmax_scope `all` checkpoint) and decide.
+  Done 21 Nov 2026 (fine-tunes from the `particles` checkpoint, `benchmarks/out/embed_head_20261120/`): all arms tie
+  cross-calibrated (control 0.278, lambda 0.5 0.272, option 3 0.279, options 3+2 0.279); human choice options 3+2 on
+  for the boss run. Merged into `v2-dev` (5bc7f03).
+- [x] Warm-start fix (22 Nov 2026, v2-fix/warm-start-sampling, merged 95343c2): a fine-tune lost the run's resolved
+  `sampling` and Fourier switches to the source checkpoint's (slow G4_C9 failed); test `tests/gate8/test_g8_warm_start_sampling.py`.
+- [ ] Boss run (launched 22 Nov 2026 02:56, code 95343c2, `experiments/run_boss_ds10490.sh`, out
+  `benchmarks/out/boss_20261122/run/`; split `benchmarks/out/boss_20261122/split.json`: 239 train, 20 val, 40 test).
+  Open: finish training; predict + score the 40 test runs with validation-calibrated thresholds.
 - [ ] Stop writing dense label MRCs in `prepare_data` for pipeline v2 (human decision 22 Nov 2026): the boss run's
   `training_data/dataset_1_class_all/class_all/labels/` took 50 GB for 259 tomograms, while on-the-fly training
   draws targets from `points.npy` / `filaments.npy` in the tomogram store. Write them only when asked for, as a
@@ -224,7 +236,7 @@ Filaments are less tested than particles (Gate 6 passed on synthetic data plus a
       change after equivalence tests against the old code. Merge into `v2-dev` only at the end, with the
       human's go-ahead.
       Done 14 Nov 2026: merged into `v2-dev` (58aaff1), tag `v2-gate-8-passed`; report `.claude/reports/gate_08_report.json`.
-- [x] 8.3 (16 Nov 2026, `v2-feat/gpu-augment-ports`, not merged) GPU ports of the Fourier degradation (`torch.fft`,
+- [x] 8.3 (16 Nov 2026, `v2-feat/gpu-augment-ports`, merged into `v2-dev` 15e8f5e, 21 Nov 2026) GPU ports of the Fourier degradation (`torch.fft`,
       equal to the CPU function on the same draws) and of the optional intensity transforms; `gpu_augment._UNPORTED`
       is empty, so `augment_device=auto` picks cuda whatever is enabled. Human decision 16 Nov 2026: Fourier
       degradation on by default for pipeline-v2 picking (`train.augmentation.fourier_auto=True`); v1, SSL and the
