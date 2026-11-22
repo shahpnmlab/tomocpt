@@ -198,6 +198,11 @@ Filaments are less tested than particles (Gate 6 passed on synthetic data plus a
   tests `tests/gate9b/`): embedding CE (`train.discriminative.embed_ce_weight`, option 3) and prototype
   residual head (`prototype_head`, option 2), both off. Open: run `experiments/run_embed_head_ablation.sh`
   (4 arms, fine-tunes from the softmax_scope `all` checkpoint) and decide.
+- [ ] Stop writing dense label MRCs in `prepare_data` for pipeline v2 (human decision 22 Nov 2026): the boss run's
+  `training_data/dataset_1_class_all/class_all/labels/` took 50 GB for 259 tomograms, while on-the-fly training
+  draws targets from `points.npy` / `filaments.npy` in the tomogram store. Write them only when asked for, as a
+  diagnostic option (opt-in config field). First confirm no v2 path (store build, calibration, views, scoring)
+  reads them; pipeline v1 still needs its label MRCs (invariant 1).
 
 ## 7. Schedule-free optimiser
 - Moved into item 3b.3 (human decision 4 Nov 2026).
