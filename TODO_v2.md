@@ -207,6 +207,12 @@ Filaments are less tested than particles (Gate 6 passed on synthetic data plus a
   for the boss run. Merged into `v2-dev` (5bc7f03).
 - [x] Warm-start fix (22 Nov 2026, v2-fix/warm-start-sampling, merged 95343c2): a fine-tune lost the run's resolved
   `sampling` and Fourier switches to the source checkpoint's (slow G4_C9 failed); test `tests/gate8/test_g8_warm_start_sampling.py`.
+- [x] Tomogram name-match fix (22 Nov 2026, v2-fix/tomo-name-match): `labels/helpers.py` found tomogram files with the
+  substring glob `*{name}*`, so `sample_25`'s coordinates went to `sample_257.mrc` and 27 tomograms whose name is a
+  prefix of another (DS-10490 sample_1..27) lost their particle labels (no wrong labels: they kept only the filament
+  classes annotated). Earlier DS-10490 runs lost sample_1 and sample_2 (2 of 20 train; both arms alike). Now
+  `find_tomogram_file`: exact stem, else a unique whole-token match, ambiguity raises. Test `tests/gate2/test_fix_tomo_name_match.py`.
+  First boss run aborted at epoch 4 (`benchmarks/out/boss_20261122/run_aborted_namebug/`).
 - [ ] Boss run (launched 22 Nov 2026 02:56, code 95343c2, `experiments/run_boss_ds10490.sh`, out
   `benchmarks/out/boss_20261122/run/`; split `benchmarks/out/boss_20261122/split.json`: 239 train, 20 val, 40 test).
   Open: finish training; predict + score the 40 test runs with validation-calibrated thresholds.

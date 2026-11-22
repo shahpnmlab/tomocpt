@@ -1,6 +1,5 @@
 from pathlib import Path
 from typing import Union, Dict, Optional
-from itertools import chain
 
 from tomocpt.constants import RAW_LABEL_FNAME_TEMPLATE
 from tqdm import tqdm
@@ -263,7 +262,9 @@ def create_particle_masks(vol_coord_pairs: Dict[str, np.ndarray],
     """
     precision = np.float32
     one_tomo_partial = sorted(list(vol_coord_pairs.keys()))[0]
-    one_tomo_fname = list(Path(tomogram_path).glob(f"{one_tomo_partial}*.mrc"))[0]
+    one_tomo_fname = find_tomogram_file(tomogram_path, one_tomo_partial, (".mrc",))
+    if one_tomo_fname is None:
+        raise FileNotFoundError(f"No .mrc file found for tomogram: {one_tomo_partial}")
 
     with mrcfile.open(one_tomo_fname) as mrc:
         tomo_dim = mrc.data.shape
@@ -321,8 +322,46 @@ def _legacy_int(pairs: Dict[str, np.ndarray]) -> Dict[str, np.ndarray]:
     return {k: np.asarray(v).astype(int) for k, v in pairs.items()}
 
 
+TOMOGRAM_EXTENSIONS = (".mrc", ".rec")
+
+
+def _name_in_stem(name: str, stem: str) -> bool:
+    """``name`` occurs in ``stem`` as a whole token: the characters next to it (if any) are not
+    letters or digits. ``sample_25`` is in ``TS_sample_25_rec`` but not in ``sample_257``."""
+    start = stem.find(name)
+    while start != -1:
+        end = start + len(name)
+        if (start == 0 or not stem[start - 1].isalnum()) and (end == len(stem) or not stem[end].isalnum()):
+            return True
+        start = stem.find(name, start + 1)
+    return False
+
+
+def find_tomogram_file(tomo_path: Union[str, Path], tomo_name: str,
+                       extensions=TOMOGRAM_EXTENSIONS) -> Optional[Path]:
+    """The tomogram file of ``tomo_name`` in ``tomo_path``: the file whose stem equals the name, else
+    the one file whose stem contains the name as a whole token (e.g. a prefix or ``_rec`` suffix).
+    ``None`` when there is no such file; ``ValueError`` when several files match, never a guess.
+
+    Replaces the substring glob ``*{name}*`` (fix 22 Nov 2026), which picked whichever of
+    ``sample_25.mrc`` and ``sample_257.mrc`` the filesystem listed first."""
+    tomo_path = Path(tomo_path)
+    exts = tuple(e.lower() for e in extensions)
+    files = sorted(f for f in tomo_path.iterdir() if f.is_file() and f.suffix.lower() in exts) \
+        if tomo_path.is_dir() else []
+    for ext in exts:  # extension order decides between sample.mrc and sample.rec, as before
+        exact = [f for f in files if f.stem == tomo_name and f.suffix.lower() == ext]
+        if exact:
+            return exact[0]
+    tokens = [f for f in files if _name_in_stem(tomo_name, f.stem)]
+    if len(tokens) > 1:
+        raise ValueError(f"Several tomogram files match '{tomo_name}' in {tomo_path}: "
+                         f"{[f.name for f in tokens]}; rename them or give exact names.")
+    return tokens[0] if tokens else None
+
+
 def _tomo_file_for(tomo_path: Path, tomo_name: str) -> Optional[Path]:
-    return next(chain(tomo_path.glob(f"*{tomo_name}*.mrc"), tomo_path.glob(f"*{tomo_name}*.rec")), None)
+    return find_tomogram_file(tomo_path, tomo_name)
 
 
 def _v2_tracking_columns(vol_coord_pairs, tomo_path: Path, output_dir: Path, class_numbers,
@@ -530,10 +569,7 @@ def create_tracking_dataframe(vol_coord_pairs, tomo_path: Path, output_dir: Path
 
     for tomo_name, coordinates in vol_coord_pairs.items():
         # Search for both .mrc and .rec files
-        tomo_file = next(chain(
-            tomo_path.glob(f"*{tomo_name}*.mrc"),
-            tomo_path.glob(f"*{tomo_name}*.rec")
-        ), None)
+        tomo_file = find_tomogram_file(tomo_path, tomo_name)
 
         if tomo_file is None:
             raise FileNotFoundError(f"No .mrc or .rec file found for tomogram: {tomo_name}")
