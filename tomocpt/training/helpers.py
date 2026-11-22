@@ -207,6 +207,42 @@ def resolve_sampling(config) -> str:
     return resolved
 
 
+def _fourier_auto_applies(config) -> bool:
+    """True when ``resolve_fourier_augmentation`` turns the Fourier degradation on for ``config``."""
+    aug = safe_getattr(config, "augmentation", None)
+    return (aug is not None and bool(safe_getattr(aug, "fourier_auto", True))
+            and config.mode == TrainingModes.picking
+            and int(getattr(config, "data_pipeline_version", 1) or 1) == 2)
+
+
+def _run_resolved_settings(config) -> dict:
+    """The train settings this run resolved in place (``resolve_sampling``,
+    ``resolve_fourier_augmentation``), as ``{dotted path: value}``.
+
+    Loading a checkpoint (``BaseModel.__init__``) copies the checkpoint's train settings into
+    the global ``mainConfig.train``, except the ones changed in the YAML or on the command line.
+    A resolved ``auto`` is not such a change, so a warm start would otherwise replace it with
+    the source checkpoint's value (e.g. ``sampling=chunks`` or the Fourier switches off) after
+    the data was prepared for the resolved one."""
+    settings = {}
+    sampling = _sampling_value(config)
+    if sampling != "auto":
+        settings["sampling"] = sampling
+    if _fourier_auto_applies(config):
+        settings["augmentation.use_mw_aug"] = True
+        settings["augmentation.use_fourier_aug"] = True
+    return settings
+
+
+def _apply_settings(train_config, settings: dict) -> None:
+    for path, value in settings.items():
+        *parents, name = path.split(".")
+        obj = train_config
+        for part in parents:
+            obj = getattr(obj, part)
+        setattr(obj, name, value)
+
+
 def resolve_fourier_augmentation(config) -> bool:
     """Turn the Fourier degradation on for pipeline v2 picking (human decision 16 Nov 2026), in place.
 
@@ -219,8 +255,7 @@ def resolve_fourier_augmentation(config) -> bool:
     aug = safe_getattr(config, "augmentation", None)
     if aug is None:
         return False
-    if (bool(safe_getattr(aug, "fourier_auto", True)) and config.mode == TrainingModes.picking
-            and int(getattr(config, "data_pipeline_version", 1) or 1) == 2):
+    if _fourier_auto_applies(config):
         if not (aug.use_mw_aug and aug.use_fourier_aug):
             logging.info("augmentation.fourier_auto: pipeline v2 picking -> use_mw_aug=True, use_fourier_aug=True")
         aug.use_mw_aug = True
@@ -467,7 +502,24 @@ def _init_discriminative_from_picker(model, state_dict, checkpoint_config) -> li
 
 
 def _create_model(config: DictConfig):
-    """Factory function to create the appropriate model based on the config."""
+    """Factory function to create the appropriate model based on the config.
+
+    The settings this run resolved in place before (``train.sampling``, the Fourier switches of
+    ``augmentation.fourier_auto``) survive a checkpoint load: they are written back into
+    ``config`` and into the model's saved config, so the data setup that follows and the new
+    checkpoint use the run's values, not the source checkpoint's."""
+    settings = _run_resolved_settings(config)
+    model, resume_from_ckpt, checkpointer = _build_model(config)
+    if settings:
+        _apply_settings(config, settings)
+        hparams_config = getattr(getattr(model, "hparams", None), "config", None)
+        model_train = getattr(hparams_config, "train", None)
+        if model_train is not None and model_train is not config:
+            _apply_settings(model_train, settings)
+    return model, resume_from_ckpt, checkpointer
+
+
+def _build_model(config: DictConfig):
     from tomocpt.training.hparam_scaling import config_lr
 
     lr = config_lr(config)  # Gate 8g: = optimizer.lr unless lr_scaling is on
