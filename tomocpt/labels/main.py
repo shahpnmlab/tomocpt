@@ -32,7 +32,11 @@ def create_tracking_dataframe(vol_coord_pairs, tomo_path: Path, output_dir: Path
     tracking_data = []
 
     for tomo_name, coordinates in vol_coord_pairs.items():
-        tomo_file = next(tomo_path.glob(f"*{tomo_name}*"))
+        from tomocpt.labels.helpers import find_tomogram_file
+
+        tomo_file = find_tomogram_file(tomo_path, tomo_name)
+        if tomo_file is None:
+            raise FileNotFoundError(f"No tomogram file found for {tomo_name} in {tomo_path}")
         label_file = output_dir / f"{tomo_name}_labels.mrc"
 
         tracking_data.append({
