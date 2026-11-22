@@ -135,8 +135,8 @@ class PrepdataConfig:
         ),
     ] = None
 
-    USE_CUDA_FOR_DATA: bool = True
-    ALPHA_FOR_DROPPING_EMPTY_CUBES: float = 1
+    USE_CUDA_FOR_DATA: Annotated[bool, typer.Option(help='Unused (kept for config compatibility)')] = True
+    ALPHA_FOR_DROPPING_EMPTY_CUBES: Annotated[float, typer.Option(help='Chunk pipeline: an empty training chunk is dropped with probability clip(1 - alpha * f1/f0, 0, 1), f1/f0 = labelled / unlabelled voxels of the tomogram; larger alpha keeps more empty chunks')] = 1
 
     def parse_lists(self):
         """Convert comma-separated strings to lists"""

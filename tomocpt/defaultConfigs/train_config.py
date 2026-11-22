@@ -21,10 +21,10 @@ class TrainingModes(str, Enum):
 
 @dataclass
 class OptimizerConfig:
-    _target_: str = "torch.optim.RAdam"
+    _target_: Annotated[str, typer.Option(help='Optimizer class (import path); RAdam is the tested one, and schedule_free needs it')] = "torch.optim.RAdam"
     lr: Annotated[float, typer.Option(help="Learning rate")] = 4e-4
-    weight_decay: float = 1e-8
-    betas: Tuple[float, float] = (0.9, 0.999)
+    weight_decay: Annotated[float, typer.Option(help='Weight decay of the optimizer')] = 1e-8
+    betas: Annotated[Tuple[float, float], typer.Option(help='Adam-family betas (momentum, second moment)')] = (0.9, 0.999)
     # decoupled_weight_decay=True
 
 
@@ -401,16 +401,16 @@ class TrainConfig:
         typer.Option(help="Softmax temperature applied to teacher/student logits during distillation")
     ] = 2.0
 
-    OVERFIT_N_BATCHES: Optional[int] = None
-    N_GPUS: int = 4
-    N_CPUS_IF_NO_GPU: int = 32
-    USE_CUDA_FOR_DATA: bool = True
+    OVERFIT_N_BATCHES: Annotated[Optional[int], typer.Option(help='Debugging: train and validate on this many batches only (Lightning overfit_batches); None = off')] = None
+    N_GPUS: Annotated[int, typer.Option(help='Unused (every visible GPU is used; kept for config compatibility)')] = 4
+    N_CPUS_IF_NO_GPU: Annotated[int, typer.Option(help='CPU training (use_gpus=false or no GPU): number of CPU processes Lightning trains on')] = 32
+    USE_CUDA_FOR_DATA: Annotated[bool, typer.Option(help='Unused (kept for config compatibility)')] = True
 
-    FACTOR_REDUCE_LR_PLATEAU_N_EPOCHS: float = 0.5
-    COSINE_LR_SCHEDULE_N_EPOCHS: int = 6
-    PATIENT_REDUCE_LR_PLATEAU_N_EPOCHS: int = 6
+    FACTOR_REDUCE_LR_PLATEAU_N_EPOCHS: Annotated[float, typer.Option(help='ReduceLROnPlateau: factor the learning rate is multiplied by on a plateau of val_loss_smooth')] = 0.5
+    COSINE_LR_SCHEDULE_N_EPOCHS: Annotated[int, typer.Option(help="weight_averaging=swa: annealing epochs of Lightning's StochasticWeightAveraging")] = 6
+    PATIENT_REDUCE_LR_PLATEAU_N_EPOCHS: Annotated[int, typer.Option(help='Legacy ReduceLROnPlateau: patience is 1.5 x this many epochs and cooldown this // 4 (with lr_plateau_match_early_stop only the cooldown)')] = 6
 
-    CHUNK_SIZE: int = 64
-    CHUNK_STRIDE: int = 32
-    RANDOM_FRACTION_TO_SAMPLE_TRAIN: float = -1.0  # Train on all the chunks
-    SEED_FOR_TRAIN_VAL_SPLIT: int = 42
+    CHUNK_SIZE: Annotated[int, typer.Option(help='Edge of the training cubes and of the network input in voxels (64 throughout tomocpt)')] = 64
+    CHUNK_STRIDE: Annotated[int, typer.Option(help='Stride of the chunk grid in voxels (overlap = CHUNK_SIZE - CHUNK_STRIDE); also sets the expected number of on-the-fly crops per epoch')] = 32
+    RANDOM_FRACTION_TO_SAMPLE_TRAIN: Annotated[float, typer.Option(help='Unused (kept for config compatibility)')] = -1.0  # Train on all the chunks
+    SEED_FOR_TRAIN_VAL_SPLIT: Annotated[int, typer.Option(help='Seed of the random train/validation split by tomogram (and of the k-fold assignment)')] = 42
