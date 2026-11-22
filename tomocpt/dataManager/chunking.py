@@ -793,7 +793,8 @@ def process_single_tomo_task_v2(task: Dict[str, Any]) -> Dict[str, Any]:
             torch.cuda.empty_cache()
 
 
-def _run_tasks(func, all_tasks: List[Dict[str, Any]], n_cpus: int, use_gpus: bool) -> list:
+def _run_tasks(func, all_tasks: List[Dict[str, Any]], n_cpus: int, use_gpus: bool,
+               desc: str = "Chunking Tomograms (pipeline v2)") -> list:
     """Run ``func`` on every task on a Dask cluster (GPU workers when available)."""
     n_gpus = torch.cuda.device_count() if use_gpus and torch.cuda.is_available() else 0
     if n_cpus <= 0:
@@ -810,7 +811,7 @@ def _run_tasks(func, all_tasks: List[Dict[str, Any]], n_cpus: int, use_gpus: boo
     try:
         futures = [client.submit(func, task, pure=False) for task in all_tasks]
         results = []
-        with tqdm(total=len(all_tasks), desc="Chunking Tomograms (pipeline v2)") as pbar:
+        with tqdm(total=len(all_tasks), desc=desc) as pbar:
             for future, result in as_completed(futures, with_results=True):
                 results.append(result)
                 pbar.update()
@@ -911,7 +912,9 @@ def _do_chunking_v2(tomosDf: pd.DataFrame, chunkedDataDir: str, n_cpus: int, req
     logging.info(f"Pipeline v2: chunking {len(all_tasks)} tomograms "
                  f"({len(df_train)} train, {0 if df_val is None else len(df_val)} validation).")
 
-    results = _run_tasks(process_single_tomo_task_v2, all_tasks, n_cpus, use_gpus)
+    desc = ("Building tomogram store (pipeline v2, on-the-fly sampling)" if storage_mode == "tomogram"
+            else "Chunking Tomograms (pipeline v2)")
+    results = _run_tasks(process_single_tomo_task_v2, all_tasks, n_cpus, use_gpus, desc=desc)
     failed = [r["tomo"] for r in results if r is None or r.get("error")]
     if failed:
         raise RuntimeError(f"Pipeline v2 chunking failed for {failed}; see the log for the tracebacks.")
@@ -943,8 +946,13 @@ def _do_chunking_v2(tomosDf: pd.DataFrame, chunkedDataDir: str, n_cpus: int, req
         write_chunk_layout(chunkedDataDir, layout)
     with open(get_chunking_name_done(chunkedDataDir, require_labels), "w") as f:
         f.write("done")
-    logging.info(f"Pipeline v2 chunking finished: {sum(r['n_chunks'] for r in results)} chunks in "
-                 f"{train_outDir} and {val_outDir}")
+    n_written = sum(r['n_chunks'] for r in results)
+    if storage_mode == "tomogram":
+        logging.info(f"Tomogram store (pipeline v2) finished: {len(results)} tomograms, {n_written} whole-volume "
+                     f"level entries (64^3 crops are cut on the fly during training) in {train_outDir} and "
+                     f"{val_outDir}")
+    else:
+        logging.info(f"Pipeline v2 chunking finished: {n_written} chunks in {train_outDir} and {val_outDir}")
 
 
 def _store_layout_keys(storage_mode: str, volume_dtype: str, alpha_drop_empty: float) -> dict:
