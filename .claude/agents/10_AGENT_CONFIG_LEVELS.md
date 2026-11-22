@@ -33,9 +33,12 @@ New module `tomocpt/configManager/option_levels.py`, one registry for the whole 
 
 The 40 non-`Annotated` fields today (e.g. `train.optimizer.weight_decay`, `betas`,
 `train.network.SwinUNETR.drop_rate`, `prepData.ALPHA_FOR_DROPPING_EMPTY_CUBES`, the `UNET` sub-config) are
-not written by `init` today. Decide per field: user-facing ones get an `Annotated[..., typer.Option(help=...)]`
-wrapper with the **same default and type** (help text only; no behaviour change, no new CLI flag since they
-are not in `CLI_FLAGS`); the rest are internal. Report the decision per field.
+not written by `init` today. **Human decision (22 Nov 2026): all of them get help text.** Wrap each in
+`Annotated[..., typer.Option(help=...)]` with the **same default and type** (help text only; no behaviour
+change, no new CLI flag since they are not in `CLI_FLAGS`). Then decide per field whether it is a user
+setting (a level) or internal (help text kept, but not written by `init` and not in `docs/options.md`).
+Check that wrapping does not change how `init` or the config loader treats them beyond what this spec asks
+(e.g. a field that `init` now writes must still round-trip). Report the decision per field.
 
 A test sweeps every `MainConfig` field and checks it has a level, and that every non-internal field has a
 non-empty help string (so a new gate's field cannot be added without help and a level).
