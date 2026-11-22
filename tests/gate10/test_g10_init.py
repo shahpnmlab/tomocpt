@@ -343,7 +343,10 @@ def test_G10_C14_level_headers_and_top_header(tmp_path):
 def test_G10_C15_epilog_points_to_levels_and_docs():
     from tomocpt.configManager.cli_options import HELP_EPILOG
 
-    assert "tomocpt init --level advanced" in HELP_EPILOG
+    # Human decision 22 Nov 2026 (gate_10_test_dispute.md, option 1): the epilog names no flag of
+    # another command (the frozen cli_slim test reads every --word in --help as a flag of the command).
+    assert "tomocpt init --help" in HELP_EPILOG and "--level" not in HELP_EPILOG
+    assert all(lv in HELP_EPILOG for lv in ("basic", "advanced", "diagnostic"))
     assert "docs/options.md" in HELP_EPILOG and "docs/tuning.md" in HELP_EPILOG
     assert "key=value" in HELP_EPILOG
 

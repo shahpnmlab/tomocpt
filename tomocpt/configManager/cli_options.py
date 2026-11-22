@@ -62,5 +62,6 @@ HELP_EPILOG = (
     "flags, with dots for nested sections, "
     "e.g. particles.class_head=softmax augmentation.flip_p=0.5. Booleans: true/false; none clears "
     "an optional value. Write every option with its help to a commented YAML with "
-    "tomocpt init --level advanced (or --level diagnostic), and see docs/options.md and docs/tuning.md."
+    "tomocpt init at level basic, advanced or diagnostic (see tomocpt init --help for the levels), and "
+    "see docs/options.md and docs/tuning.md."
 )

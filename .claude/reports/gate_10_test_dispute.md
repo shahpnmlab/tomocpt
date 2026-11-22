@@ -45,3 +45,8 @@ Either (a) is preferred:
 
 Gate 10's own test `tests/gate10/test_g10_init.py::test_G10_C15_epilog_points_to_levels_and_docs`
 asserts the spec's sentence (`"tomocpt init --level advanced" in HELP_EPILOG`).
+
+## Resolution (human decision 22 Nov 2026)
+Option 1: the epilog no longer names `--level`; it says "tomocpt init at level basic, advanced or diagnostic
+(see tomocpt init --help for the levels)". The frozen cli_slim test is unchanged and passes. Gate 10 test C15
+(not frozen) updated to the new wording.
