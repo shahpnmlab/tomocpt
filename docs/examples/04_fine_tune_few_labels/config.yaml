@@ -1,0 +1,36 @@
+# Example 4: fine-tune a trained v2 model on a new dataset with few labelled tomograms.
+# Settings left at their defaults are taken from the source checkpoint; those written here apply.
+shared:
+  training_data_dir: /path/to/new/training_data
+  chunks_dir: /path/to/new/chunks
+
+prepData:
+  raw_data_dir: /path/to/new/tomograms          # at least 2 tomograms (one for validation)
+  coordinate_files: /path/to/new/coords.star
+  particle_length_ang: "300"
+  multiclass: true
+  # Same class numbers as the source model keep their output channels; a new number starts
+  # from the mean of the old channels.
+  class_diameters: "4:300,5:120"
+  class_names: "4:ribosome,5:apo-ferritin"
+  label_border_policy: clip
+
+train:
+  model_dir: /path/to/new/model
+  experiment_name: finetune_new
+  data_pipeline_version: 2
+  fine_tune_from: /path/to/source/model/czii_v2/checkpoints/weights.ckpt
+  n_epochs: 50
+  val_stems: "tomo_3"                   # a fixed validation tomogram: a stable early-stopping signal
+  early_stop_rel_delta: 0.007
+  lr_plateau_match_early_stop: true
+  weight_averaging: ema
+  particles:
+    class_head: softmax                 # as the source model
+  augmentation:
+    label_interpolation: linear
+
+infer:
+  tomogram_dir: /path/to/new/unlabelled_tomograms
+  predictions_dir: /path/to/new/predictions
+  weights: /path/to/new/model/finetune_new/checkpoints/weights.ckpt

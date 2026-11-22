@@ -45,5 +45,5 @@ class InferConfig:
     filament_min_length_ang: Annotated[float, typer.Option(help="Traced filaments shorter than this many A are dropped (filament classes).")] = 200.0
     filament_smoothing_ang: Annotated[float, typer.Option(help="Spline smoothing of traced filaments, as an RMS deviation in A (filament classes).")] = 10.0
     subvoxel_refine: Annotated[str, typer.Option(help="Pipeline v2 particle picks: 'fit' (log-quadratic fit around each peak, the legacy refinement) or 'offset' (the rounded peak plus the model's offset head prediction).")] = "fit"
-    PATCH_OVERLAP_FACTOR: int = 4
-    N_CPUS_IF_NO_GPU: int = 8
+    PATCH_OVERLAP_FACTOR: Annotated[int, typer.Option(help='Prediction patches overlap by patch_size // this (64 // 4 = 16 voxels); smaller values overlap more (slower, smoother maps)')] = 4
+    N_CPUS_IF_NO_GPU: Annotated[int, typer.Option(help='Unused by predict (kept for config compatibility)')] = 8

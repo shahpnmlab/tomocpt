@@ -1,0 +1,35 @@
+# Example 6: k-fold cross-validation with a fold ensemble (pipeline v2), for few tomograms.
+shared:
+  training_data_dir: /path/to/work/training_data
+  chunks_dir: /path/to/work/chunks      # <chunks_dir>/pool once, <chunks_dir>/fold<k> link to it
+
+prepData:
+  raw_data_dir: /path/to/czii/tomograms
+  coordinate_files: /path/to/czii/coords/all_objects.star
+  particle_length_ang: "300"
+  multiclass: true
+  class_diameters: "1:130,2:180,3:260,4:300,5:120,6:270"
+  class_names: "1:beta-amylase,2:beta-galactosidase,3:thyroglobulin,4:ribosome,5:apo-ferritin,6:virus-like-particle"
+  label_border_policy: clip
+
+train:
+  model_dir: /path/to/work/model
+  experiment_name: czii_cv
+  data_pipeline_version: 2
+  n_epochs: 100
+  cv_folds: 5                           # folds of tomograms
+  cv_all_folds: true                    # train every fold, OOF calibration, ensemble, CV report
+  cv_class_weights: "beta-amylase:0,beta-galactosidase:2,thyroglobulin:2"   # report only
+  chunk_sampling: repeat_factor
+  early_stop_rel_delta: 0.007
+  lr_plateau_match_early_stop: true
+  weight_averaging: ema
+  particles:
+    class_head: softmax
+  augmentation:
+    label_interpolation: linear
+
+infer:
+  tomogram_dir: /path/to/new_tomograms
+  predictions_dir: /path/to/work/predictions
+  weights: /path/to/work/model/czii_cv/ensemble.json   # the fold ensemble written by train

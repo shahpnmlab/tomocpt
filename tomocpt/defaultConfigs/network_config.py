@@ -41,17 +41,17 @@ class NetworkConfig:
     SwinUNETR: SwinUnetrConfig = field(default_factory=SwinUnetrConfig)
 
     # THIS IS FOR PRETRAIN (self supervised).
-    NOISE2NOISE_RAND_MASK_SIZE: int = 15
-    CONTRAST_LOSS_L1_EMB_REGULARIZATION: float = 1e-4
-    CONTRAST_LOSS_TEMPERATURE: float = 1e-1
+    NOISE2NOISE_RAND_MASK_SIZE: Annotated[int, typer.Option(help='Unused (kept for config compatibility)')] = 15
+    CONTRAST_LOSS_L1_EMB_REGULARIZATION: Annotated[float, typer.Option(help='Self-supervised v1: weight of the L1 penalty on the contrastive embeddings')] = 1e-4
+    CONTRAST_LOSS_TEMPERATURE: Annotated[float, typer.Option(help='Self-supervised: temperature of the NT-Xent contrastive loss')] = 1e-1
 
-    TORCH_MATMUL_PRECISION: str = "medium"  # "medium" "high" "highest"
+    TORCH_MATMUL_PRECISION: Annotated[str, typer.Option(help="torch.set_float32_matmul_precision: 'medium', 'high' or 'highest' (TF32 use on Ampere and newer GPUs)")] = "medium"  # "medium" "high" "highest"
     TORCH_FLOAT_PRECISION: Annotated[
         PrecisionType,
         typer.Option(help="The precision for gpu computing", case_sensitive=False),
     ] = PrecisionType.bf16
 
-    SELF_SUPERVISED_EMBEDING_SIZE: int = 256
+    SELF_SUPERVISED_EMBEDING_SIZE: Annotated[int, typer.Option(help='Self-supervised: size of the global contrastive projection')] = 256
 
     scale_conditioning: Annotated[
         bool,

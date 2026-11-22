@@ -1,7 +1,8 @@
 """Everyday command-line flags per command section (human decision 9 Nov 2026: a short CLI).
 
 Only these fields (plus required fields, which have no default) become ``--flags``. Every other
-setting is set in the YAML (``--config_file``; ``tomocpt init`` writes all of them) or as a
+setting is set in the YAML (``--config_file``; ``tomocpt init --level advanced`` writes all of
+them, Gate 10) or as a
 ``key=value`` override on the command line, with dots for nested sections, e.g.
 ``tomocpt train --config_file c.yaml particles.class_head=softmax augmentation.flip_p=0.5``.
 Old long flags of other fields still work for now (rewritten to ``key=value`` with a warning).
@@ -57,8 +58,10 @@ CLI_FLAGS = {
 }
 
 HELP_EPILOG = (
-    "Other settings: put them in the YAML given with --config_file (tomocpt init writes every "
-    "setting with its default) or pass key=value after the flags, with dots for nested sections, "
+    "Other settings: put them in the YAML given with --config_file or pass key=value after the "
+    "flags, with dots for nested sections, "
     "e.g. particles.class_head=softmax augmentation.flip_p=0.5. Booleans: true/false; none clears "
-    "an optional value."
+    "an optional value. Write every option with its help to a commented YAML with "
+    "tomocpt init at level basic, advanced or diagnostic (see tomocpt init --help for the levels), and "
+    "see docs/options.md and docs/tuning.md."
 )

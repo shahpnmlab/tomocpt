@@ -687,7 +687,9 @@ def merge_config(yaml_config: DictConfig, config: Any) -> Tuple[Any, Dict]:
         field_name = field.name
         current_value = getattr(config, field_name)
 
-        # Find the field in yaml_config, checking both top level and nested
+        # Find the field in yaml_config. Only the field's own key counts (Gate 10): a field left
+        # out of a partial file keeps its value, and is never taken from a sub-section that has a
+        # key of the same name (``discriminative.temperature`` is not ``train.temperature``).
         yaml_value = None
         yaml_key = None
 
@@ -695,15 +697,6 @@ def merge_config(yaml_config: DictConfig, config: Any) -> Tuple[Any, Dict]:
             if field_name in yaml_config:
                 yaml_value = yaml_config[field_name]
                 yaml_key = field_name
-            else:
-                # Search in all top-level dictionaries
-                for key, section in yaml_config.items():
-                    if (
-                        isinstance(section, dict) and field_name in section
-                    ):  # Changed DictConfig to dict
-                        yaml_value = section[field_name]
-                        yaml_key = key
-                        break
 
             if yaml_value is not None:
                 used_keys.add(yaml_key)

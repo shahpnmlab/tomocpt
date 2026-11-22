@@ -43,42 +43,25 @@ TomoCPT (Tomogram Centroid Prediction Tool) is a deep learning-based solution fo
 
 ## 1. Initialize a Configuration File
 
-The first step is to create a configuration file that defines parameters for data preparation, training, and inference.
-
-### Command-line approach:
-
 ```bash
-# Create a default configuration file in the current directory
-tomocpt init --output_path ./my_config.yaml
+tomocpt init --output_path ./my_config.yaml                    # everyday settings (level basic)
+tomocpt init --output_path ./my_config.yaml --level advanced   # every setting
 ```
 
-### Expected output:
+The file has the sections `shared`, `prepData`, `train` and `infer`; every setting comes with its
+help text, type and default. `???` marks a required value. Settings left out of the file keep their
+defaults, so a short file is fine. Levels: `basic` (the command-line flags), `advanced` (every
+setting that changes training or prediction), `diagnostic` (also settings that only add output for
+inspection). `key=value` arguments are written into the file
+(`tomocpt init train.n_epochs=50`).
 
-A `my_config.yaml` file will be created. Edit this file to set the paths and parameters according to your needs before proceeding. If working with multiple datasets, use comma separated values.
-
-A sample with updated training parameters:
-```yaml
-# my_config.yaml (sample content)
-prepData:
-  raw_data_dir: ???
-  training_data_dir: ???
-  particle_length_ang: ???
-  coordinate_files: ???
-  # ... other prepData fields
-train:
-  chunks_dir: ???      # Directory with preprocessed data chunks (REQUIRED)
-  model_dir: ???       # Directory to save model weights and logs (REQUIRED)
-  resume_from: null    # Optional: Path to a checkpoint to RESUME a run
-  fine_tune_from: null # Optional: Path to a checkpoint to FINE-TUNE from
-  n_epochs: 10
-  batch_size: 16
-  # ... other training fields
-infer:
-  tomogram_dir: ???
-  predictions_dir: ???
-  weights: ???
-  # ... other inference fields
-```
+**Documentation:**
+- [docs/options.md](docs/options.md): every option with its level, type, default and help
+  (generated from the code).
+- [docs/tuning.md](docs/tuning.md): which options to change, when, in which direction, and the
+  evidence from our benchmarks.
+- [docs/examples/](docs/examples/): complete configs for common situations (one species v1,
+  several species v2, many species with filaments, fine-tuning, prediction only, k-fold CV).
 
 ## 2. Generate Volume-Label Pairs
 
@@ -150,8 +133,9 @@ tomocpt train \
 ### Flags, the config file and `key=value` overrides
 
 Only everyday settings are command-line flags (`tomocpt train --help` lists them). Every other
-setting lives in the YAML config (`tomocpt init` writes all of them with their defaults) or is set
-with a `key=value` override after the flags, using dots for nested sections:
+setting lives in the YAML config (`tomocpt init --level advanced` writes all of them with their
+defaults and help) or is set with a `key=value` override after the flags, using dots for nested
+sections:
 
 ```bash
 tomocpt train --config_file my_config.yaml optimizer.lr=0.0001 particles.class_head=softmax \
@@ -472,6 +456,10 @@ or alignment mismatch.
 # Changelog
 
 ## Unreleased (v2, multi-class picking)
+- `tomocpt init --level basic|advanced|diagnostic` (default `basic`) writes a commented config with
+  every setting up to that level (before: every annotated setting, uncommented). New documentation:
+  `docs/options.md` (generated), `docs/tuning.md`, `docs/examples/`. A YAML that leaves out a field
+  no longer takes it from a sub-section key of the same name.
 - Pipeline-v2 picking trains with the missing-wedge and amplitude-spectrum Fourier augmentation by
   default (`train.augmentation.fourier_auto`; `false` restores the previous behaviour). The Fourier
   degradation and the optional intensity augmentations now also run on the GPU data path.
