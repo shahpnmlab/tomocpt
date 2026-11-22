@@ -1,0 +1,113 @@
+{
+  "gate_id": 10,
+  "agent_name": "10_AGENT_CONFIG_LEVELS",
+  "status": "READY_FOR_REVIEW",
+  "base_ref": "f37ff42 (v2-feat/config-levels, from v2-dev)",
+  "commits": [
+    "116cd19 Gate 10 tests (TA)",
+    "2e9c10f Gate 10 tests: two fixes before freeze (second command in the init test app; sub-section paths allowed in tuning.md)",
+    "42bdb86 Gate 10 implementation",
+    "e8a5eaf Gate 10 docs",
+    "(this report and the test dispute: final commit)"
+  ],
+  "files_created": [
+    "tomocpt/configManager/option_levels.py",
+    "tomocpt/configManager/option_docs.py",
+    "docs/options.md",
+    "docs/tuning.md",
+    "docs/examples/01_single_species_v1/{config.yaml,README.md}",
+    "docs/examples/02_multi_species_v2/{config.yaml,README.md}",
+    "docs/examples/03_ds10490_particles_filaments/{config.yaml,README.md}",
+    "docs/examples/04_fine_tune_few_labels/{config.yaml,README.md}",
+    "docs/examples/05_predict_repick_thresholds/{config.yaml,README.md}",
+    "docs/examples/06_kfold_cv_ensemble/{config.yaml,README.md}",
+    "tests/gate10/{__init__.py,conftest.py,README.md,test_g10_levels.py,test_g10_init.py,test_g10_docs.py}",
+    ".claude/reports/gate_10_test_dispute.md",
+    ".claude/reports/gate_10_report.json"
+  ],
+  "files_modified": [
+    "tomocpt/configManager/initializer.py",
+    "tomocpt/configManager/cli_options.py",
+    "tomocpt/configManager/configManager.py (merge_config only: partial-file loading)",
+    "tomocpt/defaultConfigs/{prepdata_config,infer_config,train_config,network_config}.py (help only)",
+    "tomocpt/defaultConfigs/models/{swinunetr_config,unet_config}.py (help only)",
+    "README.md",
+    "TODO_v2.md"
+  ],
+  "exported_symbols": {
+    "tomocpt.configManager.option_levels": ["LEVELS", "INTERNAL", "SECTIONS", "DIAGNOSTIC", "INTERNAL_FIELDS", "Option", "option_level", "option_help", "subsection_help", "iter_options", "describe_type", "level_rank", "unwrap_type"],
+    "tomocpt.configManager.initializer": ["init", "render_config", "InitLevel"],
+    "tomocpt.configManager.option_docs": ["render_options_markdown", "main"]
+  },
+  "config_fields_added": [],
+  "config_loader_change": "Needed. merge_config looked up a field missing from a YAML section in every sub-section dict and took a same-named key from there: a partial file with train.discriminative.temperature also set train.temperature (distillation). The fallback is removed; a field is read only from its own key. Full files (every key present) never used the fallback, so their loading is unchanged. Partial files otherwise already loaded with defaults.",
+  "levels": {
+    "counts": {"basic": 39, "advanced": 186, "diagnostic": 3, "internal": 14},
+    "basic_rule": "cli_options.CLI_FLAGS of the section + required fields (MISSING in MainConfig()); shared.* basic",
+    "diagnostic_proposed_for_review": [
+      "prepData.write_filament_masks (tube masks for inspection, never targets)",
+      "train.snapshot_chunks (chunk predictions saved after each validation for the dashboard)",
+      "train.cv_class_weights (weights of the CV report's mean F-beta only)"
+    ],
+    "considered_not_diagnostic": {
+      "infer.save_prediction_confidence_map": "advanced: also the input of --skip_inference re-picking (a workflow switch, not only inspection)",
+      "train.scale.target_storage": "advanced: 'dense' is labelled debugging but changes the chunk files, so it is not output-only",
+      "train.OVERFIT_N_BATCHES": "advanced: a debugging knob, but it changes training",
+      "train.launch_tensorboard": "basic (a CLI flag; CLI_FLAGS wins)"
+    },
+    "internal": [
+      "prepData.training_data_dir, train.training_data_dir, train.chunks_dir (copies of shared.*; set under shared or with the flag)",
+      "prepData.USE_CUDA_FOR_DATA (unused)",
+      "train.USE_CUDA_FOR_DATA (unused)",
+      "train.N_GPUS (unused)",
+      "train.RANDOM_FRACTION_TO_SAMPLE_TRAIN (unused)",
+      "train.network.NOISE2NOISE_RAND_MASK_SIZE (unused)",
+      "train.optimizer._target_ (spec example; RAdam is the tested optimizer, schedule_free requires it)",
+      "train.CHUNK_SIZE (64 throughout: network input, Fourier augmentation, predict patches)",
+      "train.network.SwinUNETR.in_channels, train.network.UNET.in_channels (one tomogram)",
+      "train.network.SwinUNETR.out_channels (pipeline v2 sets it from the class table)",
+      "infer.N_CPUS_IF_NO_GPU (unused by predict)"
+    ]
+  },
+  "formerly_unannotated_fields": {
+    "note": "All 40 wrapped in Annotated[..., typer.Option(help=...)] with the same type and default; none is a CLI flag (not in CLI_FLAGS).",
+    "user_setting_advanced": [
+      "prepData.ALPHA_FOR_DROPPING_EMPTY_CUBES",
+      "infer.PATCH_OVERLAP_FACTOR",
+      "train.optimizer.weight_decay", "train.optimizer.betas",
+      "train.network.CONTRAST_LOSS_L1_EMB_REGULARIZATION", "train.network.CONTRAST_LOSS_TEMPERATURE",
+      "train.network.TORCH_MATMUL_PRECISION", "train.network.SELF_SUPERVISED_EMBEDING_SIZE",
+      "train.network.SwinUNETR.drop_rate", "train.network.SwinUNETR.attn_drop_rate",
+      "train.network.SwinUNETR.dropout_path_rate", "train.network.SwinUNETR.feature_size",
+      "train.network.SwinUNETR.use_v2", "train.network.SwinUNETR.use_checkpoint",
+      "train.network.UNET.first_layer_out_channels", "train.network.UNET.num_levels",
+      "train.network.UNET.channels_increase_factor", "train.network.UNET.kernel_size",
+      "train.network.UNET.convolution_dilation", "train.network.UNET.last_activation",
+      "train.network.UNET.stride_conv_instead_pooling", "train.network.UNET.output_dim",
+      "train.OVERFIT_N_BATCHES", "train.N_CPUS_IF_NO_GPU",
+      "train.FACTOR_REDUCE_LR_PLATEAU_N_EPOCHS", "train.COSINE_LR_SCHEDULE_N_EPOCHS",
+      "train.PATIENT_REDUCE_LR_PLATEAU_N_EPOCHS", "train.CHUNK_STRIDE", "train.SEED_FOR_TRAIN_VAL_SPLIT"
+    ],
+    "internal": [
+      "prepData.USE_CUDA_FOR_DATA", "infer.N_CPUS_IF_NO_GPU", "train.optimizer._target_",
+      "train.network.NOISE2NOISE_RAND_MASK_SIZE", "train.network.SwinUNETR.in_channels",
+      "train.network.SwinUNETR.out_channels", "train.network.UNET.in_channels", "train.N_GPUS",
+      "train.USE_CUDA_FOR_DATA", "train.CHUNK_SIZE", "train.RANDOM_FRACTION_TO_SAMPLE_TRAIN"
+    ],
+    "round_trip": "Fields init now writes (advanced) round-trip through --config_file at every level for prepare_data, train and predict (tests C8). prepData.ALPHA_FOR_DROPPING_EMPTY_CUBES has default int 1 under a float annotation; after any CLI load it is 1.0 (coerce_config_types already did this before Gate 10)."
+  },
+  "legacy_equivalence": {
+    "defaults": {"note": "no default, type or behaviour change; help text and init output only", "max_abs_diff": 0.0, "tolerance": 0.0}
+  },
+  "metrics": {},
+  "pytest_fast": {"command": "CUDA_VISIBLE_DEVICES= pytest tests -m 'not slow'", "exit_code": 1, "result": "1390 passed, 28 skipped, 3 failed (the disputed cli_slim help scan); gate10: 42 passed", "baseline_v2_dev": "1352 passed, 27 skipped, 0 failed", "note": "run with the GPU hidden (boss run), which may account for the one extra skip"},
+  "pytest_slow": {"command": "pytest tests/gate10 -m slow", "exit_code": null, "ran": false, "reason": "Gate 10 has no slow tests; no GPU jobs (boss run on the GPU)"},
+  "benchmarks": {},
+  "known_limitations": [
+    "Test dispute: tests/cli_slim/test_cli_slim.py::test_help_lists_only_everyday_flags (3 params) fails because its scan reads '--level' from the spec's epilog sentence; see .claude/reports/gate_10_test_dispute.md.",
+    "merge_config still skips YAML null values (a null cannot clear an Optional field whose default is not None, e.g. train.experiment_name); unchanged, not needed for the round trip.",
+    "tomocpt/configManager/test_configManager.py (outside tests/) has a pre-existing syntax error and is not collected; untouched.",
+    "Numbers in docs/tuning.md come from TODO_v2.md, gate reports and the spec's evidence list; options without measurements are marked as such."
+  ],
+  "notes_for_next_agent": "A new config field needs help text (Annotated) and gets level advanced unless it is in CLI_FLAGS, DIAGNOSTIC or INTERNAL_FIELDS (option_levels.py); then regenerate docs/options.md with python -m tomocpt.configManager.option_docs --out docs/options.md (a test fails when stale)."
+}
