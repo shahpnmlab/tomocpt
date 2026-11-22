@@ -212,8 +212,14 @@ def _init_app():
     from tomocpt.configManager.initializer import init
     from tomocpt.mainConfig import MainConfig
 
+    main_config = MainConfig()
+
+    def predict(config=None):  # a second command, as in tomocpt.main (one command is the app itself)
+        pass
+
     app = create_app()
-    app.register_command(init, MainConfig(), None, False)
+    app.register_command(init, main_config, None, False)
+    app.register_command(predict, main_config, "infer")
     return app
 
 

@@ -106,6 +106,7 @@ def test_G10_C17_tuning_covers_the_topics():
 def test_G10_C17_tuning_names_only_existing_options():
     text = (DOCS / "tuning.md").read_text()
     known = {f"{s}.{p}" for s, p in _options()}
+    known |= {k.rsplit(".", i)[0] for k in known for i in range(1, k.count("."))}  # sub-sections
     cited = set(re.findall(r"`((?:prepData|train|infer|shared)\.[A-Za-z0-9_.]+)", text))
     cited = {c.rstrip(".") for c in cited}
     unknown = sorted(c for c in cited if c not in known)
